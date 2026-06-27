@@ -1,0 +1,2735 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BM USA Proxy - Mini App</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700&family=Roboto:wght@300;400;500&family=Roboto+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg: #F3FBFF;
+  --surface: #FFFFFF;
+  --surface-2: #EDF3F8;
+  --border: #D8E6F0;
+  --border-2: #C4D9E9;
+  --text: #14324A;
+  --text-2: #4E6B81;
+  --text-3: #7C95A8;
+  --accent: #195079;
+  --accent-2: #124063;
+  --on-accent: #FFFFFF;
+  --success: #1E9E6A;
+  --warning: #D99021;
+  --danger: #C2413C;
+  --r-sm: 8px;
+  --r: 12px;
+  --r-lg: 16px;
+  --r-xl: 22px;
+  --shadow: 0 8px 24px -12px rgba(20,50,74,.18);
+  --shadow-soft: 0 4px 16px -8px rgba(20,50,74,.12);
+  --ease: cubic-bezier(.16,1,.3,1);
+  --font-head: "Jost", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-body: "Roboto", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Roboto Mono", ui-monospace, "SF Mono", Consolas, monospace;
+}
+*{ box-sizing:border-box; }
+html,body{ margin:0; padding:0; }
+body{
+  font-family:var(--font-body);
+  color:var(--text);
+  background:
+    radial-gradient(1100px 700px at 18% -8%, rgba(25,80,121,.06), transparent 60%),
+    radial-gradient(900px 600px at 110% 10%, rgba(194,65,60,.04), transparent 55%),
+    linear-gradient(160deg, #EAF4FB 0%, #F3FBFF 100%);
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+.num{ font-family:var(--font-mono); font-variant-numeric:tabular-nums; letter-spacing:-.01em; }
+
+/* ---------- STAGE + PHONE ---------- */
+.stage{
+  min-height:100vh;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:18px;
+  padding:40px 20px 48px;
+}
+.stage-brand{
+  display:flex; align-items:center; gap:12px;
+  color:var(--text-2);
+}
+.stage-brand .mk{
+  width:34px; height:34px; border-radius:9px;
+  background:var(--surface);
+  border:1px solid var(--border);
+  display:grid; place-items:center;
+  color:var(--accent);
+}
+.stage-brand b{ font-family:var(--font-head); letter-spacing:-.02em; color:var(--text); font-weight:600; font-size:15px; }
+.stage-brand span{ font-size:12.5px; color:var(--text-3); }
+
+.phone{
+  width:390px;
+  max-width:100%;
+  height:812px;
+  max-height:calc(100vh - 150px);
+  background:var(--bg);
+  border-radius:44px;
+  border:1px solid rgba(20,50,74,.14);
+  box-shadow:
+    0 40px 90px -40px rgba(20,50,74,.22),
+    0 0 0 10px #2a3a48,
+    0 0 0 11px #3a4e60;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+  position:relative;
+}
+
+/* Telegram-style top bar */
+.tg-bar{
+  flex:0 0 auto;
+  padding:14px 18px 12px;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  background:var(--surface);
+  border-bottom:1px solid var(--border);
+}
+.tg-bar .tg-back{
+  width:30px; height:30px; border-radius:8px;
+  display:grid; place-items:center;
+  color:var(--text-2);
+  background:transparent; border:none;
+}
+.tg-bar .tg-title{ flex:1; min-width:0; }
+.tg-bar .tg-title b{
+  display:block;
+  font-family:var(--font-head); font-weight:600; letter-spacing:-.02em;
+  font-size:15px; color:var(--text);
+}
+.tg-bar .tg-title small{
+  display:flex; align-items:center; gap:5px;
+  font-size:11.5px; color:var(--text-3);
+}
+.tg-bar .tg-dot{ width:6px; height:6px; border-radius:50%; background:var(--success); }
+.tg-bar .tg-actions{ display:flex; gap:4px; color:var(--text-3); }
+.tg-bar .tg-actions button{
+  width:30px; height:30px; border-radius:8px; border:none; background:transparent;
+  color:var(--text-3); display:grid; place-items:center;
+}
+
+/* scroll area holding screens */
+.screens-m{
+  flex:1 1 auto;
+  overflow-y:auto;
+  overflow-x:hidden;
+  -webkit-overflow-scrolling:touch;
+  background:var(--bg);
+  scrollbar-width:thin;
+  scrollbar-color:var(--border-2) transparent;
+}
+.screens-m::-webkit-scrollbar{ width:6px; }
+.screens-m::-webkit-scrollbar-thumb{ background:var(--border-2); border-radius:99px; }
+
+/* screen visibility */
+.mscreen{ display:none; padding:16px 16px 22px; }
+.mscreen.is-active{ display:block; animation:m-fade .2s var(--ease); }
+@keyframes m-fade{ from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:none; } }
+
+/* ---------- MINI HEADER (in-screen) ---------- */
+.m-head{
+  display:flex; align-items:center; gap:11px;
+  margin-bottom:16px;
+}
+.m-head .m-mark{
+  width:40px; height:40px; border-radius:11px;
+  background:rgba(25,80,121,.09);
+  border:1px solid rgba(25,80,121,.18);
+  display:grid; place-items:center;
+  color:var(--accent);
+  flex:0 0 auto;
+}
+.m-head .m-id b{
+  font-family:var(--font-head); letter-spacing:-.02em; font-weight:600;
+  font-size:15.5px; color:var(--text); display:block; line-height:1.2;
+}
+.m-head .m-id span{ font-size:12px; color:var(--text-3); }
+.m-head .m-id{ flex:1; min-width:0; }
+
+/* balance / referral chip in header */
+.m-balance{
+  flex:0 0 auto;
+  display:flex; align-items:center; gap:7px;
+  padding:7px 11px;
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:99px;
+  color:var(--text-2);
+  font-size:12px;
+}
+.m-balance svg{ color:var(--accent); }
+.m-balance .num{ color:var(--text); font-weight:500; font-size:12.5px; }
+
+/* ---------- SECTION LABEL ---------- */
+.m-label{
+  font-size:11px; text-transform:uppercase; letter-spacing:.09em;
+  color:var(--text-3); font-weight:500;
+  margin:0 2px 9px;
+  display:flex; align-items:center; justify-content:space-between;
+}
+.m-label a{ color:var(--accent); text-transform:none; letter-spacing:0; font-size:12px; text-decoration:none; }
+
+/* ---------- CARD ---------- */
+.m-card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:var(--r-lg);
+  padding:15px;
+  box-shadow:var(--shadow-soft);
+}
+.m-card + .m-card,
+.m-card + .m-block,
+.m-block + .m-card,
+.m-block{ margin-top:14px; }
+
+/* hero active-access card */
+.m-hero{
+  background:
+    linear-gradient(180deg, rgba(25,80,121,.06), transparent 70%),
+    var(--surface);
+  border:1px solid var(--border);
+  border-radius:var(--r-xl);
+  padding:17px;
+  box-shadow:var(--shadow);
+}
+.m-hero-top{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+.m-hero-loc{ display:flex; align-items:center; gap:10px; min-width:0; }
+.m-hero-loc .pin{
+  width:38px; height:38px; border-radius:11px;
+  background:rgba(25,80,121,.09); border:1px solid rgba(25,80,121,.18);
+  display:grid; place-items:center; color:var(--accent); flex:0 0 auto;
+}
+.m-hero-loc b{ font-family:var(--font-head); letter-spacing:-.02em; font-weight:600; font-size:16px; display:block; line-height:1.2; }
+.m-hero-loc span{ font-size:12px; color:var(--text-3); }
+.m-meta-row{ display:flex; gap:8px; flex-wrap:wrap; margin-top:13px; }
+
+/* countdown strip */
+.m-count{
+  margin-top:13px;
+  display:flex; align-items:center; justify-content:space-between;
+  padding:11px 13px;
+  background:var(--surface-2);
+  border:1px solid var(--border);
+  border-radius:var(--r);
+}
+.m-count .lab{ font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--text-3); }
+.m-count .val{ font-size:19px; color:var(--text); font-weight:500; }
+.m-count .val.warn{ color:var(--warning); }
+
+/* ---------- STATUS DOT ---------- */
+.dot{ width:8px; height:8px; border-radius:50%; flex:0 0 auto; display:inline-block; }
+.dot-online{ background:var(--success); box-shadow:0 0 0 3px rgba(30,158,106,.16); }
+.dot-warn{ background:var(--warning); box-shadow:0 0 0 3px rgba(217,144,33,.16); }
+.dot-off{ background:var(--danger); box-shadow:0 0 0 3px rgba(194,65,60,.16); }
+.dot-idle{ background:var(--text-3); }
+
+/* ---------- CHIP ---------- */
+.m-chip{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:5px 10px;
+  border-radius:99px;
+  font-size:11.5px; font-weight:500;
+  background:var(--surface-2);
+  border:1px solid var(--border);
+  color:var(--text-2);
+  white-space:nowrap;
+}
+.m-chip.is-accent{ background:rgba(25,80,121,.10); border-color:rgba(25,80,121,.22); color:var(--accent); }
+.m-chip.is-success{ color:var(--success); border-color:rgba(30,158,106,.28); }
+.m-chip.is-warn{ color:var(--warning); border-color:rgba(217,144,33,.28); }
+.m-chip.is-danger{ color:var(--danger); border-color:rgba(194,65,60,.28); }
+.m-chip .num{ color:inherit; }
+
+/* ---------- BUTTONS ---------- */
+.m-btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  min-height:42px; padding:0 15px;
+  border-radius:var(--r);
+  font-family:var(--font-body); font-size:13.5px; font-weight:500;
+  border:1px solid var(--border);
+  background:var(--surface-2);
+  color:var(--text);
+  cursor:pointer;
+  transition:background .16s var(--ease), border-color .16s var(--ease), transform .16s var(--ease);
+}
+.m-btn:hover{ background:var(--surface); border-color:var(--border-2); }
+.m-btn:active{ transform:scale(.985); }
+.m-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.m-btn svg{ flex:0 0 auto; }
+.m-btn-primary{
+  background:var(--accent); border-color:var(--accent); color:var(--on-accent); font-weight:600;
+}
+.m-btn-primary:hover{ background:var(--accent-2); border-color:var(--accent-2); }
+.m-btn-ghost{ background:transparent; border-color:var(--border); color:var(--text-2); }
+.m-btn-ghost:hover{ background:var(--surface-2); color:var(--text); }
+.m-btn-block{ width:100%; }
+.m-btn-sm{ min-height:36px; padding:0 12px; font-size:12.5px; }
+.m-btn-row{ display:flex; gap:9px; margin-top:13px; }
+.m-btn-row .m-btn{ flex:1; }
+
+/* ---------- QUICK ACTION TILES (varied sizes) ---------- */
+.m-tiles{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:11px;
+}
+.m-tile{
+  display:flex; flex-direction:column; justify-content:space-between; gap:14px;
+  min-height:92px;
+  padding:14px;
+  border-radius:var(--r-lg);
+  background:var(--surface);
+  border:1px solid var(--border);
+  color:var(--text);
+  text-align:left;
+  cursor:pointer;
+  transition:background .16s var(--ease), border-color .16s var(--ease), transform .16s var(--ease);
+}
+.m-tile:hover{ background:var(--surface-2); border-color:var(--border-2); }
+.m-tile:active{ transform:scale(.99); }
+.m-tile:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.m-tile-ico{
+  width:34px; height:34px; border-radius:10px;
+  background:var(--surface-2); border:1px solid var(--border);
+  display:grid; place-items:center; color:var(--text-2);
+}
+.m-tile-wide{ grid-column:1 / -1; flex-direction:row; align-items:center; min-height:auto; }
+.m-tile-wide .m-tile-ico{ background:rgba(25,80,121,.10); border-color:rgba(25,80,121,.22); color:var(--accent); }
+.m-tile-feature{ grid-column:1 / -1; }
+.m-tile-feature .m-tile-ico{ background:rgba(25,80,121,.10); border-color:rgba(25,80,121,.22); color:var(--accent); }
+.m-tile b{ font-family:var(--font-head); letter-spacing:-.02em; font-weight:600; font-size:14px; display:block; line-height:1.25; }
+.m-tile small{ font-size:11.5px; color:var(--text-3); display:block; margin-top:2px; }
+.m-tile .grow{ flex:1; min-width:0; }
+.m-tile .price{ font-size:13px; color:var(--accent); font-weight:500; }
+
+/* ---------- COPY FIELD ---------- */
+.copy-field{
+  display:flex; align-items:center; gap:8px;
+  padding:9px 11px;
+  background:var(--surface-2);
+  border:1px solid var(--border);
+  border-radius:var(--r-sm);
+}
+.copy-field .cf-key{ font-size:10.5px; text-transform:uppercase; letter-spacing:.07em; color:var(--text-3); flex:0 0 auto; width:54px; }
+.copy-field .cf-val{ flex:1; min-width:0; font-family:var(--font-mono); font-variant-numeric:tabular-nums; font-size:12.5px; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.copy-field button{
+  flex:0 0 auto; width:30px; height:30px; border-radius:7px;
+  border:1px solid var(--border); background:var(--surface);
+  color:var(--text-2); display:grid; place-items:center; cursor:pointer;
+  transition:color .16s var(--ease), border-color .16s var(--ease);
+}
+.copy-field button:hover{ color:var(--accent); border-color:var(--accent); }
+.copy-field button:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+
+/* ---------- INPUT ---------- */
+.m-input{
+  width:100%; min-height:42px; padding:0 12px;
+  border-radius:var(--r); border:1px solid var(--border);
+  background:var(--surface-2); color:var(--text);
+  font-family:var(--font-body); font-size:14px;
+}
+.m-input::placeholder{ color:var(--text-3); }
+.m-input:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; border-color:var(--accent); }
+
+/* ---------- ROW / LIST ---------- */
+.m-list{ display:flex; flex-direction:column; }
+.m-row{
+  display:flex; align-items:center; gap:12px;
+  padding:12px 0;
+  border-bottom:1px solid var(--border);
+}
+.m-row:last-child{ border-bottom:none; }
+.m-row .m-row-ico{
+  width:36px; height:36px; border-radius:10px; flex:0 0 auto;
+  background:var(--surface-2); border:1px solid var(--border);
+  display:grid; place-items:center; color:var(--text-2);
+}
+.m-row .m-row-main{ flex:1; min-width:0; }
+.m-row .m-row-main b{ font-size:13.5px; font-weight:500; color:var(--text); display:block; }
+.m-row .m-row-main small{ font-size:11.5px; color:var(--text-3); }
+.m-row .m-row-end{ flex:0 0 auto; text-align:right; }
+.m-row .m-row-end .num{ font-size:13px; color:var(--text); font-weight:500; }
+.m-row .m-row-end small{ display:block; font-size:11px; color:var(--text-3); }
+
+/* referral teaser */
+.m-refer{
+  display:flex; align-items:center; gap:13px;
+  padding:14px;
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:var(--r-lg);
+}
+.m-refer .rf-ico{
+  width:40px; height:40px; border-radius:11px; flex:0 0 auto;
+  background:rgba(25,80,121,.10); border:1px solid rgba(25,80,121,.22);
+  display:grid; place-items:center; color:var(--accent);
+}
+.m-refer .rf-main{ flex:1; min-width:0; }
+.m-refer .rf-main b{ font-family:var(--font-head); letter-spacing:-.02em; font-weight:600; font-size:14px; display:block; }
+.m-refer .rf-main small{ font-size:11.5px; color:var(--text-3); }
+
+/* ---------- BOTTOM TAB BAR ---------- */
+.tabbar{
+  flex:0 0 auto;
+  display:flex;
+  padding:8px 8px calc(8px + env(safe-area-inset-bottom, 0px));
+  background:var(--surface);
+  border-top:1px solid var(--border);
+}
+.tab{
+  flex:1;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
+  min-height:48px;
+  border:none; background:transparent; cursor:pointer;
+  color:var(--text-3);
+  font-family:var(--font-body); font-size:10.5px; font-weight:500;
+  border-radius:var(--r);
+  transition:color .16s var(--ease), background .16s var(--ease);
+}
+.tab svg{ stroke-width:1.5; }
+.tab:hover{ color:var(--text-2); }
+.tab:focus-visible{ outline:2px solid var(--accent); outline-offset:-2px; }
+.tab.is-active{ color:var(--accent); }
+.tab.is-active .tab-ico{ background:rgba(25,80,121,.10); }
+.tab-ico{
+  width:46px; height:26px; border-radius:99px;
+  display:grid; place-items:center;
+  transition:background .16s var(--ease);
+}
+</style>
+</head>
+<body>
+<div class="stage">
+<div class="stage-brand">
+  <span class="mk" aria-hidden="true">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z"/><path d="M3.6 9h16.8M3.6 15h16.8"/><path d="M12 3a13.5 13.5 0 0 1 0 18 13.5 13.5 0 0 1 0-18Z"/></svg>
+  </span>
+  <div>
+    <b>BM USA Proxy</b><br>
+    <span>Mobile network access</span>
+  </div>
+</div>
+<div class="phone">
+<div class="tg-bar">
+  <button class="tg-back" aria-label="Back">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+  </button>
+  <div class="tg-title">
+    <b>BM USA Proxy</b>
+    <small><span class="tg-dot" aria-hidden="true"></span> bot online</small>
+  </div>
+  <div class="tg-actions">
+    <button aria-label="Search">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg>
+    </button>
+    <button aria-label="Menu">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="6" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="18" r="1"/></svg>
+    </button>
+  </div>
+</div>
+<main class="screens-m">
+<section id="mscreen-home" class="mscreen is-active">
+
+  <div class="m-head">
+    <span class="m-mark" aria-hidden="true">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z"/><path d="M3.6 9h16.8M3.6 15h16.8"/><path d="M12 3a13.5 13.5 0 0 1 0 18 13.5 13.5 0 0 1 0-18Z"/></svg>
+    </span>
+    <div class="m-id">
+      <b>@noir_smm</b>
+      <span>USA mobile proxy &middot; 5G unlimited</span>
+    </div>
+    <div class="m-balance" title="Referral balance available">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 8a4 4 0 1 0-8 0"/><path d="M3 13h18l-1.4 6.3a2 2 0 0 1-2 1.7H6.4a2 2 0 0 1-2-1.7L3 13Z"/></svg>
+      <span>Earned</span>
+      <span class="num">$68.00</span>
+    </div>
+  </div>
+
+  <p class="m-label">Active access</p>
+  <div class="m-hero">
+    <div class="m-hero-top">
+      <div class="m-hero-loc">
+        <span class="pin" aria-hidden="true">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.7-7-11a7 7 0 0 1 14 0c0 5.3-7 11-7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg>
+        </span>
+        <div>
+          <b>LA-04 Los Angeles</b>
+          <span>CA &middot; T-Mobile &middot; SOCKS5</span>
+        </div>
+      </div>
+      <span class="m-chip is-success"><span class="dot dot-online" aria-hidden="true"></span> Online</span>
+    </div>
+
+    <div class="m-meta-row">
+      <span class="m-chip">5G unlimited</span>
+      <span class="m-chip">IPv4 + IPv6</span>
+      <span class="m-chip">Traffic <span class="num">1.2&nbsp;GB</span></span>
+    </div>
+
+    <div class="copy-field" style="margin-top:13px;">
+      <span class="cf-key">Host</span>
+      <span class="cf-val">x305.fxdx.in:10234</span>
+      <button type="button" aria-label="Copy host and port">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+      </button>
+    </div>
+
+    <div class="m-count">
+      <span class="lab">Expires in</span>
+      <span class="val warn num">21:04:00</span>
+    </div>
+
+    <div class="m-btn-row">
+      <button class="m-btn m-btn-primary" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+        Copy access
+      </button>
+      <button class="m-btn" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></svg>
+        Rotate IP
+      </button>
+    </div>
+  </div>
+
+  <p class="m-label" style="margin-top:18px;">Quick actions</p>
+  <div class="m-tiles">
+
+    <button class="m-tile" type="button">
+      <span class="m-tile-ico" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z"/></svg>
+      </span>
+      <span>
+        <b>Free trial</b>
+        <small>1 hour &middot; real device</small>
+      </span>
+    </button>
+
+    <button class="m-tile" type="button">
+      <span class="m-tile-ico" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14l-1 12.5a2 2 0 0 1-2 1.5H8a2 2 0 0 1-2-1.5L5 7Z"/><path d="M9 7V5a3 3 0 0 1 6 0v2"/></svg>
+      </span>
+      <span>
+        <b>Buy daily</b>
+        <small><span class="price">$10</span> &middot; 24h</small>
+      </span>
+    </button>
+
+    <button class="m-tile m-tile-wide" type="button">
+      <span class="m-tile-ico" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 9h18M8 14h4"/></svg>
+      </span>
+      <span class="grow">
+        <b>My access</b>
+        <small>1 active package &middot; LA-04 &middot; expires 21h</small>
+      </span>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:var(--text-3)"><path d="M9 6l6 6-6 6"/></svg>
+    </button>
+
+    <button class="m-tile m-tile-feature" type="button">
+      <span class="m-tile-ico" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+      </span>
+      <span class="grow">
+        <b>Tariffs</b>
+        <small>Daily, Weekly, Monthly &middot; auto-issue</small>
+      </span>
+      <span class="m-chip is-accent">Monthly <span class="num">$85</span></span>
+    </button>
+
+  </div>
+
+  <p class="m-label" style="margin-top:18px;">Refer &amp; earn</p>
+  <div class="m-refer">
+    <span class="rf-ico" aria-hidden="true">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20a6 6 0 0 1 12 0"/><path d="M16 4a3.2 3.2 0 0 1 0 6"/><path d="M18 14a6 6 0 0 1 3 5"/></svg>
+    </span>
+    <div class="rf-main">
+      <b>Refer &amp; earn 20%</b>
+      <small>Share your link &middot; <span class="num">$68.00</span> available now</small>
+    </div>
+    <button class="m-btn m-btn-sm m-btn-primary" type="button">Invite</button>
+  </div>
+
+</section>
+<style>
+/* ── Catalog screen scoped styles ── */
+.mcatalog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mcatalog-plan {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 4px 16px -8px rgba(20,50,74,.14);
+  transition: border-color 180ms cubic-bezier(.16,1,.3,1);
+}
+
+.mcatalog-plan:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.mcatalog-plan.is-highlight {
+  border-color: var(--accent);
+  background: #EDF3F8;
+  box-shadow: 0 0 0 1px rgba(25,80,121,0.28), 0 16px 40px -22px rgba(20,50,74,.14);
+}
+
+.mcatalog-plan-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mcatalog-plan-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mcatalog-plan-name b {
+  font-family: 'Jost', system-ui, sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.mcatalog-plan-name small {
+  font-family: 'Roboto', system-ui, sans-serif;
+  font-size: 12px;
+  color: var(--text-3);
+  line-height: 1.4;
+}
+
+.mcatalog-price-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.mcatalog-price {
+  font-family: 'Roboto Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1;
+}
+
+.mcatalog-price.is-free {
+  color: var(--success);
+}
+
+.mcatalog-plan.is-highlight .mcatalog-price {
+  color: var(--accent);
+}
+
+.mcatalog-price-sub {
+  font-family: 'Roboto', system-ui, sans-serif;
+  font-size: 11px;
+  color: var(--text-3);
+  text-align: right;
+}
+
+.mcatalog-features {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mcatalog-feat {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: 'Roboto', system-ui, sans-serif;
+  font-size: 13px;
+  color: var(--text-2);
+  line-height: 1.3;
+}
+
+.mcatalog-feat svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.mcatalog-auto-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: 'Roboto', system-ui, sans-serif;
+  font-size: 11px;
+  color: var(--success);
+  background: rgba(30,158,106,0.10);
+  border: 1px solid rgba(30,158,106,0.28);
+  border-radius: 6px;
+  padding: 3px 8px;
+  align-self: flex-start;
+}
+
+.mcatalog-reseller {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-shadow: 0 4px 16px -8px rgba(20,50,74,.14);
+}
+
+.mcatalog-reseller-ico {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--r);
+  background: rgba(25,80,121,0.10);
+  border: 1px solid rgba(25,80,121,0.22);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.mcatalog-reseller-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.mcatalog-reseller-body b {
+  font-family: 'Jost', system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  display: block;
+  line-height: 1.3;
+}
+
+.mcatalog-reseller-body small {
+  font-family: 'Roboto', system-ui, sans-serif;
+  font-size: 12px;
+  color: var(--text-3);
+  line-height: 1.4;
+}
+
+.mcatalog-regions {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 13px 15px;
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+}
+
+.mcatalog-regions-ico {
+  color: var(--text-3);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.mcatalog-regions-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.mcatalog-regions-body b {
+  font-family: 'Roboto', system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  display: block;
+  margin-bottom: 6px;
+}
+
+.mcatalog-cities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.mcatalog-city {
+  font-family: 'Roboto', system-ui, sans-serif;
+  font-size: 11px;
+  color: var(--text-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 7px;
+  line-height: 1.5;
+}
+
+/* Trust strip — 3 unequal boxes */
+.mcatalog-trust {
+  display: grid;
+  grid-template-columns: 1fr 1.3fr 1fr;
+  gap: 8px;
+}
+
+.mcatalog-trust-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 10px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  text-align: center;
+}
+
+.mcatalog-trust-item .num {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1;
+}
+
+.mcatalog-trust-item small {
+  font-family: 'Roboto', system-ui, sans-serif;
+  font-size: 10px;
+  color: var(--text-3);
+  line-height: 1.3;
+}
+
+/* Referral nudge strip */
+.mcatalog-refer-strip {
+  background: rgba(25,80,121,0.08);
+  border: 1px solid rgba(25,80,121,0.22);
+  border-radius: var(--r);
+  padding: 11px 13px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: 'Roboto', system-ui, sans-serif;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.mcatalog-refer-strip svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.mcatalog-refer-strip b {
+  color: var(--accent);
+}
+
+/* Payment methods row */
+.mcatalog-pay-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mcatalog-pay-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: 'Roboto', system-ui, sans-serif;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.mcatalog-pay-item svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+</style>
+
+<section id="mscreen-catalog" class="mscreen">
+
+  <div class="m-head">
+    <span class="m-mark" aria-hidden="true">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 9h18M8 14h4"/></svg>
+    </span>
+    <div class="m-id">
+      <b>Tariffs</b>
+      <span>USA mobile proxy &middot; 5G unlimited</span>
+    </div>
+  </div>
+
+  <!-- Trust strip — 3 unequal-width boxes -->
+  <div class="mcatalog-trust" style="margin-bottom:16px;">
+    <div class="mcatalog-trust-item">
+      <span class="num">3&nbsp;yr</span>
+      <small>in market</small>
+    </div>
+    <div class="mcatalog-trust-item">
+      <span class="num">2,000+</span>
+      <small>customers</small>
+    </div>
+    <div class="mcatalog-trust-item">
+      <span class="num">99.9%</span>
+      <small>uptime</small>
+    </div>
+  </div>
+
+  <p class="m-label">Choose your plan</p>
+
+  <div class="mcatalog-list">
+
+    <!-- Trial -->
+    <div class="mcatalog-plan">
+      <div class="mcatalog-plan-head">
+        <div class="mcatalog-plan-name">
+          <b>Trial</b>
+          <small>1 hour &middot; instant real-device test</small>
+        </div>
+        <div class="mcatalog-price-block">
+          <span class="mcatalog-price is-free">Free</span>
+          <span class="mcatalog-price-sub">1 hour</span>
+        </div>
+      </div>
+      <div class="mcatalog-features">
+        <span class="mcatalog-feat">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+          Real Android 5G device &middot; private/dedicated
+        </span>
+        <span class="mcatalog-feat">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+          SOCKS5 &amp; HTTP &middot; IPv4 + IPv6
+        </span>
+        <span class="mcatalog-feat">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+          IP rotation by link
+        </span>
+      </div>
+      <span class="mcatalog-auto-badge">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></svg>
+        Auto-issued
+      </span>
+      <a href="https://t.me/usproxy_support" class="m-btn m-btn-ghost m-btn-block" style="display:flex;align-items:center;justify-content:center;gap:7px;text-decoration:none;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg>
+        Get free trial via @usproxy_support
+      </a>
+    </div>
+
+    <!-- Daily -->
+    <div class="mcatalog-plan">
+      <div class="mcatalog-plan-head">
+        <div class="mcatalog-plan-name">
+          <b>Daily</b>
+          <small>24 hours &middot; quick tasks</small>
+        </div>
+        <div class="mcatalog-price-block">
+          <span class="mcatalog-price num">$10</span>
+          <span class="mcatalog-price-sub">per day</span>
+        </div>
+      </div>
+      <div class="mcatalog-features">
+        <span class="mcatalog-feat">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+          Unlimited 5G &middot; no throttling &middot; real Android device
+        </span>
+        <span class="mcatalog-feat">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+          SOCKS5 / HTTP / OpenVPN / WireGuard
+        </span>
+        <span class="mcatalog-feat">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+          IPv4 + IPv6 &middot; IP rotation by link
+        </span>
+      </div>
+      <span class="mcatalog-auto-badge">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></svg>
+        Auto-issued
+      </span>
+      <button class="m-btn m-btn-primary m-btn-block" type="button">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7h14l-1 12.5a2 2 0 0 1-2 1.5H8a2 2 0 0 1-2-1.5L5 7Z"/><path d="M9 7V5a3 3 0 0 1 6 0v2"/></svg>
+        Buy Daily &mdash; <span class="num">$10</span>
+      </button>
+    </div>
+
+    <!-- Weekly -->
+    <div class="mcatalog-plan">
+      <div class="mcatalog-plan-head">
+        <div class="mcatalog-plan-name">
+          <b>Weekly</b>
+          <small>7 days &middot; social media management</small>
+        </div>
+        <div class="mcatalog-price-block">
+          <span class="mcatalog-price num">$23</span>
+          <span class="mcatalog-price-sub">per week</span>
+        </div>
+      </div>
+      <div class="mcatalog-features">
+        <span class="mcatalog-feat">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+          Unlimited 5G &middot; T-Mobile / Verizon / AT&amp;T
+        </span>
+        <span class="mcatalog-feat">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+          SOCKS5 / HTTP / OpenVPN / WireGuard / UDP
+        </span>
+        <span class="mcatalog-feat">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+          IPv4 + IPv6 &middot; IP rotation by link &middot; private/dedicated
+        </span>
+      </div>
+      <span class="mcatalog-auto-badge">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></svg>
+        Auto-issued
+      </span>
+      <button class="m-btn m-btn-primary m-btn-block" type="button">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7h14l-1 12.5a2 2 0 0 1-2 1.5H8a2 2 0 0 1-2-1.5L5 7Z"/><path d="M9 7V5a3 3 0 0 1 6 0v2"/></svg>
+        Buy Weekly &mdash; <span class="num">$23</span>
+      </button>
+    </div>
+
+    <!-- Monthly — highlighted / best value -->
+    <div class="mcatalog-plan is-highlight">
+      <div class="mcatalog-plan-head">
+        <div class="mcatalog-plan-name">
+          <b>Monthly</b>
+          <small>30 days &middot; business use</small>
+        </div>
+        <div class="mcatalog-price-block">
+          <span class="mcatalog-price num">$85</span>
+          <span class="mcatalog-price-sub">per month</span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">
+        <span class="m-chip is-accent" style="font-size:11px;">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          Best value
+        </span>
+        <span class="m-chip" style="font-size:11px;">avg <span class="num">$2.83</span>/day</span>
+      </div>
+      <div class="mcatalog-features">
+        <span class="mcatalog-feat">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+          Unlimited 5G &middot; no throttling &middot; avg <span class="num" style="margin:0 2px;">28</span> Mbps
+        </span>
+        <span class="mcatalog-feat">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+          Real Android 5G &middot; private/dedicated only
+        </span>
+        <span class="mcatalog-feat">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+          SOCKS5 / HTTP / OpenVPN / WireGuard / UDP
+        </span>
+        <span class="mcatalog-feat">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+          IPv4 + IPv6 &middot; IP rotation by link
+        </span>
+      </div>
+      <span class="mcatalog-auto-badge">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></svg>
+        Auto-issued
+      </span>
+      <button class="m-btn m-btn-primary m-btn-block" type="button">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7h14l-1 12.5a2 2 0 0 1-2 1.5H8a2 2 0 0 1-2-1.5L5 7Z"/><path d="M9 7V5a3 3 0 0 1 6 0v2"/></svg>
+        Buy Monthly &mdash; <span class="num">$85</span>
+      </button>
+    </div>
+
+  </div>
+
+  <!-- Reseller / Wholesale -->
+  <p class="m-label" style="margin-top:18px;">Reseller &amp; wholesale</p>
+  <div class="mcatalog-reseller">
+    <div class="mcatalog-reseller-ico" aria-hidden="true">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><path d="M12 12v4"/><path d="M10 14h4"/></svg>
+    </div>
+    <div class="mcatalog-reseller-body">
+      <b>Reseller / Wholesale</b>
+      <small>Custom pricing &middot; <span class="num">10</span>+ ports &middot; CA, TX mix &middot; T-Mobile preferred</small>
+    </div>
+    <button class="m-btn m-btn-sm m-btn-primary" type="button" style="white-space:nowrap;">
+      Request quote
+    </button>
+  </div>
+
+  <!-- Referral nudge -->
+  <div class="mcatalog-refer-strip" style="margin-top:10px;">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 20a6 6 0 0 1 12 0"/><path d="M16 4a3.2 3.2 0 0 1 0 6"/><path d="M18 14a6 6 0 0 1 3 5"/></svg>
+    Refer a client &amp; earn <b>20%</b> of every payment, for life.
+  </div>
+
+  <!-- Region note -->
+  <p class="m-label" style="margin-top:18px;">Coverage &mdash; <span class="num">9</span> US cities</p>
+  <div class="mcatalog-regions">
+    <div class="mcatalog-regions-ico" aria-hidden="true">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.7-7-11a7 7 0 0 1 14 0c0 5.3-7 11-7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg>
+    </div>
+    <div class="mcatalog-regions-body">
+      <b>T-Mobile &middot; Verizon &middot; AT&amp;T</b>
+      <div class="mcatalog-cities">
+        <span class="mcatalog-city">Seattle, WA</span>
+        <span class="mcatalog-city">Portland, OR</span>
+        <span class="mcatalog-city">Las Vegas, NV</span>
+        <span class="mcatalog-city">Los Angeles, CA</span>
+        <span class="mcatalog-city">Denver, CO</span>
+        <span class="mcatalog-city">Phoenix, AZ</span>
+        <span class="mcatalog-city">Chicago, IL</span>
+        <span class="mcatalog-city">Dallas, TX</span>
+        <span class="mcatalog-city">Miami, FL</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Payment methods -->
+  <p class="m-label" style="margin-top:18px;">Payment methods</p>
+  <div class="m-card">
+    <div class="mcatalog-pay-row">
+      <div class="mcatalog-pay-item">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2L2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        <span>Crypto: USDT (TRC-20 / ERC-20) &middot; USDC &middot; BTC &middot; ETH</span>
+      </div>
+      <div class="mcatalog-pay-item">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+        <span>Credit Card &middot; PayPal</span>
+      </div>
+      <div class="mcatalog-pay-item" style="color:var(--text-3);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z"/></svg>
+        <span style="font-size:12px;">Self-serve auto-issue via crypto</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Support links -->
+  <p class="m-label" style="margin-top:18px;">Need help?</p>
+  <div class="m-list" style="margin-bottom:0;">
+    <a href="https://t.me/usproxy_support" class="m-row" style="text-decoration:none;" aria-label="Contact support on Telegram">
+      <span class="m-row-ico" aria-hidden="true">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg>
+      </span>
+      <span class="m-row-main">
+        <b>@usproxy_support</b>
+        <small>Free trial &middot; all sales inquiries</small>
+      </span>
+      <span class="m-row-end">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:var(--text-3)"><path d="M9 6l6 6-6 6"/></svg>
+      </span>
+    </a>
+    <a href="https://t.me/usproxyclub" class="m-row" style="text-decoration:none;" aria-label="Join channel">
+      <span class="m-row-ico" aria-hidden="true">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      </span>
+      <span class="m-row-main">
+        <b>@usproxyclub</b>
+        <small>BM USA PROXY CLUB &middot; news &amp; updates</small>
+      </span>
+      <span class="m-row-end">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:var(--text-3)"><path d="M9 6l6 6-6 6"/></svg>
+      </span>
+    </a>
+  </div>
+
+  <div style="height:12px;"></div>
+
+</section>
+<style>
+/* ── Checkout-scoped styles (prefix: mcheckout-) ── */
+.mcheckout-plan {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 14px 16px;
+  margin-bottom: 4px;
+}
+.mcheckout-plan-left { display: flex; flex-direction: column; gap: 3px; }
+.mcheckout-plan-name { font-family: 'Jost', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: -0.02em; color: var(--text); }
+.mcheckout-plan-meta { font-size: 12px; color: var(--text-3); }
+.mcheckout-plan-price { font-family: 'Roboto Mono', monospace; font-variant-numeric: tabular-nums; font-size: 22px; font-weight: 700; color: var(--accent); letter-spacing: -0.01em; }
+
+/* Network selector */
+.mcheckout-nets {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.mcheckout-net {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 9px 4px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r);
+  cursor: pointer;
+  transition: border-color 160ms cubic-bezier(.16,1,.3,1), background 160ms cubic-bezier(.16,1,.3,1);
+  min-height: 62px;
+}
+.mcheckout-net:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mcheckout-net.is-active {
+  border-color: var(--accent);
+  background: rgba(25,80,121,0.08);
+}
+.mcheckout-net-ico {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+.mcheckout-net.is-active .mcheckout-net-ico { color: var(--accent); }
+.mcheckout-net-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-2);
+  text-align: center;
+  line-height: 1.25;
+}
+.mcheckout-net.is-active .mcheckout-net-label { color: var(--accent); }
+
+/* Invoice card */
+.mcheckout-invoice {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  box-shadow: 0 16px 40px -22px rgba(20,50,74,.14);
+}
+.mcheckout-invoice-top {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.mcheckout-amounts { display: flex; flex-direction: column; gap: 4px; }
+.mcheckout-crypto-amt {
+  font-family: 'Roboto Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+.mcheckout-usd-amt {
+  font-family: 'Roboto Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+/* QR placeholder — 9×9 styled grid matrix */
+.mcheckout-qr {
+  width: 82px; height: 82px;
+  border-radius: var(--r-sm);
+  border: 1.5px solid var(--border-2);
+  flex-shrink: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  grid-template-rows: repeat(9, 1fr);
+  gap: 1.5px;
+  padding: 6px;
+  background: #FFFFFF;
+}
+.mcheckout-qr-cell {
+  border-radius: 1px;
+  background: #D8E6F0;
+}
+.mcheckout-qr-cell.on  { background: #4E6B81; }
+.mcheckout-qr-cell.hi  { background: #14324A; }
+.mcheckout-qr-cell.ac  { background: #195079; }
+
+/* Address row */
+.mcheckout-addr-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.mcheckout-addr-key { font-size: 11px; font-weight: 600; color: var(--text-3); white-space: nowrap; min-width: 36px; }
+.mcheckout-addr-val {
+  flex: 1;
+  font-family: 'Roboto Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mcheckout-addr-copy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px; height: 34px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 160ms cubic-bezier(.16,1,.3,1), border-color 160ms cubic-bezier(.16,1,.3,1);
+}
+.mcheckout-addr-copy:hover,
+.mcheckout-addr-copy:focus-visible { color: var(--accent); border-color: var(--accent); }
+.mcheckout-addr-copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Status / countdown strip */
+.mcheckout-status-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 16px;
+  gap: 12px;
+}
+.mcheckout-status-left { display: flex; align-items: center; gap: 8px; }
+.mcheckout-pulse-wrap {
+  position: relative;
+  width: 10px; height: 10px;
+  flex-shrink: 0;
+}
+.mcheckout-pulse-wrap::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: rgba(217,144,33,0.18);
+  animation: mcheckout-pulse 1.9s ease-in-out infinite;
+}
+@keyframes mcheckout-pulse {
+  0%, 100% { transform: scale(.7); opacity: .45; }
+  50%       { transform: scale(1.4); opacity: 1; }
+}
+.mcheckout-pulse-dot {
+  position: absolute;
+  inset: 1.5px;
+  border-radius: 50%;
+  background: var(--warning);
+}
+.mcheckout-status-text { font-size: 12.5px; font-weight: 600; color: var(--text-2); }
+.mcheckout-timer {
+  font-family: 'Roboto Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--warning);
+  letter-spacing: -0.01em;
+}
+
+/* Note banner */
+.mcheckout-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: rgba(25,80,121,0.06);
+  border: 1px solid rgba(25,80,121,0.22);
+  border-radius: var(--r);
+  padding: 12px 14px;
+  margin-bottom: 4px;
+}
+.mcheckout-note-ico { color: var(--accent); flex-shrink: 0; margin-top: 1px; }
+.mcheckout-note-text { font-size: 12.5px; color: var(--text-2); line-height: 1.5; }
+.mcheckout-note-text b { color: var(--text); font-weight: 600; }
+.mcheckout-note-text a { color: var(--accent); text-decoration: none; }
+.mcheckout-note-text a:hover { text-decoration: underline; }
+</style>
+
+<section id="mscreen-checkout" class="mscreen">
+
+  <!-- ── In-screen header ── -->
+  <div class="m-head">
+    <span class="m-mark" aria-hidden="true">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z"/><path d="M3.6 9h16.8M3.6 15h16.8"/><path d="M12 3a13.5 13.5 0 0 1 0 18 13.5 13.5 0 0 1 0-18Z"/></svg>
+    </span>
+    <div class="m-id">
+      <b>Checkout</b>
+      <span>Crypto invoice</span>
+    </div>
+    <span class="m-chip is-warn" style="font-size:11px;">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-right:3px;"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+      <span class="num">14:52</span> left
+    </span>
+  </div>
+
+  <!-- ── Selected plan ── -->
+  <p class="m-label">Selected plan</p>
+  <div class="mcheckout-plan">
+    <div class="mcheckout-plan-left">
+      <span class="mcheckout-plan-name">Monthly</span>
+      <span class="mcheckout-plan-meta">30 days &middot; Business &middot; auto-issued</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;">
+      <span class="mcheckout-plan-price num">$85</span>
+      <span class="m-chip is-accent" style="font-size:10px;">Best value</span>
+    </div>
+  </div>
+
+  <!-- ── Network selector ── -->
+  <p class="m-label" style="margin-top:16px;">Pay with</p>
+  <div class="mcheckout-nets" role="group" aria-label="Select crypto network">
+
+    <!-- USDT TRC-20 (active) -->
+    <button type="button" class="mcheckout-net is-active" aria-pressed="true">
+      <span class="mcheckout-net-ico" aria-hidden="true">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 10h8M12 8v8"/></svg>
+      </span>
+      <span class="mcheckout-net-label">USDT<br>TRC-20</span>
+    </button>
+
+    <!-- USDT ERC-20 -->
+    <button type="button" class="mcheckout-net" aria-pressed="false">
+      <span class="mcheckout-net-ico" aria-hidden="true">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 10h8M12 8v8"/></svg>
+      </span>
+      <span class="mcheckout-net-label">USDT<br>ERC-20</span>
+    </button>
+
+    <!-- USDC -->
+    <button type="button" class="mcheckout-net" aria-pressed="false">
+      <span class="mcheckout-net-ico" aria-hidden="true">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15 9.4A4 4 0 1 0 15 14.6"/></svg>
+      </span>
+      <span class="mcheckout-net-label">USDC</span>
+    </button>
+
+    <!-- BTC -->
+    <button type="button" class="mcheckout-net" aria-pressed="false">
+      <span class="mcheckout-net-ico" aria-hidden="true">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7h5a3 3 0 0 1 0 6H8h5.5a3.5 3.5 0 0 1 0 7H8"/><path d="M8 7V5m0 2v10m0 2v-2"/><path d="M11 5v2m0 12v-2"/></svg>
+      </span>
+      <span class="mcheckout-net-label">BTC</span>
+    </button>
+
+    <!-- ETH -->
+    <button type="button" class="mcheckout-net" aria-pressed="false">
+      <span class="mcheckout-net-ico" aria-hidden="true">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 10-7 3-7-3 7-10Z"/><path d="M12 16v5"/><path d="M5 13l7 3 7-3"/></svg>
+      </span>
+      <span class="mcheckout-net-label">ETH</span>
+    </button>
+
+  </div>
+
+  <!-- ── Invoice card ── -->
+  <p class="m-label" style="margin-top:16px;">Invoice</p>
+  <div class="mcheckout-invoice">
+
+    <!-- Crypto amount + QR placeholder -->
+    <div class="mcheckout-invoice-top">
+      <div class="mcheckout-amounts">
+        <span class="mcheckout-crypto-amt">
+          <span class="num">85.000000</span>
+          <span style="font-family:'Roboto',sans-serif;font-size:13px;color:var(--text-3);font-weight:500;margin-left:4px;">USDT</span>
+        </span>
+        <span class="mcheckout-usd-amt">&#8776;&nbsp;<span class="num">$85.00</span> USD &middot; TRC-20</span>
+        <div style="margin-top:8px;">
+          <span class="m-chip" style="font-size:10.5px;">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-right:3px;"><path d="M9 14l4-4 4 4"/><path d="M3 17V7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10"/></svg>
+            <span class="num">#INV-20260626-1847</span>
+          </span>
+        </div>
+      </div>
+
+      <!-- 9×9 inline SVG QR-like matrix placeholder -->
+      <div class="mcheckout-qr" aria-label="Payment QR code placeholder" role="img">
+        <!-- Row 0 -->
+        <div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell ac"></div>
+        <!-- Row 1 -->
+        <div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell"></div><div class="mcheckout-qr-cell"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell on"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell"></div><div class="mcheckout-qr-cell"></div><div class="mcheckout-qr-cell ac"></div>
+        <!-- Row 2 -->
+        <div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell"></div><div class="mcheckout-qr-cell hi"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell hi"></div><div class="mcheckout-qr-cell"></div><div class="mcheckout-qr-cell ac"></div>
+        <!-- Row 3 -->
+        <div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell hi"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell ac"></div>
+        <!-- Row 4 (data) -->
+        <div class="mcheckout-qr-cell"></div><div class="mcheckout-qr-cell hi"></div><div class="mcheckout-qr-cell"></div><div class="mcheckout-qr-cell hi"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell hi"></div><div class="mcheckout-qr-cell"></div><div class="mcheckout-qr-cell hi"></div><div class="mcheckout-qr-cell"></div>
+        <!-- Row 5 -->
+        <div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell on"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell hi"></div><div class="mcheckout-qr-cell"></div><div class="mcheckout-qr-cell on"></div>
+        <!-- Row 6 -->
+        <div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell"></div><div class="mcheckout-qr-cell hi"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell"></div><div class="mcheckout-qr-cell on"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell hi"></div><div class="mcheckout-qr-cell ac"></div>
+        <!-- Row 7 -->
+        <div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell"></div><div class="mcheckout-qr-cell"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell hi"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell"></div><div class="mcheckout-qr-cell"></div><div class="mcheckout-qr-cell ac"></div>
+        <!-- Row 8 -->
+        <div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell ac"></div><div class="mcheckout-qr-cell ac"></div>
+      </div>
+    </div>
+
+    <!-- Pay-to address -->
+    <div class="mcheckout-addr-row">
+      <span class="mcheckout-addr-key">To</span>
+      <span class="mcheckout-addr-val" title="TXk9mP4rQv7bNe3ZcFdJwLsA8uHgY2n5">
+        <span class="num">TXk9mP4r&hellip;Y2n5</span>
+      </span>
+      <button type="button" class="mcheckout-addr-copy" aria-label="Copy payment address">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+      </button>
+    </div>
+
+    <!-- Status / countdown strip -->
+    <div class="mcheckout-status-strip">
+      <div class="mcheckout-status-left">
+        <span class="mcheckout-pulse-wrap" aria-hidden="true">
+          <span class="mcheckout-pulse-dot"></span>
+        </span>
+        <span class="mcheckout-status-text">Waiting for payment&hellip;</span>
+      </div>
+      <span class="mcheckout-timer" aria-label="14 minutes and 52 seconds remaining">
+        <span class="num">14:52</span>
+      </span>
+    </div>
+
+  </div>
+
+  <!-- ── Auto-delivery note ── -->
+  <div class="mcheckout-note" style="margin-top:12px;">
+    <span class="mcheckout-note-ico" aria-hidden="true">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92V19a2 2 0 0 1-2.18 2A19.72 19.72 0 0 1 3 5.18 2 2 0 0 1 5 3h2.09a2 2 0 0 1 2 1.72 13 13 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 10.9a16 16 0 0 0 5 5l1.27-1.27a2 2 0 0 1 2.11-.45 13 13 0 0 0 2.81.7 2 2 0 0 1 1.72 2z"/></svg>
+    </span>
+    <span class="mcheckout-note-text">
+      <b>Auto-delivered to Telegram</b> on confirmation &mdash; access credentials arrive as a message within seconds of network confirmation. No manual action required.<br>
+      <span style="margin-top:4px;display:block;color:var(--text-3);">Card / PayPal also available via <a href="https://t.me/usproxy_support" target="_blank" rel="noopener">@usproxy_support</a>.</span>
+    </span>
+  </div>
+
+  <!-- ── Cancel ── -->
+  <button type="button" class="m-btn m-btn-ghost m-btn-block" style="margin-top:10px;color:var(--text-3);font-size:13px;">
+    Cancel &amp; go back
+  </button>
+
+</section>
+<style>
+/* ── maccess scoped styles ─────────────────────────────────────────────── */
+
+.maccess-creds { display:flex; flex-direction:column; gap:6px; }
+
+.maccess-cred-row {
+  display:flex; align-items:center; gap:0;
+  background:#FFFFFF; border:1px solid #D8E6F0;
+  border-radius:var(--r); overflow:hidden; height:44px;
+}
+.maccess-cred-key {
+  font-family:'Roboto Mono',monospace; font-size:10px;
+  font-variant-numeric:tabular-nums; color:#7C95A8;
+  text-transform:uppercase; letter-spacing:.05em;
+  padding:0 10px; width:58px; flex-shrink:0;
+  border-right:1px solid #D8E6F0; height:100%;
+  display:flex; align-items:center;
+  background:#EDF3F8;
+}
+.maccess-cred-val {
+  font-family:'Roboto Mono',monospace; font-size:13px;
+  font-variant-numeric:tabular-nums; color:#14324A;
+  flex:1; padding:0 10px; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap;
+}
+.maccess-cred-copy {
+  background:none; border:none; border-left:1px solid #D8E6F0;
+  height:100%; width:44px; flex-shrink:0; cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  color:#7C95A8;
+  transition:color 160ms cubic-bezier(.16,1,.3,1),
+             background 160ms cubic-bezier(.16,1,.3,1);
+  padding:0;
+}
+.maccess-cred-copy:hover { color:#195079; background:rgba(25,80,121,0.08); }
+.maccess-cred-copy:focus-visible { outline:2px solid #195079; outline-offset:-2px; }
+
+/* Combined copy row */
+.maccess-combined {
+  background:#FFFFFF; border:1px solid #C7DAEA;
+  border-radius:var(--r); padding:11px 12px;
+  display:flex; align-items:center; gap:10px;
+}
+.maccess-combined-inner { flex:1; min-width:0; }
+.maccess-combined-label {
+  font-size:10px; text-transform:uppercase; letter-spacing:.06em;
+  color:#7C95A8; margin-bottom:3px; font-family:'Roboto',sans-serif;
+}
+.maccess-combined-str {
+  font-family:'Roboto Mono',monospace; font-size:11px;
+  font-variant-numeric:tabular-nums; color:#4E6B81;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.maccess-combined-btn {
+  background:none; border:1px solid #C7DAEA; border-radius:var(--r-sm);
+  height:38px; padding:0 13px; cursor:pointer;
+  display:flex; align-items:center; gap:6px;
+  color:#195079; font-size:12px;
+  font-family:'Roboto',sans-serif; font-weight:500;
+  flex-shrink:0;
+  transition:background 160ms cubic-bezier(.16,1,.3,1),
+             border-color 160ms cubic-bezier(.16,1,.3,1);
+  white-space:nowrap;
+}
+.maccess-combined-btn:hover {
+  background:rgba(25,80,121,0.08);
+  border-color:#195079;
+}
+.maccess-combined-btn:focus-visible { outline:2px solid #195079; outline-offset:2px; }
+
+/* Progress bar */
+.maccess-progress-wrap { margin:13px 0 0; }
+.maccess-progress-label {
+  display:flex; justify-content:space-between; align-items:baseline;
+  font-size:12px; color:#7C95A8; margin-bottom:5px;
+  font-family:'Roboto',sans-serif;
+}
+.maccess-progress-label .num { font-family:'Roboto Mono',monospace; font-size:13px; color:#D99021; }
+.maccess-progress-track {
+  height:3px; background:#EDF3F8; border-radius:2px; overflow:hidden;
+}
+.maccess-progress-fill {
+  height:100%; width:12.5%; /* 21h of 168h weekly ≈ 12.5% remaining */
+  background:#D99021; border-radius:2px;
+  transition:width 600ms cubic-bezier(.16,1,.3,1);
+}
+
+/* Rotate note */
+.maccess-rotate-note {
+  font-size:11px; color:#7C95A8; font-family:'Roboto',sans-serif;
+  text-align:center; margin-top:7px; line-height:1.45;
+}
+
+/* How to connect link */
+.maccess-how-link {
+  display:flex; align-items:center; justify-content:center; gap:6px;
+  color:#195079; font-size:13px; font-family:'Roboto',sans-serif;
+  font-weight:500; text-decoration:none; margin-top:14px; padding:10px 0;
+  border-radius:var(--r-sm);
+  transition:background 160ms cubic-bezier(.16,1,.3,1);
+}
+.maccess-how-link:hover { background:#EDF3F8; }
+.maccess-how-link:focus-visible { outline:2px solid #195079; outline-offset:2px; }
+
+/* Empty state */
+.maccess-empty {
+  border:1px dashed #C7DAEA; border-radius:var(--r-lg);
+  padding:30px 20px; text-align:center; margin-top:4px;
+}
+.maccess-empty-ico {
+  width:48px; height:48px; border-radius:50%;
+  background:#EDF3F8; border:1px solid #D8E6F0;
+  display:flex; align-items:center; justify-content:center;
+  color:#7C95A8; margin:0 auto 14px;
+}
+.maccess-empty h3 {
+  font-family:'Jost','Roboto',sans-serif; font-size:15px; font-weight:600;
+  color:#14324A; margin:0 0 6px; letter-spacing:-0.02em;
+}
+.maccess-empty p {
+  font-size:13px; color:#4E6B81; margin:0 0 18px;
+  line-height:1.5; font-family:'Roboto',sans-serif;
+}
+.maccess-empty-actions {
+  display:flex; gap:8px; justify-content:center; flex-wrap:wrap;
+}
+</style>
+
+<section id="mscreen-access" class="mscreen">
+
+  <!-- ── In-screen header ──────────────────────────────────────────────── -->
+  <div class="m-head">
+    <span class="m-mark" aria-hidden="true">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/><circle cx="12" cy="16" r="1.2" fill="currentColor" stroke="none"/></svg>
+    </span>
+    <div class="m-id">
+      <b>@noir_smm</b>
+      <span>My access &middot; 1 active package</span>
+    </div>
+    <span class="m-chip is-success" style="font-size:12px;">
+      <span class="dot dot-online" aria-hidden="true"></span> Active
+    </span>
+  </div>
+
+  <!-- ── Active access hero card ──────────────────────────────────────── -->
+  <p class="m-label">Active access</p>
+
+  <div class="m-hero">
+
+    <div class="m-hero-top">
+      <div class="m-hero-loc">
+        <span class="pin" aria-hidden="true">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.7-7-11a7 7 0 0 1 14 0c0 5.3-7 11-7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg>
+        </span>
+        <div>
+          <b>LA-04 Los Angeles</b>
+          <span>CA &middot; T-Mobile &middot; SOCKS5</span>
+        </div>
+      </div>
+      <span class="m-chip is-success"><span class="dot dot-online" aria-hidden="true"></span> Online</span>
+    </div>
+
+    <div class="m-meta-row">
+      <span class="m-chip">5G unlimited</span>
+      <span class="m-chip">IPv4 + IPv6</span>
+      <span class="m-chip">Traffic <span class="num">1.2&nbsp;GB</span></span>
+    </div>
+
+    <!-- Expiry progress -->
+    <div class="maccess-progress-wrap">
+      <div class="maccess-progress-label">
+        <span>Expires in</span>
+        <span class="num">21:04:00</span>
+      </div>
+      <div class="maccess-progress-track">
+        <div class="maccess-progress-fill"></div>
+      </div>
+    </div>
+
+    <!-- Action buttons -->
+    <div class="m-btn-row" style="margin-top:14px;">
+      <button class="m-btn m-btn-primary" type="button">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></svg>
+        Rotate IP
+      </button>
+      <button class="m-btn" type="button">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 4V2M16 4V2"/><path d="M3 9h18"/></svg>
+        Extend
+      </button>
+    </div>
+
+    <p class="maccess-rotate-note">Rotate IP reboots the real device &mdash; new IP in ~10 seconds</p>
+
+  </div>
+
+  <!-- ── Credentials ───────────────────────────────────────────────────── -->
+  <p class="m-label" style="margin-top:18px;">Proxy credentials</p>
+
+  <div class="maccess-creds">
+
+    <div class="maccess-cred-row">
+      <span class="maccess-cred-key">Host</span>
+      <span class="maccess-cred-val">x305.fxdx.in</span>
+      <button class="maccess-cred-copy" type="button" aria-label="Copy host" title="Copy host">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+      </button>
+    </div>
+
+    <div class="maccess-cred-row">
+      <span class="maccess-cred-key">Port</span>
+      <span class="maccess-cred-val num">10234</span>
+      <button class="maccess-cred-copy" type="button" aria-label="Copy port" title="Copy port">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+      </button>
+    </div>
+
+    <div class="maccess-cred-row">
+      <span class="maccess-cred-key">Login</span>
+      <span class="maccess-cred-val num">u_8x7</span>
+      <button class="maccess-cred-copy" type="button" aria-label="Copy login" title="Copy login">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+      </button>
+    </div>
+
+    <div class="maccess-cred-row">
+      <span class="maccess-cred-key">Pass</span>
+      <span class="maccess-cred-val num">p_kf93</span>
+      <button class="maccess-cred-copy" type="button" aria-label="Copy password" title="Copy password">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+      </button>
+    </div>
+
+  </div>
+
+  <!-- Combined copy string -->
+  <div class="maccess-combined" style="margin-top:8px;">
+    <div class="maccess-combined-inner">
+      <div class="maccess-combined-label">host:port:login:pass</div>
+      <div class="maccess-combined-str">x305.fxdx.in:<span class="num">10234</span>:u_8x7:p_kf93</div>
+    </div>
+    <button class="maccess-combined-btn" type="button" aria-label="Copy full credentials string">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+      Copy all
+    </button>
+  </div>
+
+  <!-- How to connect -->
+  <a href="#" class="maccess-how-link" role="button" tabindex="0">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v1"/><path d="M12 12v4"/></svg>
+    How to connect (Dolphin Anty, AdsPower, curl)
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:#7C95A8"><path d="M9 6l6 6-6 6"/></svg>
+  </a>
+
+  <!-- ── Empty state (shown when no active packages) ───────────────────── -->
+  <p class="m-label" style="margin-top:22px; display:none;" aria-hidden="true">No active access</p>
+  <div class="maccess-empty" style="display:none;" aria-label="No active access">
+    <div class="maccess-empty-ico" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+    </div>
+    <h3>No active access yet</h3>
+    <p>Start with a free 1-hour trial on a real&nbsp;device,<br>or pick a plan that fits your workflow.</p>
+    <div class="maccess-empty-actions">
+      <button class="m-btn m-btn-primary m-btn-sm" type="button">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z"/></svg>
+        Get free trial
+      </button>
+      <button class="m-btn m-btn-sm" type="button" style="border:1px solid #C7DAEA;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+        View tariffs
+      </button>
+    </div>
+    <p style="margin:14px 0 0; font-size:12px; color:#7C95A8;">
+      Free trial via
+      <a href="https://t.me/usproxy_support" style="color:#195079; text-decoration:none;">@usproxy_support</a>
+    </p>
+  </div>
+
+</section>
+<style>
+  /* Scoped styles — mreferrals- prefix; all design tokens from :root */
+
+  .mreferrals-hero {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-xl);
+    padding: 18px 18px 16px;
+    box-shadow: 0 16px 40px -22px rgba(20,50,74,.14);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .mreferrals-headline {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .mreferrals-headline-ico {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    background: rgba(25,80,121,0.13);
+    border-radius: var(--r);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent);
+  }
+
+  .mreferrals-headline-text {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .mreferrals-headline-text b {
+    font-family: 'Jost', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--text);
+  }
+
+  .mreferrals-headline-text small {
+    font-family: 'Roboto', sans-serif;
+    font-size: 12px;
+    color: var(--text-2);
+    line-height: 1.45;
+  }
+
+  /* Stat strip — 3 columns, varied emphasis */
+  .mreferrals-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+  }
+
+  .mreferrals-stat {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: 10px 8px 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+  }
+
+  .mreferrals-stat .val {
+    font-family: 'Roboto Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 18px;
+    color: var(--text);
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+
+  .mreferrals-stat.is-accent .val {
+    color: var(--accent);
+  }
+
+  .mreferrals-stat .lab {
+    font-family: 'Roboto', sans-serif;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-3);
+  }
+
+  /* Referral link row */
+  .mreferrals-link-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .mreferrals-link-field {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    background: var(--surface-2);
+    border: 1px solid var(--border-2);
+    border-radius: var(--r);
+    padding: 0 11px;
+    gap: 8px;
+    height: 44px;
+    overflow: hidden;
+  }
+
+  .mreferrals-link-field .link-ico {
+    flex-shrink: 0;
+    color: var(--text-3);
+  }
+
+  .mreferrals-link-field .link-val {
+    font-family: 'Roboto Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 11.5px;
+    color: var(--text-2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* Balance grid — 2 cards: holds (neutral) + available (accent-tinted) */
+  .mreferrals-balance-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .mreferrals-bal-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    padding: 14px 13px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .mreferrals-bal-card.is-available {
+    border-color: rgba(25,80,121,0.36);
+    background: rgba(25,80,121,0.07);
+  }
+
+  .mreferrals-bal-card .bc-lab {
+    font-family: 'Roboto', sans-serif;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-3);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .mreferrals-bal-card.is-available .bc-lab {
+    color: #4E6B81;
+  }
+
+  .mreferrals-bal-card .bc-val {
+    font-family: 'Roboto Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 24px;
+    letter-spacing: -0.025em;
+    color: var(--text);
+    line-height: 1.1;
+    margin-top: 1px;
+  }
+
+  .mreferrals-bal-card.is-available .bc-val {
+    color: var(--accent);
+  }
+
+  .mreferrals-bal-card .bc-note {
+    font-family: 'Roboto', sans-serif;
+    font-size: 11px;
+    color: var(--text-3);
+    line-height: 1.4;
+    margin-top: 2px;
+  }
+
+  /* Payout history rows */
+  .mreferrals-history-row {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 11px 0;
+  }
+
+  .mreferrals-history-row + .mreferrals-history-row {
+    border-top: 1px solid var(--border);
+  }
+
+  .mreferrals-hist-ico {
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    background: rgba(30,158,106,0.13);
+    border-radius: var(--r-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--success);
+  }
+
+  .mreferrals-hist-main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .mreferrals-hist-main b {
+    display: block;
+    font-family: 'Roboto', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: -0.01em;
+  }
+
+  .mreferrals-hist-main small {
+    font-family: 'Roboto', sans-serif;
+    font-size: 11px;
+    color: var(--text-3);
+  }
+
+  .mreferrals-hist-end {
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  .mreferrals-hist-end .amt {
+    font-family: 'Roboto Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--success);
+    display: block;
+  }
+
+  .mreferrals-hist-end small {
+    font-family: 'Roboto', sans-serif;
+    font-size: 10px;
+    color: var(--text-3);
+  }
+</style>
+
+<section id="mscreen-referrals" class="mscreen">
+
+  <div class="m-head">
+    <span class="m-mark" aria-hidden="true">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20a6 6 0 0 1 12 0"/><path d="M16 4a3.2 3.2 0 0 1 0 6"/><path d="M18 14a6 6 0 0 1 3 5"/></svg>
+    </span>
+    <div class="m-id">
+      <b>@noir_smm</b>
+      <span>Referral cabinet</span>
+    </div>
+    <div class="m-balance" title="Available referral balance">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 8a4 4 0 1 0-8 0"/><path d="M3 13h18l-1.4 6.3a2 2 0 0 1-2 1.7H6.4a2 2 0 0 1-2-1.7L3 13Z"/></svg>
+      <span>Available</span>
+      <span class="num">$17.00</span>
+    </div>
+  </div>
+
+  <!-- Program hero: headline + stats -->
+  <div class="mreferrals-hero">
+    <div class="mreferrals-headline">
+      <span class="mreferrals-headline-ico" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20a6 6 0 0 1 12 0"/><path d="M16 4a3.2 3.2 0 0 1 0 6"/><path d="M18 14a6 6 0 0 1 3 5"/></svg>
+      </span>
+      <div class="mreferrals-headline-text">
+        <b>Earn 20% on every package</b>
+        <small>Share your link &mdash; receive 20% of each purchase your referrals make, instantly credited.</small>
+      </div>
+    </div>
+
+    <div class="mreferrals-stats">
+      <div class="mreferrals-stat">
+        <span class="val num">12</span>
+        <span class="lab">Clicks</span>
+      </div>
+      <div class="mreferrals-stat">
+        <span class="val num">2</span>
+        <span class="lab">Attached</span>
+      </div>
+      <div class="mreferrals-stat is-accent">
+        <span class="val num">$17</span>
+        <span class="lab">Earned</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Referral link -->
+  <p class="m-label" style="margin-top:18px;">Your referral link</p>
+  <div class="mreferrals-link-row">
+    <div class="mreferrals-link-field" aria-label="Referral link">
+      <span class="link-ico" aria-hidden="true">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a4 4 0 0 0 5.66 0l2.83-2.83a4 4 0 0 0-5.66-5.66l-1.5 1.5"/><path d="M14 10a4 4 0 0 0-5.66 0L5.51 12.83a4 4 0 0 0 5.66 5.66l1.5-1.5"/></svg>
+      </span>
+      <span class="link-val">t.me/BM_USA_Proxy_bot?start=ref_8x7</span>
+    </div>
+    <button class="m-btn" type="button" aria-label="Copy referral link" style="flex-shrink:0;height:44px;padding:0 14px;gap:6px;">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+      Copy
+    </button>
+  </div>
+
+  <button class="m-btn m-btn-primary m-btn-block" type="button" style="margin-top:8px;gap:8px;">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg>
+    Share via Telegram
+  </button>
+
+  <!-- Balance cards -->
+  <p class="m-label" style="margin-top:20px;">Balance</p>
+  <div class="mreferrals-balance-grid">
+
+    <div class="mreferrals-bal-card">
+      <span class="bc-lab">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        On hold
+      </span>
+      <span class="bc-val num">$8.40</span>
+      <span class="bc-note">Released when the billing period completes.</span>
+    </div>
+
+    <div class="mreferrals-bal-card is-available">
+      <span class="bc-lab">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:var(--accent)"><polyline points="20 6 9 17 4 12"/></svg>
+        Available
+      </span>
+      <span class="bc-val num">$17.00</span>
+      <span class="bc-note">Ready to withdraw now.</span>
+    </div>
+
+  </div>
+
+  <button class="m-btn m-btn-primary m-btn-block" type="button" style="margin-top:10px;gap:8px;">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+    Request payout &mdash; <span class="num" style="font-family:'Roboto Mono',monospace;font-variant-numeric:tabular-nums;">$17.00</span>
+  </button>
+
+  <!-- Payout history -->
+  <p class="m-label" style="margin-top:20px;">Payout history
+    <a href="#" role="button" aria-label="View all payouts">All</a>
+  </p>
+  <div class="m-card" style="padding:2px 14px;">
+    <div class="mreferrals-history-row">
+      <span class="mreferrals-hist-ico" aria-hidden="true">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      </span>
+      <div class="mreferrals-hist-main">
+        <b>Payout sent</b>
+        <small>USDT &middot; TRC-20 &middot; Jun 14, 2026</small>
+      </div>
+      <div class="mreferrals-hist-end">
+        <span class="amt num">+$24.00</span>
+        <small>Completed</small>
+      </div>
+    </div>
+  </div>
+
+  <div style="height:14px;" aria-hidden="true"></div>
+
+</section>
+<style>
+/* ── FAQ screen scoped styles ── prefix: mfaq- ── */
+
+.mfaq-accordion {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mfaq-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+  transition: border-color 180ms cubic-bezier(.16,1,.3,1);
+}
+
+.mfaq-item.is-open {
+  border-color: var(--border-2);
+}
+
+.mfaq-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 14px 14px 14px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  min-height: 52px;
+  color: var(--text);
+  transition: background 160ms cubic-bezier(.16,1,.3,1);
+}
+
+.mfaq-trigger:hover {
+  background: var(--surface-2);
+}
+
+.mfaq-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--r);
+}
+
+.mfaq-q-ico {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  background: rgba(25,80,121,0.10);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+}
+
+.mfaq-q-text {
+  flex: 1;
+  font-family: 'Roboto', sans-serif;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text);
+}
+
+.mfaq-chevron {
+  flex-shrink: 0;
+  color: var(--text-3);
+  transition: transform 200ms cubic-bezier(.16,1,.3,1);
+}
+
+.mfaq-item.is-open .mfaq-chevron {
+  transform: rotate(180deg);
+  color: var(--accent);
+}
+
+.mfaq-body {
+  display: none;
+  padding: 0 14px 14px 58px;
+}
+
+.mfaq-item.is-open .mfaq-body {
+  display: block;
+}
+
+.mfaq-body p {
+  font-family: 'Roboto', sans-serif;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-2);
+  margin: 0 0 8px;
+}
+
+.mfaq-body p:last-child {
+  margin-bottom: 0;
+}
+
+.mfaq-body code {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 2px 6px;
+  color: var(--text);
+  display: inline-block;
+  word-break: break-all;
+}
+
+.mfaq-body .mfaq-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.mfaq-body .mfaq-tools .m-chip {
+  font-size: 11.5px;
+}
+
+.mfaq-regions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.mfaq-region-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 7px 9px;
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+}
+
+.mfaq-region-row .dot {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+
+.mfaq-region-row > span:last-child {
+  font-family: 'Roboto', sans-serif;
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.25;
+}
+
+.mfaq-region-row small {
+  display: block;
+  font-size: 10.5px;
+  color: var(--text-3);
+  font-family: 'Roboto Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  margin-top: 1px;
+}
+
+.mfaq-payments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.mfaq-pay-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-family: 'Roboto Mono', monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+}
+
+.mfaq-pay-chip.is-accent {
+  background: rgba(25,80,121,0.12);
+  border-color: rgba(25,80,121,0.28);
+  color: var(--accent);
+}
+
+.mfaq-proto-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.mfaq-proto-cell {
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+}
+
+.mfaq-proto-cell b {
+  display: block;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  margin-bottom: 3px;
+}
+
+.mfaq-proto-cell small {
+  font-family: 'Roboto', sans-serif;
+  font-size: 11px;
+  color: var(--text-3);
+  line-height: 1.4;
+}
+
+.mfaq-proto-cell.is-accent {
+  border-color: rgba(25,80,121,0.30);
+  background: rgba(25,80,121,0.08);
+}
+
+.mfaq-proto-cell.is-accent b {
+  color: var(--accent);
+}
+
+.mfaq-support-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.mfaq-support-ico {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r);
+  background: rgba(25,80,121,0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+}
+
+.mfaq-support-text {
+  flex: 1;
+}
+
+.mfaq-support-text b {
+  display: block;
+  font-family: 'Jost', sans-serif;
+  font-size: 13.5px;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.mfaq-support-text small {
+  font-family: 'Roboto', sans-serif;
+  font-size: 12px;
+  color: var(--text-3);
+}
+</style>
+
+<section id="mscreen-faq" class="mscreen">
+
+  <div class="m-head">
+    <span class="m-mark" aria-hidden="true">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.82 1c0 2-3 3-3 3"/><circle cx="12" cy="17" r=".5" fill="currentColor"/></svg>
+    </span>
+    <div class="m-id">
+      <b>FAQ &amp; Support</b>
+      <span>USA mobile proxy &middot; 5G unlimited</span>
+    </div>
+  </div>
+
+  <p class="m-label">Common questions</p>
+
+  <div class="mfaq-accordion">
+
+    <!-- Q1: How to connect — expanded -->
+    <div class="mfaq-item is-open" id="mfaq-1">
+      <button
+        class="mfaq-trigger"
+        type="button"
+        aria-expanded="true"
+        aria-controls="mfaq-1-body"
+        onclick="(function(btn){var item=btn.closest('.mfaq-item');var open=item.classList.toggle('is-open');btn.setAttribute('aria-expanded',open);})(this)"
+      >
+        <span class="mfaq-q-ico" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+        </span>
+        <span class="mfaq-q-text">How do I connect my proxy?</span>
+        <svg class="mfaq-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="mfaq-body" id="mfaq-1-body" role="region">
+        <p>After activation you receive host, port, login, and password. Paste them into any proxy manager — no extra setup needed.</p>
+        <div class="mfaq-tools">
+          <span class="m-chip">Dolphin Anty</span>
+          <span class="m-chip">AdsPower</span>
+          <span class="m-chip">Proxy SwitchyOmega</span>
+          <span class="m-chip">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            curl
+          </span>
+        </div>
+        <p style="margin-top:10px; font-size:12px; color:var(--text-3);">curl example (SOCKS5):</p>
+        <p><code>curl -x socks5h://u_8x7:p_kf93@x305.fxdx.in:10234 https://ipinfo.io</code></p>
+      </div>
+    </div>
+
+    <!-- Q2: Payment networks — expanded -->
+    <div class="mfaq-item is-open" id="mfaq-2">
+      <button
+        class="mfaq-trigger"
+        type="button"
+        aria-expanded="true"
+        aria-controls="mfaq-2-body"
+        onclick="(function(btn){var item=btn.closest('.mfaq-item');var open=item.classList.toggle('is-open');btn.setAttribute('aria-expanded',open);})(this)"
+      >
+        <span class="mfaq-q-ico" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+        </span>
+        <span class="mfaq-q-text">Which networks can I pay with?</span>
+        <svg class="mfaq-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="mfaq-body" id="mfaq-2-body" role="region">
+        <p>Crypto activates your package automatically. Card and PayPal are also accepted.</p>
+        <div class="mfaq-payments">
+          <span class="mfaq-pay-chip is-accent">USDT TRC-20</span>
+          <span class="mfaq-pay-chip is-accent">USDT ERC-20</span>
+          <span class="mfaq-pay-chip is-accent">USDC</span>
+          <span class="mfaq-pay-chip is-accent">BTC</span>
+          <span class="mfaq-pay-chip is-accent">ETH</span>
+          <span class="mfaq-pay-chip">Credit Card</span>
+          <span class="mfaq-pay-chip">PayPal</span>
+        </div>
+        <p style="margin-top:10px;">Reseller and bulk orders require manual confirmation — contact <strong style="color:var(--accent);">@usproxy_support</strong>.</p>
+      </div>
+    </div>
+
+    <!-- Q3: IP rotation -->
+    <div class="mfaq-item" id="mfaq-3">
+      <button
+        class="mfaq-trigger"
+        type="button"
+        aria-expanded="false"
+        aria-controls="mfaq-3-body"
+        onclick="(function(btn){var item=btn.closest('.mfaq-item');var open=item.classList.toggle('is-open');btn.setAttribute('aria-expanded',open);})(this)"
+      >
+        <span class="mfaq-q-ico" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></svg>
+        </span>
+        <span class="mfaq-q-text">How does IP rotation work?</span>
+        <svg class="mfaq-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="mfaq-body" id="mfaq-3-body" role="region">
+        <p>Each package includes a private reboot link. Hit <strong>Rotate IP</strong> and the real Android phone behind your port reboots its mobile data connection — your exit IP changes within seconds.</p>
+        <p>Your host, port, login, and password stay the same. Pool covers <span class="num">1,000&ndash;12,000</span> trusted mobile IPs per location.</p>
+      </div>
+    </div>
+
+    <!-- Q4: SOCKS5 vs HTTP -->
+    <div class="mfaq-item" id="mfaq-4">
+      <button
+        class="mfaq-trigger"
+        type="button"
+        aria-expanded="false"
+        aria-controls="mfaq-4-body"
+        onclick="(function(btn){var item=btn.closest('.mfaq-item');var open=item.classList.toggle('is-open');btn.setAttribute('aria-expanded',open);})(this)"
+      >
+        <span class="mfaq-q-ico" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+        </span>
+        <span class="mfaq-q-text">SOCKS5 vs HTTP — which should I use?</span>
+        <svg class="mfaq-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="mfaq-body" id="mfaq-4-body" role="region">
+        <div class="mfaq-proto-grid">
+          <div class="mfaq-proto-cell is-accent">
+            <b>SOCKS5</b>
+            <small>Recommended. Tunnels all traffic — TCP + UDP. Best for antidetect browsers, scrapers, automation.</small>
+          </div>
+          <div class="mfaq-proto-cell">
+            <b>HTTP/HTTPS</b>
+            <small>Use when SOCKS5 is unsupported. Compatible with older tools and simple scripts.</small>
+          </div>
+        </div>
+        <p style="margin-top:10px;">Both protocols are available on your assigned port. OpenVPN and WireGuard configs are also available on request.</p>
+      </div>
+    </div>
+
+    <!-- Q5: Free trial -->
+    <div class="mfaq-item" id="mfaq-5">
+      <button
+        class="mfaq-trigger"
+        type="button"
+        aria-expanded="false"
+        aria-controls="mfaq-5-body"
+        onclick="(function(btn){var item=btn.closest('.mfaq-item');var open=item.classList.toggle('is-open');btn.setAttribute('aria-expanded',open);})(this)"
+      >
+        <span class="mfaq-q-ico" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z"/></svg>
+        </span>
+        <span class="mfaq-q-text">Is there a free trial?</span>
+        <svg class="mfaq-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="mfaq-body" id="mfaq-5-body" role="region">
+        <p>Yes — <strong style="color:var(--text);">1 hour free</strong> on a real Android 5G device, no payment required.</p>
+        <p>Message support to request it: <strong style="color:var(--accent);">@usproxy_support</strong>. You receive real credentials (host, port, login, password) within minutes. Avg speed <span class="num">28</span>&nbsp;Mbps, range <span class="num">10&ndash;70</span>&nbsp;Mbps.</p>
+      </div>
+    </div>
+
+    <!-- Q6: Regions -->
+    <div class="mfaq-item" id="mfaq-6">
+      <button
+        class="mfaq-trigger"
+        type="button"
+        aria-expanded="false"
+        aria-controls="mfaq-6-body"
+        onclick="(function(btn){var item=btn.closest('.mfaq-item');var open=item.classList.toggle('is-open');btn.setAttribute('aria-expanded',open);})(this)"
+      >
+        <span class="mfaq-q-ico" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.7-7-11a7 7 0 0 1 14 0c0 5.3-7 11-7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg>
+        </span>
+        <span class="mfaq-q-text">What regions are available?</span>
+        <svg class="mfaq-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="mfaq-body" id="mfaq-6-body" role="region">
+        <p><span class="num">9</span> US cities across T-Mobile, Verizon, and AT&amp;T. <span class="num">90</span> total slots, <span class="num">51</span> in use.</p>
+        <div class="mfaq-regions">
+          <div class="mfaq-region-row">
+            <span class="dot dot-online" aria-hidden="true"></span>
+            <span>Seattle, WA<small>SEA-01 &middot; T-Mobile &middot; <span class="num">7</span>/<span class="num">10</span></small></span>
+          </div>
+          <div class="mfaq-region-row">
+            <span class="dot dot-online" aria-hidden="true"></span>
+            <span>Portland, OR<small>PDX-02 &middot; T-Mobile &middot; <span class="num">5</span>/<span class="num">10</span></small></span>
+          </div>
+          <div class="mfaq-region-row">
+            <span class="dot dot-online" aria-hidden="true"></span>
+            <span>Las Vegas, NV<small>LV-03 &middot; AT&amp;T &middot; <span class="num">3</span>/<span class="num">10</span></small></span>
+          </div>
+          <div class="mfaq-region-row">
+            <span class="dot dot-online" aria-hidden="true"></span>
+            <span>Los Angeles, CA<small>LA-04 &middot; T-Mobile &middot; <span class="num">9</span>/<span class="num">10</span></small></span>
+          </div>
+          <div class="mfaq-region-row">
+            <span class="dot dot-online" aria-hidden="true"></span>
+            <span>Denver, CO<small>DEN-05 &middot; Verizon &middot; <span class="num">4</span>/<span class="num">10</span></small></span>
+          </div>
+          <div class="mfaq-region-row">
+            <span class="dot dot-online" aria-hidden="true"></span>
+            <span>Phoenix, AZ<small>PHX-06 &middot; AT&amp;T &middot; <span class="num">2</span>/<span class="num">10</span></small></span>
+          </div>
+          <div class="mfaq-region-row">
+            <span class="dot dot-off" aria-hidden="true"></span>
+            <span>Chicago, IL<small>CHI-07 &middot; Verizon &middot; OFFLINE</small></span>
+          </div>
+          <div class="mfaq-region-row">
+            <span class="dot dot-online" aria-hidden="true"></span>
+            <span>Dallas, TX<small>DAL-08 &middot; T-Mobile &middot; <span class="num">5</span>/<span class="num">10</span></small></span>
+          </div>
+          <div class="mfaq-region-row">
+            <span class="dot dot-warn" aria-hidden="true"></span>
+            <span>Miami, FL<small>MIA-09 &middot; Verizon &middot; FULL</small></span>
+          </div>
+        </div>
+        <p style="margin-top:10px;">Need a specific carrier or state? Contact support. New locations added based on demand.</p>
+      </div>
+    </div>
+
+  </div>
+
+  <p class="m-label" style="margin-top: 20px;">Contact support</p>
+
+  <div class="mfaq-support-block">
+    <span class="mfaq-support-ico" aria-hidden="true">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 10h8M8 14h5"/></svg>
+    </span>
+    <div class="mfaq-support-text">
+      <b>Still have questions?</b>
+      <small>Responses in minutes &middot; free 1-hour trial here</small>
+    </div>
+    <a
+      href="https://t.me/usproxy_support"
+      class="m-btn m-btn-primary m-btn-sm"
+      role="button"
+      target="_blank"
+      rel="noopener noreferrer"
+      style="text-decoration:none; display:inline-flex; align-items:center; gap:6px;"
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.5 4.5 2.5 11l7 2.5m12-9L17 21.5l-7.5-8m12-9-9.5 9.5"/></svg>
+      @usproxy_support
+    </a>
+  </div>
+
+  <div style="height: 12px;" aria-hidden="true"></div>
+
+</section>
+</main>
+<nav class="tabbar" role="tablist" aria-label="Mini app sections">
+  <button class="tab is-active" data-target="mscreen-home" role="tab" aria-selected="true">
+    <span class="tab-ico" aria-hidden="true">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11.5 12 4l8 7.5"/><path d="M6 10v9a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-9"/><path d="M10 20v-5h4v5"/></svg>
+    </span>
+    Home
+  </button>
+  <button class="tab" data-target="mscreen-catalog" role="tab" aria-selected="false">
+    <span class="tab-ico" aria-hidden="true">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/></svg>
+    </span>
+    Catalog
+  </button>
+  <button class="tab" data-target="mscreen-access" role="tab" aria-selected="false">
+    <span class="tab-ico" aria-hidden="true">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15.5" r="1.3"/></svg>
+    </span>
+    Access
+  </button>
+  <button class="tab" data-target="mscreen-referrals" role="tab" aria-selected="false">
+    <span class="tab-ico" aria-hidden="true">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><path d="M16 5a3 3 0 0 1 0 6"/><path d="M18 14a6 6 0 0 1 3 5"/></svg>
+    </span>
+    Referrals
+  </button>
+  <button class="tab" data-target="mscreen-faq" role="tab" aria-selected="false">
+    <span class="tab-ico" aria-hidden="true">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.2 9.2a2.8 2.8 0 0 1 5.4 1c0 1.9-2.8 2.5-2.8 2.5"/><path d="M12 17h.01"/></svg>
+    </span>
+    FAQ
+  </button>
+</nav>
+</div>
+</div>
+<script>
+(function(){
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.tabbar .tab'));
+  var screensWrap = document.querySelector('.screens-m');
+  function activate(targetId){
+    var screens = document.querySelectorAll('.mscreen');
+    Array.prototype.forEach.call(screens, function(s){
+      s.classList.toggle('is-active', s.id === targetId);
+    });
+    tabs.forEach(function(t){
+      var on = t.getAttribute('data-target') === targetId;
+      t.classList.toggle('is-active', on);
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    if(screensWrap){ screensWrap.scrollTop = 0; }
+  }
+  tabs.forEach(function(t){
+    t.addEventListener('click', function(){
+      activate(t.getAttribute('data-target'));
+    });
+  });
+})();
+</script>
+</body>
+</html>
