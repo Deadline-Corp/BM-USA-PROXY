@@ -10,7 +10,7 @@ import urllib.parse
 
 import pytest
 from app.core.config import settings
-from app.core.errors import Forbidden, ValidationError
+from app.core.errors import Unauthorized, ValidationError
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -39,13 +39,13 @@ def test_access_token_roundtrip() -> None:
 
 def test_wrong_token_type_rejected() -> None:
     refresh = create_refresh_token(admin_id=1)
-    with pytest.raises(Forbidden):
+    with pytest.raises(Unauthorized):
         decode_token(refresh, expected_type="access")
 
 
 def test_tampered_token_rejected() -> None:
     token = create_access_token(admin_id=1, role="operator")
-    with pytest.raises(Forbidden):
+    with pytest.raises(Unauthorized):
         decode_token(token + "x", expected_type="access")
 
 

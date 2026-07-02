@@ -15,7 +15,7 @@ from argon2.exceptions import VerifyMismatchError
 from cryptography.fernet import Fernet
 
 from app.core.config import settings
-from app.core.errors import Forbidden, ValidationError
+from app.core.errors import Unauthorized, ValidationError
 
 # ── Admin passwords ─────────────────────────────────────────────────────
 _ph = PasswordHasher()
@@ -64,11 +64,11 @@ def decode_token(token: str, *, expected_type: str) -> dict[str, Any]:
             token, settings.admin_jwt_secret, algorithms=["HS256"]
         )
     except jwt.ExpiredSignatureError as exc:
-        raise Forbidden("token expired") from exc
+        raise Unauthorized("token expired") from exc
     except jwt.InvalidTokenError as exc:
-        raise Forbidden("invalid token") from exc
+        raise Unauthorized("invalid token") from exc
     if payload.get("type") != expected_type:
-        raise Forbidden("wrong token type")
+        raise Unauthorized("wrong token type")
     return payload
 
 

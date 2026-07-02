@@ -32,11 +32,22 @@ def create_app() -> FastAPI:
     app.add_exception_handler(DomainError, domain_error_handler)  # type: ignore[arg-type]
 
     from app.api.health import router as health_router
+    from app.api.twa.router import router as twa_router
 
     app.include_router(health_router)
+    app.include_router(twa_router)
 
+    _register_admin(app)
     _register_telegram_webhook(app)
     return app
+
+
+def _register_admin(app: FastAPI) -> None:
+    try:
+        from app.api.admin.router import router as admin_router
+    except ModuleNotFoundError:
+        return
+    app.include_router(admin_router)
 
 
 def _register_telegram_webhook(app: FastAPI) -> None:

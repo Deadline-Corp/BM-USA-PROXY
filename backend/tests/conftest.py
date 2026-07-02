@@ -7,9 +7,15 @@ pure-unit suite (security primitives) still runs anywhere.
 
 from __future__ import annotations
 
+import asyncio
 import os
+import sys
 
 from cryptography.fernet import Fernet
+
+# asyncpg + redis clean up better on Windows with the Selector loop (not Proactor).
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 # --- env must be set before any `app.*` import (settings are cached) -------
 os.environ.setdefault("ENV", "local")
@@ -17,6 +23,7 @@ os.environ.setdefault("BOT_TOKEN", "123456:TEST-BOT-TOKEN-aaaaaaaaaaaaaaaaaaaaaa
 os.environ.setdefault("ADMIN_JWT_SECRET", "test-secret-please-change-32bytes-minimum!!")
 os.environ.setdefault("CREDENTIALS_KEY", Fernet.generate_key().decode())
 os.environ.setdefault("SEED_ADMIN_PASSWORD", "test-owner-pw-123")
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/15")  # isolated test DB
 
 from urllib.parse import urlsplit  # noqa: E402
 

@@ -35,8 +35,15 @@ class NotFound(DomainError):
     status = 404
 
 
+class Unauthorized(DomainError):
+    """Authentication required or failed (client should (re)authenticate)."""
+
+    code = "unauthorized"
+    status = 401
+
+
 class Forbidden(DomainError):
-    """Not allowed."""
+    """Authenticated but not allowed."""
 
     code = "forbidden"
     status = 403
