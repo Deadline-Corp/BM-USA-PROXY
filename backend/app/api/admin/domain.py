@@ -10,6 +10,7 @@ from __future__ import annotations
 import secrets
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter
@@ -44,7 +45,7 @@ from app.models import (
     User,
 )
 from app.models.access import Access
-from app.services import audit
+from app.services import audit, referral
 from app.services import settings as settings_svc
 from app.services.notifications import enqueue
 from app.services.provisioning import allocator
@@ -916,6 +917,9 @@ async def refund_order(
     )
     session.add(refund)
     await session.flush()
+
+    # claw back the referral accrual pro-rata to the refunded amount
+    await referral.reverse(session, order=order, refund_amount_usd=Decimal(str(body.amount_usd)))
 
     await enqueue(
         session, user_id=order.user_id, template_code="refund_processed",

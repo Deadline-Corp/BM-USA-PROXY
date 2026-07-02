@@ -33,9 +33,11 @@ def create_app() -> FastAPI:
 
     from app.api.health import router as health_router
     from app.api.twa.router import router as twa_router
+    from app.api.webhooks import router as webhooks_router
 
     app.include_router(health_router)
     app.include_router(twa_router)
+    app.include_router(webhooks_router)
 
     _register_admin(app)
     _register_telegram_webhook(app)

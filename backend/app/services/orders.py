@@ -16,6 +16,7 @@ from app.core.errors import (
     ValidationError,
 )
 from app.models import Access, Invoice, Order, Tariff, User
+from app.services import referral
 from app.services import settings as settings_svc
 from app.services.catalog import trial_available
 from app.services.notifications import enqueue
@@ -113,6 +114,7 @@ async def mark_paid(session: AsyncSession, *, order: Order, source: str) -> None
         template_code="payment_received",
         payload={"order_public_id": str(order.public_id)},
     )
+    await referral.accrue(session, order=order)  # no-op if no referrer / admin origin
     if order.is_extension and order.extends_access_id:
         access = await session.get(Access, order.extends_access_id)
         if access is not None:
