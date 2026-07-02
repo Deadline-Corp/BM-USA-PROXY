@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from sqlalchemy import func, select
-
 from app.models import Broadcast, BroadcastDelivery, Channel, Post, User
 from app.services import content
+from sqlalchemy import func, select
 
 
 async def _post(session, code: str) -> Post:
