@@ -1,0 +1,115 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+  }
+
+  body {
+    @apply bg-app font-body text-text;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+}
+
+@layer utilities {
+  /* Money, timers, credentials — always tabular-nums monospace. */
+  .num {
+    font-family: theme("fontFamily.mono");
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: theme("colors.border.2") transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: theme("colors.border.2");
+    border-radius: 99px;
+  }
+
+  /* Minimal markdown styling for the Terms-of-Service body (react-markdown
+     output) — deliberately hand-rolled instead of pulling in
+     @tailwindcss/typography for a handful of elements. */
+  .prose-terms h1,
+  .prose-terms h2,
+  .prose-terms h3 {
+    font-family: theme("fontFamily.head");
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: theme("colors.text.DEFAULT");
+    margin: 1em 0 0.4em;
+  }
+
+  .prose-terms h1:first-child,
+  .prose-terms h2:first-child,
+  .prose-terms h3:first-child {
+    margin-top: 0;
+  }
+
+  .prose-terms h1 {
+    font-size: 16px;
+  }
+
+  .prose-terms h2 {
+    font-size: 14.5px;
+  }
+
+  .prose-terms h3 {
+    font-size: 13.5px;
+  }
+
+  .prose-terms p {
+    margin: 0.6em 0;
+  }
+
+  .prose-terms ul,
+  .prose-terms ol {
+    margin: 0.6em 0;
+    padding-left: 1.25em;
+  }
+
+  .prose-terms li {
+    margin: 0.3em 0;
+  }
+
+  .prose-terms li::marker {
+    color: theme("colors.text.3");
+  }
+
+  .prose-terms a {
+    color: theme("colors.accent.DEFAULT");
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .prose-terms strong {
+    color: theme("colors.text.DEFAULT");
+    font-weight: 600;
+  }
+
+  .prose-terms code {
+    font-family: theme("fontFamily.mono");
+    font-size: 11.5px;
+    background: theme("colors.surface.2");
+    border: 1px solid theme("colors.border.DEFAULT");
+    border-radius: 5px;
+    padding: 1px 5px;
+  }
+}
