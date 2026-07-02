@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply m-0 bg-bg text-text font-body text-[15px] leading-[1.5] font-normal antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-head font-semibold leading-[1.2] m-0;
+    letter-spacing: -0.02em;
+  }
+
+  h1 {
+    font-size: 1.953rem;
+  }
+  h2 {
+    font-size: 1.563rem;
+  }
+  h3 {
+    font-size: 1.25rem;
+  }
+  p {
+    margin: 0;
+  }
+  button {
+    font-family: inherit;
+  }
+
+  ::selection {
+    background: theme("colors.accent.soft");
+    color: theme("colors.text.DEFAULT");
+  }
+
+  /* scrollbar */
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: theme("colors.border.2");
+    border-radius: 99px;
+    border: 3px solid theme("colors.bg");
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: theme("colors.text.3");
+  }
+
+  :where(button, a, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid theme("colors.accent.DEFAULT");
+    outline-offset: 2px;
+    border-radius: theme("borderRadius.sm");
+  }
+}
+
+@layer utilities {
+  .num {
+    @apply font-mono tabular-nums;
+  }
+}
