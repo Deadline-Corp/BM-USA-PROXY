@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: bm
+          POSTGRES_PASSWORD: bm
+          POSTGRES_DB: bm_usa_proxy
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U bm -d bm_usa_proxy"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://bm:bm@localhost:5432/bm_usa_proxy
+      REDIS_URL: redis://localhost:6379/0
+      BOT_TOKEN: "123456:CI-DUMMY-TOKEN"
+      ADMIN_JWT_SECRET: ci-secret-please-change-32bytes-minimum!!
+      CREDENTIALS_KEY: ""  # generated below
+      SEED_ADMIN_PASSWORD: ci-owner-pw
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --extra dev
+      - name: Generate Fernet key
+        run: echo "CREDENTIALS_KEY=$(uv run python -c 'from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())')" >> "$GITHUB_ENV"
+      - name: Lint (ruff)
+        run: uv run ruff check .
+      - name: Type check (mypy)
+        run: uv run mypy app
+      - name: Migrations up / down / up (OPS-1.4)
+        run: |
+          uv run alembic upgrade head
+          uv run alembic check
+          uv run alembic downgrade base
+          uv run alembic upgrade head
+      - name: Tests
+        run: uv run pytest -q
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
