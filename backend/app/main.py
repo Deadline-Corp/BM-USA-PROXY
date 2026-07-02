@@ -41,7 +41,25 @@ def create_app() -> FastAPI:
 
     _register_admin(app)
     _register_telegram_webhook(app)
+    _mount_spas(app)
     return app
+
+
+def _mount_spas(app: FastAPI) -> None:
+    """Serve the built SPAs at /app (mini-app) and /admin, if their dist/ is present.
+
+    Candidate roots cover local dev (../frontend/<x>/dist) and the Docker image
+    (/static/<x>) where the multi-stage build copies the bundles.
+    """
+    import os
+
+    from fastapi.staticfiles import StaticFiles
+
+    for mount, name in (("/app", "miniapp"), ("/admin", "admin")):
+        for root in (f"../frontend/{name}/dist", f"/static/{name}"):
+            if os.path.isdir(root):
+                app.mount(mount, StaticFiles(directory=root, html=True), name=name)
+                break
 
 
 def _register_admin(app: FastAPI) -> None:

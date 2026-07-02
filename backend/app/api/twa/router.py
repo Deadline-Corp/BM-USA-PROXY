@@ -233,6 +233,27 @@ async def referral(user: CurrentUser, session: DbSession) -> dict[str, Any]:
     }
 
 
+class PayoutRequest(BaseModel):
+    wallet_address: str
+    network: str
+
+
+@router.post("/referral/payout")
+async def request_payout(
+    body: PayoutRequest, user: CurrentUser, session: DbSession
+) -> dict[str, Any]:
+    from app.services import referral
+
+    payout = await referral.request_payout(
+        session, user=user, wallet_address=body.wallet_address, network=body.network
+    )
+    return {
+        "payout_id": payout.id,
+        "amount_usd": float(payout.amount_usd),
+        "status": payout.status,
+    }
+
+
 # ── faq / requests / terms ──────────────────────────────────────────────
 @router.get("/faq")
 async def faq(user: CurrentUser, session: DbSession) -> list[dict[str, Any]]:
