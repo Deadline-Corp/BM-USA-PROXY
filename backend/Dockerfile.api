@@ -1,16 +1,26 @@
-FROM python:3.12-slim AS base
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+# syntax=docker/dockerfile:1
+# Build context = repo root (see docker-compose api service).
+
+# ── frontend bundles ────────────────────────────────────────────────────
+FROM node:24-slim AS frontend
+WORKDIR /fe
+COPY frontend/miniapp/package*.json frontend/miniapp/
+RUN cd frontend/miniapp && npm ci
+COPY frontend/miniapp frontend/miniapp
+RUN cd frontend/miniapp && npm run build
+# admin is optional until built; never fail the image if it's absent/broken
+COPY frontend/admin frontend/admin
+RUN cd frontend/admin && (npm ci && npm run build) || mkdir -p dist
+
+# ── backend ─────────────────────────────────────────────────────────────
+FROM python:3.12-slim
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1
 WORKDIR /app
-
-# uv for fast, reproducible installs
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-
-COPY pyproject.toml ./
+COPY backend/pyproject.toml ./
 RUN uv pip install --system .
-
-COPY . .
-
+COPY backend/ .
+COPY --from=frontend /fe/frontend/miniapp/dist /static/miniapp
+COPY --from=frontend /fe/frontend/admin/dist /static/admin
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

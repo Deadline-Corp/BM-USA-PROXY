@@ -27,8 +27,8 @@ services:
 
   api:
     build:
-      context: ./backend
-      dockerfile: Dockerfile.api
+      context: .
+      dockerfile: backend/Dockerfile.api
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://bm:bm@postgres:5432/bm_usa_proxy
