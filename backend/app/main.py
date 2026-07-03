@@ -28,7 +28,16 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     app = FastAPI(title="BM USA Proxy API", version="0.1.0", lifespan=lifespan)
+    from fastapi.middleware.cors import CORSMiddleware
+
     app.add_middleware(RequestIdMiddleware)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[settings.public_base_url],  # explicit allowlist, never "*"
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     app.add_exception_handler(DomainError, domain_error_handler)  # type: ignore[arg-type]
 
     from app.api.health import router as health_router

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from aiogram import Bot
@@ -40,9 +41,7 @@ _APP_BUTTON_CODES = {
 }
 
 
-class _Safe(dict):
-    def __missing__(self, key: str) -> str:
-        return ""
+_PLACEHOLDER = re.compile(r"\{(\w+)\}")
 
 
 async def render(session: AsyncSession, code: str, payload: dict[str, Any]) -> str | None:
@@ -50,7 +49,10 @@ async def render(session: AsyncSession, code: str, payload: dict[str, Any]) -> s
     template = override if isinstance(override, str) and override else DEFAULT_TEXTS.get(code)
     if not template:
         return None
-    return template.format_map(_Safe(payload or {}))
+    data = payload or {}
+    # Plain {name} substitution — NOT str.format, which would let an operator-editable
+    # template do {x.__class__...} attribute traversal. \w+ never matches a dotted path.
+    return _PLACEHOLDER.sub(lambda m: str(data.get(m.group(1), "")), template)
 
 
 def _keyboard(code: str) -> InlineKeyboardMarkup | None:

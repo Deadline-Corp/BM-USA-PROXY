@@ -149,6 +149,8 @@ async def balances(session: AsyncSession, user_id: int) -> dict[str, float]:
 async def request_payout(
     session: AsyncSession, *, user: User, wallet_address: str, network: str
 ) -> Payout:
+    # Serialize concurrent payout requests for this user → no phantom double-payout (TOCTOU).
+    await session.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": user.id})
     available = await _sum(session, user.id, "available")
     min_payout = Decimal(str(await settings_svc.get(session, "referral_min_payout_usd", 20)))
     if available < min_payout:
@@ -192,6 +194,14 @@ async def mark_payout_paid(
     payout = await _get_payout(session, payout_id)
     if payout.status not in ("requested", "approved"):
         raise Conflict("payout not payable")
+    # Defense-in-depth: never pay out more than the ledger rows actually backing this payout.
+    backing = await session.scalar(
+        select(func.coalesce(func.sum(ReferralLedger.amount_usd), 0)).where(
+            ReferralLedger.payout_id == payout.id
+        )
+    )
+    if _q(Decimal(str(backing))) != _q(Decimal(str(payout.amount_usd))):
+        raise Conflict("payout amount does not match its backing ledger (possible duplicate)")
     payout.status = "paid"
     payout.tx_hash = tx_hash
     payout.operator_id = operator_id

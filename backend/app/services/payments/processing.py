@@ -8,6 +8,7 @@ payment_events dedupe index + the forward-only invoice state machine.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
@@ -40,7 +41,11 @@ async def ingest_webhook(
         provider=provider,
         provider_event_id=dto.provider_event_id,
         provider_invoice_id=dto.provider_invoice_id,
-        payload={"status": dto.status, "raw_len": len(raw_body)},
+        payload={
+            "status": dto.status,
+            "raw_len": len(raw_body),
+            "paid_amount_usd": str(dto.paid_amount_usd) if dto.paid_amount_usd is not None else None,
+        },
         signature_valid=signature_valid,
     )
     if dto.provider_event_id is not None:
@@ -77,19 +82,27 @@ async def process_payment_event(session: AsyncSession, event_id: int) -> str:
         return "no_invoice"
 
     new_status = str((event.payload or {}).get("status", "")) or "pending"
-    if _RANK.get(new_status, -1) <= _RANK.get(invoice.status, -1) and new_status != "paid":
+    # Forward-only for EVERY status (incl. 'paid'): a 'paid' event must never override
+    # a terminal (failed/expired) or manual_review invoice — the operator resolves those.
+    if _RANK.get(new_status, -1) <= _RANK.get(invoice.status, -1):
         event.processed_at = now
         event.processing_result = f"ignored:stale({new_status}<= {invoice.status})"
         return "stale"
 
     result = "applied"
     if new_status == "paid":
-        if invoice.status != "paid":
+        # Amount check: if the provider reports the paid amount and it's short of the
+        # invoice, route to manual review instead of provisioning for free.
+        paid_raw = (event.payload or {}).get("paid_amount_usd")
+        if paid_raw is not None and Decimal(str(paid_raw)) < Decimal(str(invoice.amount_usd)):
+            invoice.status = "manual_review"
+            result = "manual_review:amount_short"
+        else:
             invoice.status = "paid"
             invoice.paid_at = now
-        order = await session.get(Order, invoice.order_id)
-        if order is not None:
-            await mark_paid(session, order=order, source=f"webhook:{event.provider}")
+            order = await session.get(Order, invoice.order_id)
+            if order is not None:
+                await mark_paid(session, order=order, source=f"webhook:{event.provider}")
     elif new_status in ("underpaid", "overpaid"):
         invoice.status = "manual_review"
         result = f"manual_review:{new_status}"

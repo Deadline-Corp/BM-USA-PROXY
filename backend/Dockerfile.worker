@@ -11,4 +11,7 @@ RUN uv pip install --system .
 
 COPY . .
 
+RUN useradd -r -u 10001 appuser && chown -R appuser /app
+USER appuser
+
 CMD ["arq", "app.workers.main.WorkerSettings"]

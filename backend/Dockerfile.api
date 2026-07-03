@@ -22,5 +22,7 @@ RUN uv pip install --system .
 COPY backend/ .
 COPY --from=frontend /fe/frontend/miniapp/dist /static/miniapp
 COPY --from=frontend /fe/frontend/admin/dist /static/admin
+RUN useradd -r -u 10001 appuser && chown -R appuser /app /static
+USER appuser
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -899,6 +899,8 @@ async def refund_order(
     order_id: str, body: RefundBody, admin: CurrentAdmin, session: DbSession
 ) -> dict[str, Any]:
     order = await _get_order(session, order_id)
+    if not 0 < body.amount_usd <= float(order.amount_usd):
+        raise ValidationError("refund amount must be > 0 and <= the order amount")
     order.status = "refunded"
 
     active_access = await session.scalar(
