@@ -83,6 +83,9 @@ async def deliver_pending(session: AsyncSession, bot: Bot, *, limit: int = 25) -
             blocked += 1
         except TelegramRetryAfter:
             n.attempts += 1  # leave pending; next tick retries
+            if n.attempts >= 10:
+                n.status = "failed"
+                failed += 1
         except Exception as exc:  # noqa: BLE001
             n.attempts += 1
             n.last_error = str(exc)[:300]

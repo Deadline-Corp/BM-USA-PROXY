@@ -9,6 +9,7 @@ import { Button } from "../shared/components/Button";
 import { Num } from "../shared/components/Num";
 import { Sheet } from "../shared/components/Sheet";
 import { useCopyToClipboard } from "../shared/hooks/useCopyToClipboard";
+import { ApiError } from "../shared/api/client";
 import { formatUsd } from "../shared/lib/format";
 import { ErrorState } from "../shared/components/ErrorState";
 
@@ -51,10 +52,14 @@ export function ReferralScreen() {
   }
 
   async function handlePayoutSubmit() {
-    await requestPayout.mutateAsync({ wallet_address: walletAddress, network });
-    setPayoutSheetOpen(false);
-    setWalletAddress("");
-    showToast(strings.referral.payoutSent);
+    try {
+      await requestPayout.mutateAsync({ wallet_address: walletAddress, network });
+      setPayoutSheetOpen(false);
+      setWalletAddress("");
+      showToast(strings.referral.payoutSent);
+    } catch (e) {
+      showToast(e instanceof ApiError ? e.message : strings.errors.generic, "error");
+    }
   }
 
   if (referralQuery.isLoading) {

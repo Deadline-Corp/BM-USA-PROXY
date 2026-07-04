@@ -1,16 +1,31 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import clsx from "clsx";
 import { navGroups } from "@/layout/navConfig";
 import { strings } from "@/shared/strings";
+import { authApi } from "@/shared/api/endpoints";
 import { useAuthStore } from "@/shared/auth/authStore";
 import { initials } from "@/shared/lib/format";
 import { useDashboardSummary } from "@/shared/hooks/useDashboard";
+import { IconLogout } from "@/shared/components/icons";
 
 export function Sidebar() {
   const admin = useAuthStore((s) => s.admin);
+  const navigate = useNavigate();
   // Pending-requests badge count sourced from the same dashboard summary
   // the Dashboard screen uses — one query, cached, reused here.
   const { data: summary } = useDashboardSummary();
+
+  async function handleLogout() {
+    // Best-effort: clear the httpOnly refresh cookie server-side, but never
+    // block the UI on it — clear the local session and redirect regardless.
+    try {
+      await authApi.logout();
+    } catch {
+      /* ignore — session is cleared locally either way */
+    }
+    useAuthStore.getState().clearSession();
+    navigate("/login", { replace: true });
+  }
 
   return (
     <aside className="bg-surface border-r border-border flex flex-col sticky top-0 h-screen overflow-hidden flex-none w-sidebar">
@@ -75,10 +90,19 @@ export function Sidebar() {
         <div className="w-9 h-9 flex-none rounded-[10px] bg-surface-2 border border-border-2 grid place-items-center font-mono text-[.78rem] font-semibold text-accent tracking-[.02em]">
           {initials(admin?.display_name)}
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="text-[.86rem] font-semibold text-text truncate">{admin?.display_name}</div>
           <div className="text-[.72rem] text-text-3 capitalize">{admin?.role}</div>
         </div>
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-text-3 transition-colors duration-150 ease-brand hover:bg-surface-2 hover:text-text"
+          aria-label={strings.auth.logout}
+          title={strings.auth.logout}
+        >
+          <IconLogout className="w-4 h-4" aria-hidden="true" />
+        </button>
       </div>
     </aside>
   );

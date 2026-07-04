@@ -1,24 +1,22 @@
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: bm
-      POSTGRES_PASSWORD: bm
-      POSTGRES_DB: bm_usa_proxy
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:-bm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bm}
+      POSTGRES_DB: ${POSTGRES_DB:-bm_usa_proxy}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U bm -d bm_usa_proxy"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bm} -d ${POSTGRES_DB:-bm_usa_proxy}"]
       interval: 5s
       timeout: 3s
       retries: 10
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -29,12 +27,19 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile.api
+    restart: unless-stopped
     env_file: .env
-    environment:
-      DATABASE_URL: postgresql+asyncpg://bm:bm@postgres:5432/bm_usa_proxy
-      REDIS_URL: redis://redis:6379/0
     ports:
       - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-bm}:${POSTGRES_PASSWORD:-bm}@postgres:5432/${POSTGRES_DB:-bm_usa_proxy}
+      REDIS_URL: redis://redis:6379/0
     depends_on:
       postgres:
         condition: service_healthy
@@ -47,9 +52,10 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.worker
+    restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://bm:bm@postgres:5432/bm_usa_proxy
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-bm}:${POSTGRES_PASSWORD:-bm}@postgres:5432/${POSTGRES_DB:-bm_usa_proxy}
       REDIS_URL: redis://redis:6379/0
     depends_on:
       postgres:
@@ -57,7 +63,7 @@ services:
       redis:
         condition: service_healthy
       api:
-        condition: service_started
+        condition: service_healthy
     command: arq app.workers.main.WorkerSettings
 
 volumes:

@@ -8,9 +8,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: backend
@@ -42,6 +47,8 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
+          cache: true
+          cache-dependency-glob: "uv.lock"
       - run: uv sync --extra dev
       - name: Generate Fernet key
         run: echo "CREDENTIALS_KEY=$(uv run python -c 'from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())')" >> "$GITHUB_ENV"
@@ -57,9 +64,12 @@ jobs:
           uv run alembic upgrade head
       - name: Tests
         run: uv run pytest -q
+      - name: Build Docker images
+        run: docker compose build
 
   security:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Secret scan (gitleaks)

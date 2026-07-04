@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AuditLog
@@ -20,6 +21,12 @@ async def write(
     after: dict | None = None,
     ip: str | None = None,
 ) -> None:
+    # Fall back to the request IP bound by RequestIdMiddleware on the structlog
+    # contextvars, so callers don't need to thread an `ip` argument through every
+    # admin endpoint signature.
+    if ip is None:
+        ctx = structlog.contextvars.get_contextvars()
+        ip = ctx.get("request_ip")
     session.add(
         AuditLog(
             admin_id=admin_id,

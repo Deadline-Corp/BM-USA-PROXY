@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import contextlib
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.logging import log
 from app.models import Access, AccessEvent, Connection, Invoice, Order
 from app.services.notifications import enqueue
 from app.services.provisioning.registry import get_provisioner
@@ -30,13 +30,15 @@ async def sweep_access_expiries(session: AsyncSession) -> dict[str, int]:
         if access.expires_at is None:
             continue
         if access.expires_at <= now:
-            with contextlib.suppress(Exception):
+            try:
                 conn = await session.get(Connection, access.connection_id)
                 if conn is not None and access.iproxy_access_id:
                     await get_provisioner().revoke(
                         iproxy_connection_id=conn.iproxy_connection_id,
                         iproxy_access_id=access.iproxy_access_id,
                     )
+            except Exception as exc:  # noqa: BLE001 — best-effort revoke; log and continue
+                log.warning("revoke.failed", access_id=access.id, error=str(exc))
             access.status = "expired"
             access.revoked_at = now
             session.add(AccessEvent(access_id=access.id, type="expired", actor="system"))

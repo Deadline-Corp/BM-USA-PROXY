@@ -42,7 +42,11 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
         request_id = request.headers.get("X-Request-ID", uuid.uuid4().hex)
-        structlog.contextvars.bind_contextvars(request_id=request_id, path=request.url.path)
+        client = request.client
+        request_ip = client.host if client else None
+        structlog.contextvars.bind_contextvars(
+            request_id=request_id, path=request.url.path, request_ip=request_ip
+        )
         try:
             response = await call_next(request)
         finally:

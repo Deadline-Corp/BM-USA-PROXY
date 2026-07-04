@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import SessionFactory
 from app.core.errors import Forbidden, Unauthorized
-from app.core.security import decode_token, parse_init_data
+from app.core.security import decode_token, is_blacklisted, parse_init_data
 from app.models import AdminUser, User
 
 
@@ -54,13 +54,17 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
 async def admin_claims(authorization: str | None = Header(default=None)) -> dict[str, object]:
-    """Validate `Authorization: Bearer <accessJWT>` and return its claims."""
+    """Validate `Authorization: Bearer *** and return its claims."""
     if not authorization:
         raise Unauthorized("missing bearer token")
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "bearer" or not token:
         raise Unauthorized("missing bearer token")
-    return decode_token(token, expected_type="access")
+    claims = decode_token(token, expected_type="access")
+    jti = claims.get("jti")
+    if jti and await is_blacklisted(str(jti)):
+        raise Unauthorized("token revoked")
+    return claims
 
 
 async def get_current_admin(

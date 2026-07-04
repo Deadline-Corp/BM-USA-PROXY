@@ -14,7 +14,7 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -134,7 +134,7 @@ async def dashboard_revenue(
             """
             SELECT date(paid_at) AS d, coalesce(sum(amount_usd), 0) AS revenue
             FROM orders
-            WHERE status = 'completed' AND paid_at >= now() - (:days || ' days')::interval
+            WHERE status = 'completed' AND paid_at >= now() - make_interval(days => :days)
             GROUP BY date(paid_at)
             ORDER BY d
             """
@@ -181,18 +181,34 @@ async def list_clients(
     stmt = stmt.order_by(User.created_at.desc())
 
     rows, total = await _paginated(session, stmt, count_stmt, limit=limit, offset=offset)
+    user_ids = [user.id for (user,) in rows]
+    # Two bulk queries replace the per-client N+1 (total_spent + active_count).
+    # Kept separate to avoid a cartesian-product inflation between orders and accesses.
+    spent_by_user: dict[int, float] = {}
+    active_by_user: dict[int, int] = {}
+    if user_ids:
+        spent_rows = (
+            await session.execute(
+                select(User.id, func.coalesce(func.sum(Order.amount_usd), 0))
+                .outerjoin(Order, (Order.user_id == User.id) & (Order.status == "completed"))
+                .where(User.id.in_(user_ids))
+                .group_by(User.id)
+            )
+        ).all()
+        for uid, spent in spent_rows:
+            spent_by_user[uid] = float(spent or 0)
+        active_rows = (
+            await session.execute(
+                select(User.id, func.count(Access.id))
+                .outerjoin(Access, (Access.user_id == User.id) & (Access.status.in_(_ACTIVE_ACCESS)))
+                .where(User.id.in_(user_ids))
+                .group_by(User.id)
+            )
+        ).all()
+        for uid, active in active_rows:
+            active_by_user[uid] = int(active or 0)
     items = []
     for (user,) in rows:
-        total_spent = await session.scalar(
-            select(func.coalesce(func.sum(Order.amount_usd), 0)).where(
-                Order.user_id == user.id, Order.status == "completed"
-            )
-        )
-        active_count = await session.scalar(
-            select(func.count()).select_from(Access).where(
-                Access.user_id == user.id, Access.status.in_(_ACTIVE_ACCESS)
-            )
-        )
         items.append(
             {
                 "id": user.id,
@@ -201,8 +217,8 @@ async def list_clients(
                 "first_name": user.first_name,
                 "email": user.email,
                 "status": user.status,
-                "total_spent": float(total_spent or 0),
-                "active": int(active_count or 0),
+                "total_spent": spent_by_user.get(user.id, 0.0),
+                "active": active_by_user.get(user.id, 0),
                 "created_at": user.created_at.isoformat(),
             }
         )
@@ -349,7 +365,7 @@ async def unban_client(client_id: int, admin: CurrentAdmin, session: DbSession) 
 
 
 class ClientMessage(BaseModel):
-    text: str
+    text: str = Field(max_length=4096)
 
 
 @router.post("/clients/{client_id}/message")
@@ -1192,9 +1208,9 @@ async def get_referral_settings(admin: CurrentAdmin, session: DbSession) -> dict
 
 
 class ReferralSettingsPatch(BaseModel):
-    referral_pct: float | None = None
-    referral_hold_days: int | None = None
-    referral_min_payout_usd: float | None = None
+    referral_pct: float | None = Field(default=None, ge=0, le=100)
+    referral_hold_days: int | None = Field(default=None, ge=0, le=365)
+    referral_min_payout_usd: float | None = Field(default=None, ge=0)
 
 
 @router.patch("/settings/referral")
@@ -1644,10 +1660,30 @@ class SettingsPatch(BaseModel):
     values: dict[str, Any]
 
 
+# Allowlist for the bulk PATCH /settings endpoint. Keys with their own dedicated
+# endpoint ('tos', 'notify_texts:*') are excluded to prevent accidental clobbering.
+_SETTINGS_WHITELIST: frozenset[str] = frozenset(
+    {
+        "referral_pct",
+        "referral_hold_days",
+        "referral_min_payout_usd",
+        "invoice_ttl_minutes",
+        "rotation_cooldown_sec",
+        "pool_low_watermark",
+        "attribution",
+    }
+)
+
+
 @router.patch("/settings")
 async def patch_all_settings(
     body: SettingsPatch, admin: Owner, session: DbSession
 ) -> dict[str, Any]:
+    rejected = [k for k in body.values if k not in _SETTINGS_WHITELIST]
+    if rejected:
+        raise ValidationError(
+            f"unknown settings keys (use the dedicated endpoint): {', '.join(sorted(rejected))}"
+        )
     for key, value in body.values.items():
         await settings_svc.set_value(session, key, value, admin_id=admin.id)
     await audit.write(session, admin_id=admin.id, action="settings.update", entity="app_setting",
@@ -1740,6 +1776,13 @@ async def patch_admin(
     target = await session.get(AdminUser, admin_id)
     if target is None:
         raise NotFound("admin not found")
+    # Owner self-protection: an owner must not downgrade their own role or
+    # deactivate themselves (would lock the system out of any active owner).
+    if admin.id == admin_id:
+        new_role = body.role
+        new_is_active = body.is_active
+        if (new_role is not None and new_role != "owner") or new_is_active is False:
+            raise Conflict("cannot downgrade or deactivate self")
     updates = body.model_dump(exclude_unset=True, exclude={"password"})
     for field, value in updates.items():
         setattr(target, field, value)

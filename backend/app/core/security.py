@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import time
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -33,6 +34,10 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 
 # ── Admin JWT ───────────────────────────────────────────────────────────
+_JWT_ISS = "bm-usa-proxy"
+_JWT_AUD = "admin-api"
+
+
 def _now() -> datetime:
     return datetime.now(tz=UTC)
 
@@ -42,6 +47,9 @@ def create_access_token(admin_id: int, role: str) -> str:
         "sub": str(admin_id),
         "role": role,
         "type": "access",
+        "jti": uuid.uuid4().hex,
+        "iss": _JWT_ISS,
+        "aud": _JWT_AUD,
         "iat": int(_now().timestamp()),
         "exp": int((_now() + timedelta(minutes=settings.admin_jwt_ttl_min)).timestamp()),
     }
@@ -52,6 +60,9 @@ def create_refresh_token(admin_id: int) -> str:
     payload = {
         "sub": str(admin_id),
         "type": "refresh",
+        "jti": uuid.uuid4().hex,
+        "iss": _JWT_ISS,
+        "aud": _JWT_AUD,
         "iat": int(_now().timestamp()),
         "exp": int((_now() + timedelta(days=settings.admin_refresh_ttl_days)).timestamp()),
     }
@@ -61,7 +72,11 @@ def create_refresh_token(admin_id: int) -> str:
 def decode_token(token: str, *, expected_type: str) -> dict[str, Any]:
     try:
         payload: dict[str, Any] = jwt.decode(
-            token, settings.admin_jwt_secret, algorithms=["HS256"]
+            token,
+            settings.admin_jwt_secret,
+            algorithms=["HS256"],
+            issuer=_JWT_ISS,
+            audience=_JWT_AUD,
         )
     except jwt.ExpiredSignatureError as exc:
         raise Unauthorized("token expired") from exc
@@ -70,6 +85,25 @@ def decode_token(token: str, *, expected_type: str) -> dict[str, Any]:
     if payload.get("type") != expected_type:
         raise Unauthorized("wrong token type")
     return payload
+
+
+# ── JWT blacklist (logout / revocation) via Redis ───────────────────────
+def _bl_key(jti: str) -> str:
+    return f"jwt:bl:{jti}"
+
+
+async def blacklist_token(jti: str, exp: int) -> None:
+    """Mark a token's jti as revoked until its `exp` (unix seconds)."""
+    from app.core.redis import redis_client
+
+    ttl = max(1, exp - int(_now().timestamp()))
+    await redis_client.set(_bl_key(jti), "1", ex=ttl)
+
+
+async def is_blacklisted(jti: str) -> bool:
+    from app.core.redis import redis_client
+
+    return bool(await redis_client.get(_bl_key(jti)))
 
 
 # ── Credential encryption (proxy host:port:login:pass at rest) ──────────

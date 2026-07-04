@@ -47,9 +47,11 @@ async def raw_client(engine):
 
 
 async def _login(c: AsyncClient) -> str:
+    pwd = settings.seed_admin_password
+    assert pwd is not None
     r = await c.post(
         "/api/admin/auth/login",
-        json={"email": settings.seed_admin_email, "password": settings.seed_admin_password},
+        json={"email": settings.seed_admin_email, "password": pwd.get_secret_value()},
     )
     assert r.status_code == 200, r.text
     return r.json()["access_token"]

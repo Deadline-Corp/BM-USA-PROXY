@@ -73,7 +73,8 @@ async def seed_settings(session: AsyncSession) -> None:
 
 
 async def seed_admin(session: AsyncSession) -> None:
-    if not settings.seed_admin_password:
+    pwd = settings.seed_admin_password
+    if pwd is None:
         log.warning("seed.admin_skipped", reason="SEED_ADMIN_PASSWORD not set")
         return
     existing = await session.scalar(
@@ -84,7 +85,7 @@ async def seed_admin(session: AsyncSession) -> None:
     session.add(
         AdminUser(
             email=settings.seed_admin_email,
-            password_hash=hash_password(settings.seed_admin_password),
+            password_hash=hash_password(pwd.get_secret_value()),
             display_name="Owner",
             role="owner",
         )

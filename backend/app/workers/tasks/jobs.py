@@ -80,8 +80,11 @@ async def reconcile_invoices(ctx: dict) -> int:
             with contextlib.suppress(Exception):
                 st = await prov.fetch_invoice(inv.provider_invoice_id)
                 if st.status != inv.status:
-                    dto = PaymentEventDTO(provider_invoice_id=inv.provider_invoice_id,
-                                          status=st.status, provider_event_id=None)
+                    dto = PaymentEventDTO(
+                        provider_invoice_id=inv.provider_invoice_id,
+                        status=st.status,
+                        provider_event_id=f"recon:{prov.name}:{inv.provider_invoice_id}:{inv.status}",
+                    )
                     eid = await ingest_webhook(s, provider=prov.name, raw_body=b'{"src":"recon"}',
                                                signature_valid=True, dto=dto)
                     if eid is not None:
@@ -156,12 +159,17 @@ async def process_broadcasts(ctx: dict) -> int | None:
         now = datetime.now(UTC)
         due = (
             await s.execute(
-                select(Broadcast).where(
-                    Broadcast.status == "scheduled", Broadcast.scheduled_at <= now
-                )
+                select(Broadcast)
+                .where(Broadcast.status == "scheduled", Broadcast.scheduled_at <= now)
+                .with_for_update(skip_locked=True)
             )
         ).scalars().all()
         for b in due:
+            # Re-check after acquiring the row lock: another worker may have
+            # already flipped the status before we got here.
+            await s.refresh(b)
+            if b.status != "scheduled":
+                continue
             await materialize_broadcast(s, b)
             b.status = "sending"
             b.started_at = now

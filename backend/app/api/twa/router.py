@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from app.api.deps import CurrentUser, DbSession
@@ -119,7 +119,7 @@ async def cancel_order(public_id: str, user: CurrentUser, session: DbSession) ->
 @router.post("/orders/{public_id}/_mock_pay")
 async def mock_pay(public_id: str, user: CurrentUser, session: DbSession) -> dict[str, str]:
     """DEV ONLY: simulate a confirmed payment (MockPaymentProvider)."""
-    if settings.is_prod or settings.feature_real_payments:
+    if settings.is_prod or settings.feature_real_payments or settings.env != "local":
         raise NotFound("not found")
     order = await orders_svc.get_by_public_id(session, public_id, user_id=user.id)
     inv = await session.scalar(select(Invoice).where(Invoice.order_id == order.id))
@@ -267,8 +267,8 @@ async def faq(user: CurrentUser, session: DbSession) -> list[dict[str, Any]]:
 
 class NewRequest(BaseModel):
     type: str
-    subject: str
-    body: str
+    subject: str = Field(max_length=200)
+    body: str = Field(max_length=10000)
 
 
 @router.get("/requests")

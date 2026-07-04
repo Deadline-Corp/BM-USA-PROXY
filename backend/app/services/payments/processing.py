@@ -100,7 +100,11 @@ async def process_payment_event(session: AsyncSession, event_id: int) -> str:
         else:
             invoice.status = "paid"
             invoice.paid_at = now
-            order = await session.get(Order, invoice.order_id)
+            # Acquire the order row lock BEFORE mark_paid to serialize against the
+            # reconcile worker / admin mark_paid / mock_pay racing on the same order.
+            order = await session.scalar(
+                select(Order).where(Order.id == invoice.order_id).with_for_update()
+            )
             if order is not None:
                 await mark_paid(session, order=order, source=f"webhook:{event.provider}")
     elif new_status in ("underpaid", "overpaid"):

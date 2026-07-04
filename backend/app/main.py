@@ -35,8 +35,8 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=[settings.public_base_url],  # explicit allowlist, never "*"
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
     )
     app.add_exception_handler(DomainError, domain_error_handler)  # type: ignore[arg-type]
 
@@ -74,7 +74,8 @@ def _mount_spas(app: FastAPI) -> None:
 def _register_admin(app: FastAPI) -> None:
     try:
         from app.api.admin.router import router as admin_router
-    except ModuleNotFoundError:
+    except ModuleNotFoundError as exc:
+        log.warning("admin.router.unavailable", error=str(exc))
         return
     app.include_router(admin_router)
 

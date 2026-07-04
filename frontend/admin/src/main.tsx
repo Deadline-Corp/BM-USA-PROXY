@@ -5,6 +5,7 @@ import { BrowserRouter } from "react-router-dom";
 import { App } from "@/App";
 import { AuthProvider } from "@/shared/auth/AuthProvider";
 import { ToastProvider } from "@/shared/components/Toast";
+import { ErrorBoundary } from "@/shared/components/ErrorBoundary";
 import "@/index.css";
 
 const queryClient = new QueryClient({
@@ -19,14 +20,16 @@ const queryClient = new QueryClient({
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter basename="/admin">
-        <ToastProvider>
-          <AuthProvider>
-            <App />
-          </AuthProvider>
-        </ToastProvider>
-      </BrowserRouter>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter basename="/admin">
+          <ToastProvider>
+            <AuthProvider>
+              <App />
+            </AuthProvider>
+          </ToastProvider>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </ErrorBoundary>
   </StrictMode>,
 );

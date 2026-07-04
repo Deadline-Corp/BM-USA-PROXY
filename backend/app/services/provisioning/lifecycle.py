@@ -40,9 +40,18 @@ async def provision_access(session: AsyncSession, *, order: Order) -> Access:
     session.add(access)
     await session.flush()
 
-    issued = await get_provisioner().issue(
-        iproxy_connection_id=iproxy_conn_id, duration_minutes=duration
-    )
+    try:
+        issued = await get_provisioner().issue(
+            iproxy_connection_id=iproxy_conn_id, duration_minutes=duration
+        )
+    except ProvisioningError:
+        # Release the connection: mark the half-created access as failed so the
+        # unique "one live access per connection" index frees it for reuse.
+        access.status = "failed"
+        session.add(
+            AccessEvent(access_id=access.id, type="provision_failed", actor="system")
+        )
+        raise
     now = _utcnow()
     access.iproxy_access_id = issued.iproxy_access_id
     access.credentials_enc = encrypt_credentials(issued.credentials)

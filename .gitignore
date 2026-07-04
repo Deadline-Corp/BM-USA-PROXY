@@ -32,3 +32,10 @@ playwright/.cache/
 .DS_Store
 Thumbs.db
 *.log
+.idea/
+.vscode/
+*.swp
+.claude/
+*.tsbuildinfo
+**/vite.config.js
+**/vite.config.d.ts

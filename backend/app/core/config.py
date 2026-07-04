@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import model_validator
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Env = Literal["local", "staging", "prod"]
@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     admin_jwt_ttl_min: int = 30
     admin_refresh_ttl_days: int = 14
     seed_admin_email: str = "admin@bmusproxy.local"
-    seed_admin_password: str | None = None
+    seed_admin_password: SecretStr | None = None
 
     # Encryption
     credentials_key: str | None = None

@@ -24,6 +24,7 @@ import { useCatalog } from "../shared/hooks/useCatalog";
 import { useToast } from "../shared/components/Toast";
 import { useTermsGate } from "../shared/hooks/useTermsGate";
 import { strings } from "../shared/strings";
+import { useCountdown } from "../shared/hooks/useCountdown";
 import { SectionLabel } from "../shared/components/Card";
 import { Chip, Dot } from "../shared/components/Chip";
 import { Button } from "../shared/components/Button";
@@ -34,6 +35,7 @@ import { Sheet } from "../shared/components/Sheet";
 import { CredentialRowsSkeleton } from "../shared/components/Skeleton";
 import { ErrorState } from "../shared/components/ErrorState";
 import { useCopyToClipboard } from "../shared/hooks/useCopyToClipboard";
+import { ApiError } from "../shared/api/client";
 import { maskSecret } from "../shared/lib/format";
 import { cacheInvoice } from "../shared/lib/invoiceCache";
 import type { Carrier, ConfigType } from "../shared/api/types";
@@ -65,6 +67,10 @@ export function AccessDetailScreen() {
   const [extendSheetOpen, setExtendSheetOpen] = useState(false);
   const [howToOpen, setHowToOpen] = useState(false);
 
+  // Ticks once a second so the expiry progress bar animates smoothly. Called
+  // unconditionally (before any early return) per the Rules-of-Hooks.
+  const remainingMs = useCountdown(detailQuery.data?.expires_at);
+
   useEffect(() => {
     if (rotateCooldownUntil === null) return;
     const tick = () => {
@@ -92,11 +98,15 @@ export function AccessDetailScreen() {
 
   async function handleSwap() {
     setSwapConfirmOpen(false);
-    await swapAccess.mutateAsync({
-      location_id: swapLocationId === ANY ? undefined : swapLocationId,
-      carrier: swapCarrier === ANY ? undefined : swapCarrier,
-    });
-    showToast("Location swapped");
+    try {
+      await swapAccess.mutateAsync({
+        location_id: swapLocationId === ANY ? undefined : swapLocationId,
+        carrier: swapCarrier === ANY ? undefined : swapCarrier,
+      });
+      showToast("Location swapped");
+    } catch (e) {
+      showToast(e instanceof ApiError ? e.message : strings.errors.generic, "error");
+    }
   }
 
   async function handleExtend(tariffCode: string) {
@@ -111,8 +121,12 @@ export function AccessDetailScreen() {
   }
 
   async function handleRequestConfig(type: ConfigType) {
-    await requestConfig.mutateAsync({ type });
-    showToast(strings.access.configSentToast);
+    try {
+      await requestConfig.mutateAsync({ type });
+      showToast(strings.access.configSentToast);
+    } catch (e) {
+      showToast(e instanceof ApiError ? e.message : strings.errors.generic, "error");
+    }
   }
 
   if (detailQuery.isLoading) {
@@ -132,6 +146,13 @@ export function AccessDetailScreen() {
   const combined = `${access.credentials.host ?? ""}:${access.credentials.socks5_port ?? ""}:${
     access.credentials.login ?? ""
   }:${access.credentials.password ?? ""}`;
+
+  // Expiry progress: width = remaining / total. The total duration is taken
+  // from the catalog tariff matching this access's tariff_code (in minutes →
+  // ms). Falls back to a 100% bar when the tariff can't be resolved.
+  const totalMs =
+    (catalogQuery.data?.tariffs.find((t) => t.code === access.tariff_code)?.duration_minutes ?? 0) * 60_000;
+  const expiryPct = totalMs > 0 ? Math.max(0, Math.min(100, (remainingMs / totalMs) * 100)) : 100;
 
   return (
     <div className="flex flex-col">
@@ -177,7 +198,10 @@ export function AccessDetailScreen() {
             <CountdownBadge expiresAt={access.expires_at} valueClassName="text-[13px]" />
           </div>
           <div className="h-[3px] overflow-hidden rounded-full bg-surface-2">
-            <div className="h-full w-1/4 rounded-full bg-warning transition-[width] duration-500 ease-out" />
+            <div
+              className="h-full rounded-full bg-warning transition-[width] duration-500 ease-out"
+              style={{ width: `${expiryPct}%` }}
+            />
           </div>
         </div>
 

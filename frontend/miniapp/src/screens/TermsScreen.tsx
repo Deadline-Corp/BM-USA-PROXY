@@ -6,6 +6,8 @@ import { useTerms, useAcceptTerms } from "../shared/hooks/useTerms";
 import { strings } from "../shared/strings";
 import { Button } from "../shared/components/Button";
 import { ErrorState } from "../shared/components/ErrorState";
+import { useToast } from "../shared/components/Toast";
+import { ApiError } from "../shared/api/client";
 import { consumeReturnTo } from "../shared/auth/termsRedirect";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -14,6 +16,7 @@ export function TermsScreen() {
   const termsQuery = useTerms();
   const acceptTerms = useAcceptTerms();
   const navigate = useNavigate();
+  const { showToast } = useToast();
 
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
@@ -32,8 +35,12 @@ export function TermsScreen() {
 
   async function handleAccept() {
     if (!termsQuery.data || !isValid) return;
-    await acceptTerms.mutateAsync({ version: termsQuery.data.version, answers });
-    navigate(consumeReturnTo("/"), { replace: true });
+    try {
+      await acceptTerms.mutateAsync({ version: termsQuery.data.version, answers });
+      navigate(consumeReturnTo("/"), { replace: true });
+    } catch (e) {
+      showToast(e instanceof ApiError ? e.message : strings.errors.generic, "error");
+    }
   }
 
   return (

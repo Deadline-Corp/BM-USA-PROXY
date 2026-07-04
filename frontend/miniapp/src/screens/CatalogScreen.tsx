@@ -75,14 +75,18 @@ export function CatalogScreen() {
   }
 
   async function handleResellerSubmit() {
-    await createRequest.mutateAsync({
-      type: "reseller",
-      subject: strings.catalog.resellerFormSubject,
-      body: resellerMessage,
-    });
-    setResellerSheetOpen(false);
-    setResellerMessage("");
-    showToast(strings.catalog.resellerFormSent);
+    try {
+      await createRequest.mutateAsync({
+        type: "reseller",
+        subject: strings.catalog.resellerFormSubject,
+        body: resellerMessage,
+      });
+      setResellerSheetOpen(false);
+      setResellerMessage("");
+      showToast(strings.catalog.resellerFormSent);
+    } catch (e) {
+      showToast(e instanceof ApiError ? e.message : strings.errors.generic, "error");
+    }
   }
 
   const trialTariff = catalogQuery.data?.tariffs.find((t) => t.code === "trial");

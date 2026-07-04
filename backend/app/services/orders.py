@@ -15,7 +15,7 @@ from app.core.errors import (
     TermsNotAccepted,
     ValidationError,
 )
-from app.models import Access, Invoice, Order, Tariff, User
+from app.models import Access, AccessEvent, Invoice, Order, Tariff, User
 from app.services import referral
 from app.services import settings as settings_svc
 from app.services.catalog import trial_available
@@ -179,6 +179,18 @@ async def _provision_or_review(session: AsyncSession, order: Order) -> None:
         order.status = "provisioning"
         await provision_access(session, order=order)
     except ProvisioningError:
+        # Release the connection held by the half-created access: mark it failed
+        # and record an event so the invariant (one live access per connection) frees up.
+        access = await session.scalar(
+            select(Access).where(
+                Access.order_id == order.id, Access.status == "provisioning"
+            )
+        )
+        if access is not None:
+            access.status = "failed"
+            session.add(
+                AccessEvent(access_id=access.id, type="provision_failed", actor="system")
+            )
         order.status = "manual_review"
         await enqueue(
             session,

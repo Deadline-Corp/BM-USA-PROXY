@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from app.api.deps import CurrentAdmin, DbSession
 from app.core.config import settings
 from app.core.errors import Unauthorized
-from app.core.security import decode_token
+from app.core.security import blacklist_token, decode_token
 from app.models import AdminUser
 from app.services.auth_admin import authenticate, issue_tokens
 from app.services.ratelimit_helpers import login_guard
@@ -69,7 +69,17 @@ async def refresh(request: Request, response: Response, session: DbSession) -> d
 
 
 @router.post("/auth/logout")
-async def logout(response: Response) -> dict[str, bool]:
+async def logout(request: Request, response: Response) -> dict[str, bool]:
+    token = request.cookies.get(REFRESH_COOKIE)
+    if token:
+        try:
+            claims = decode_token(token, expected_type="refresh")
+            jti = claims.get("jti")
+            exp = claims.get("exp")
+            if jti and exp:
+                await blacklist_token(str(jti), int(exp))
+        except Unauthorized:
+            pass  # expired/invalid refresh — nothing to revoke
     response.delete_cookie(REFRESH_COOKIE, path=REFRESH_PATH)
     return {"ok": True}
 

@@ -63,3 +63,18 @@ uv run pytest -q && uv run ruff check . && uv run mypy app
 2. **Payment idempotency** — `UNIQUE (provider, provider_invoice_id)` on invoices.
 3. **Append-only** referral ledger, access events, ToS acceptances, payment events.
 4. Proxy credentials encrypted at rest (Fernet); secrets only via env.
+
+## Required environment variables (production)
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `CREDENTIALS_KEY` | yes | Fernet key for encrypting proxy credentials at rest |
+| `ADMIN_JWT_SECRET` | yes | Secret for signing admin JWTs |
+| `BOT_TOKEN` | yes | Telegram bot token from BotFather |
+| `BOT_WEBHOOK_SECRET` | yes | `X-Telegram-Bot-Api-Secret-Token` webhook guard |
+| `SEED_ADMIN_PASSWORD` | recommended | Initial owner admin password (required for `make seed`) |
+| `PAYMENT_PROVIDER` | optional | `mock` (default) \| `bitpay` \| `coinbase` \| `cryptomus` |
+| `PAYMENT_API_KEY` | optional | API key for the chosen payment provider |
+| `PAYMENT_WEBHOOK_SECRET` | optional | Secret guarding payment provider webhooks |
+
+Optional DB defaults (overridable via env): `POSTGRES_USER=bm`, `POSTGRES_PASSWORD=bm`, `POSTGRES_DB=bm_usa_proxy`.

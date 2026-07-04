@@ -25,6 +25,13 @@ const DEV_TG_ID = "700001";
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({ status: "loading" });
 
+  // DEV-BYPASS GUARD:
+  // The dev bypass is gated by `import.meta.env.DEV`, which Vite replaces with
+  // `false` in production builds — so this branch is dead-stripped from the
+  // shipped bundle. The X-Debug-TgId header it sends must ALSO be guarded on
+  // the backend: the server must reject X-Debug-TgId unless an env flag (e.g.
+  // DEBUG_TG_ID_ENABLED) is explicitly set. Without that server-side guard the
+  // header would let anyone impersonate any Telegram user in production.
   const devRequested = useMemo(() => {
     if (!import.meta.env.DEV) return false;
     const params = new URLSearchParams(window.location.search);
