@@ -50,7 +50,7 @@ class Settings(BaseSettings):
 
     # iproxy
     iproxy_api_key: str | None = None
-    iproxy_base_url: str = "https://api.iproxy.online"
+    iproxy_base_url: str = "https://iproxy.online"
 
     # Payments
     payment_provider: str = "mock"
@@ -59,6 +59,7 @@ class Settings(BaseSettings):
 
     # Feature flags
     feature_real_payments: bool = False
+    feature_real_provisioning: bool = False  # real iproxy issuance (decoupled from payments)
     seed_dev_fixtures: bool = True
 
     @property

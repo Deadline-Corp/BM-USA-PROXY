@@ -93,7 +93,9 @@ async def seed_admin(session: AsyncSession) -> None:
 
 
 async def seed_dev_fixtures(session: AsyncSession) -> None:
-    if settings.is_prod or not settings.seed_dev_fixtures:
+    # Skip the fake connections when real provisioning is on — their dev-* ids would
+    # 404 on a real iproxy issue and send paid orders to manual_review.
+    if settings.is_prod or not settings.seed_dev_fixtures or settings.feature_real_provisioning:
         return
     existing = await session.scalar(select(func.count()).select_from(Connection))
     if existing:

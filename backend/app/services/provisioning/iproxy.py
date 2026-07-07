@@ -17,6 +17,7 @@ from typing import Any
 import httpx
 
 from app.core.config import settings
+from app.core.errors import ProvisioningError
 from app.core.logging import log
 from app.services.provisioning.base import IssuedProxy, Provisioner
 
@@ -114,19 +115,30 @@ class IproxyClient:
     # ── operations (paths per research; confirm shapes at INT-1.1) ──────
     async def list_connections(self) -> list[dict[str, Any]]:
         data = await self._request("GET", "/api/console/v1/connection")
-        return data if isinstance(data, list) else data.get("items", [])
+        if isinstance(data, list):
+            return data
+        return data.get("connections", []) if isinstance(data, dict) else []
 
     async def connection_status(self) -> list[dict[str, Any]]:
         data = await self._request("GET", "/api/console/v1/connection-status")
-        return data if isinstance(data, list) else data.get("items", [])
+        if isinstance(data, list):
+            return data
+        return data.get("connections", []) if isinstance(data, dict) else []
 
     async def create_proxy_access(
-        self, connection_id: str, *, expires_at_iso: str
+        self, connection_id: str, *, listen_service: str = "http"
     ) -> dict[str, Any]:
+        # iproxy proxy-access: userpass auth, one access per protocol (http/socks5).
+        # No iproxy-side expiry — lifetime is enforced our side (Access.expires_at) and
+        # the expiry sweeper deletes the access when it lapses.
         data = await self._request(
             "POST",
             f"/api/console/v1/connection/{connection_id}/proxy-access",
-            json={"expiresAt": expires_at_iso, "description": "bm-usa-proxy"},
+            json={
+                "auth_type": "userpass",
+                "listen_service": listen_service,
+                "description": "bm-usa-proxy",
+            },
         )
         return data if isinstance(data, dict) else {}
 
@@ -146,21 +158,32 @@ class IproxyClient:
         await self._request(
             "POST",
             f"/api/console/v1/connection/{connection_id}/command-push",
-            json={"command": "changeip"},
+            json={"action": "changeip"},
         )
 
 
 def _parse_proxy_access(raw: dict[str, Any]) -> IssuedProxy:
-    """Map an iproxy proxy-access payload → our IssuedProxy. ADJUST at INT-1.1."""
+    """Map an iproxy proxy-access payload → our IssuedProxy.
+
+    Confirmed live shape (2026-07-07): {"id", "auth": {"login", "password"},
+    "hostname", "ip", "port", "listen_service"}. `hostname` is the durable proxy
+    endpoint (c_fqdn); `ip` is the current mobile exit IP (informational). Rotation
+    is a per-connection command, so there is no per-access rotation link.
+    """
+    auth = raw.get("auth") or {}
+    port = raw.get("port")
+    service = raw.get("listen_service") or "http"
     return IssuedProxy(
-        iproxy_access_id=str(raw.get("id") or raw.get("proxyAccessId") or ""),
+        iproxy_access_id=str(raw.get("id") or ""),
         credentials={
-            "host": raw.get("host") or raw.get("ip"),
-            "http_port": raw.get("httpPort") or raw.get("http_port"),
-            "socks5_port": raw.get("socksPort") or raw.get("socks5_port"),
-            "login": raw.get("login") or raw.get("username"),
-            "password": raw.get("password"),
-            "rotation_link": raw.get("changeIpUrl") or raw.get("rotationLink"),
+            "host": raw.get("hostname") or raw.get("ip"),
+            "http_port": port if service == "http" else None,
+            "socks5_port": port if service == "socks5" else None,
+            "login": auth.get("login"),
+            "password": auth.get("password"),
+            "listen_service": service,
+            "exit_ip": raw.get("ip"),
+            "rotation_link": None,
         },
     )
 
@@ -172,13 +195,14 @@ class IproxyProvisioner(Provisioner):
         self._client = client or IproxyClient()
 
     async def issue(self, *, iproxy_connection_id: str, duration_minutes: int) -> IssuedProxy:
-        from datetime import UTC, datetime, timedelta
-
-        expires = (datetime.now(UTC) + timedelta(minutes=duration_minutes)).isoformat()
-        raw = await self._client.create_proxy_access(
-            iproxy_connection_id, expires_at_iso=expires
-        )
+        # Lifetime is enforced our side (Access.expires_at); iproxy access has no expiry.
+        try:
+            raw = await self._client.create_proxy_access(iproxy_connection_id)
+        except IproxyError as exc:
+            raise ProvisioningError(f"iproxy issue failed: {exc}") from exc
         issued = _parse_proxy_access(raw)
+        if not issued.iproxy_access_id or not issued.credentials.get("host"):
+            raise ProvisioningError(f"malformed iproxy proxy-access response: {sorted(raw)[:8]}")
         log.info("iproxy.issued", connection=iproxy_connection_id, access=issued.iproxy_access_id)
         return issued
 
@@ -187,4 +211,7 @@ class IproxyProvisioner(Provisioner):
             await self._client.delete_proxy_access(iproxy_connection_id, iproxy_access_id)
 
     async def rotate_ip(self, *, iproxy_connection_id: str) -> None:
-        await self._client.change_ip(iproxy_connection_id)
+        try:
+            await self._client.change_ip(iproxy_connection_id)
+        except IproxyError as exc:
+            raise ProvisioningError(f"iproxy rotate failed: {exc}") from exc

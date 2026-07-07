@@ -598,7 +598,17 @@ async def patch_connection(
 
 @router.post("/connections/sync")
 async def sync_connections(admin: CurrentAdmin, session: DbSession) -> dict[str, Any]:
-    return {"synced": False, "detail": "real iproxy sync in Stage 3"}
+    from app.core.config import settings
+    from app.services.provisioning.sync import sync_pool
+
+    if not settings.feature_real_provisioning:
+        return {"synced": False, "detail": "real provisioning disabled (mock mode)"}
+    result = await sync_pool(session)
+    await audit.write(
+        session, admin_id=admin.id, action="connection.sync", entity="pool",
+        entity_id="iproxy", after=result,
+    )
+    return {"synced": True, **result}
 
 
 @router.get("/pool/summary")

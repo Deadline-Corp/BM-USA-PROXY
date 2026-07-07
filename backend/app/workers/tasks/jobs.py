@@ -10,12 +10,10 @@ import contextlib
 from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert
 
 from app.core.config import settings
 from app.core.db import SessionFactory
-from app.core.logging import log
-from app.models import Broadcast, Connection, Invoice
+from app.models import Broadcast, Invoice
 from app.services import referral
 from app.services.maintenance import expire_invoices, sweep_access_expiries
 
@@ -97,38 +95,17 @@ async def reconcile_invoices(ctx: dict) -> int:
 
 async def sync_connections(ctx: dict) -> dict[str, Any]:
     """Mirror iproxy inventory + online status into `connections` (real provider only)."""
-    if not settings.feature_real_payments:
+    if not settings.feature_real_provisioning:
         await _beat(ctx, "sync_connections")
         return {"skipped": "mock mode"}
 
-    from app.services.provisioning.iproxy import IproxyClient
+    from app.services.provisioning.sync import sync_pool
 
-    client = IproxyClient()
-    upserted = 0
     async with SessionFactory() as s:
-        conns = await client.list_connections()
-        status_by_id = {str(r.get("id")): r for r in await client.connection_status()}
-        for c in conns:
-            cid = str(c.get("id") or c.get("connectionId") or "")
-            if not cid:
-                continue
-            st = status_by_id.get(cid, {})
-            online = "online" if st.get("online") or st.get("status") == "online" else "offline"
-            stmt = insert(Connection).values(
-                iproxy_connection_id=cid,
-                name=c.get("name") or "",
-                online_status=online,
-            )
-            stmt = stmt.on_conflict_do_update(
-                index_elements=["iproxy_connection_id"],
-                set_={"online_status": online, "name": stmt.excluded.name},
-            )
-            await s.execute(stmt)
-            upserted += 1
+        result = await sync_pool(s)
         await s.commit()
     await _beat(ctx, "sync_connections")
-    log.info("iproxy.sync", upserted=upserted)
-    return {"upserted": upserted}
+    return result
 
 
 async def publish_scheduled_posts(ctx: dict) -> int | None:
