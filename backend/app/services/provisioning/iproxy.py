@@ -161,6 +161,10 @@ class IproxyClient:
             json={"action": "changeip"},
         )
 
+    async def get_connection(self, connection_id: str) -> dict[str, Any]:
+        data = await self._request("GET", f"/api/console/v1/connection/{connection_id}")
+        return data if isinstance(data, dict) else {}
+
 
 def _parse_proxy_access(raw: dict[str, Any]) -> IssuedProxy:
     """Map an iproxy proxy-access payload → our IssuedProxy.
@@ -215,3 +219,12 @@ class IproxyProvisioner(Provisioner):
             await self._client.change_ip(iproxy_connection_id)
         except IproxyError as exc:
             raise ProvisioningError(f"iproxy rotate failed: {exc}") from exc
+
+    async def current_ip(self, *, iproxy_connection_id: str) -> str | None:
+        try:
+            data = await self._client.get_connection(iproxy_connection_id)
+        except IproxyError:
+            return None
+        device = (data.get("app_data") or {}).get("device_info") or {}
+        ip = (device.get("ip_public") or {}).get("ipv4")
+        return str(ip) if ip else None

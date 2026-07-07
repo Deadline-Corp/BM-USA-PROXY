@@ -131,6 +131,7 @@ export interface AccessCredentials {
 export type ConfigType = "ovpn" | "wg";
 
 export interface AccessDetail extends AccessSummary {
+  current_ip: string | null;
   credentials: AccessCredentials;
   swap_left: number;
   configs_available: ConfigType[];

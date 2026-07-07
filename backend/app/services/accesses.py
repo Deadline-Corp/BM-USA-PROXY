@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import Forbidden, NotFound
 from app.core.security import decrypt_credentials
 from app.models import Access, Connection, Location, Tariff
+from app.services.provisioning.registry import get_provisioner
 
 _ACTIVE = ("provisioning", "active", "expiring")
 
@@ -63,13 +64,25 @@ async def _load(
     return access, conn, loc
 
 
+async def _current_ip(conn: Connection | None) -> str | None:
+    """Live exit IP from the provider; best-effort — a provider hiccup must not 500 the view."""
+    if conn is None:
+        return None
+    try:
+        return await get_provisioner().current_ip(iproxy_connection_id=conn.iproxy_connection_id)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 async def detail_for_user(session: AsyncSession, public_id: str, user_id: int) -> dict[str, Any]:
     access, conn, loc = await _load(session, public_id, user_id)
     creds = decrypt_credentials(access.credentials_enc) if access.credentials_enc else {}
     tariff = await session.scalar(select(Tariff).where(Tariff.code == access.tariff_code))
     max_swaps = tariff.max_user_swaps if tariff else 0
+    current_ip = await _current_ip(conn) if access.status in ("active", "expiring") else None
     return {
         **_summary(access, conn, loc),
+        "current_ip": current_ip,
         "credentials": {
             "host": creds.get("host"),
             "http_port": creds.get("http_port"),

@@ -24,11 +24,15 @@ export function accessDetailQueryKey(publicId: string | undefined) {
   return ["access", publicId] as const;
 }
 
-export function useAccessDetail(publicId: string | undefined) {
+export function useAccessDetail(
+  publicId: string | undefined,
+  options?: { refetchInterval?: number | false },
+) {
   return useQuery({
     queryKey: accessDetailQueryKey(publicId),
     queryFn: ({ signal }) => api.get<AccessDetail>(`/accesses/${publicId}`, signal),
     enabled: Boolean(publicId),
+    refetchInterval: options?.refetchInterval ?? false,
   });
 }
 

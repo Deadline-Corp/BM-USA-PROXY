@@ -45,7 +45,9 @@ const ANY = "any" as const;
 export function AccessDetailScreen() {
   const { publicId } = useParams<{ publicId: string }>();
   const navigate = useNavigate();
-  const detailQuery = useAccessDetail(publicId);
+  const [rotating, setRotating] = useState(false);
+  const [ipBeforeRotate, setIpBeforeRotate] = useState<string | null>(null);
+  const detailQuery = useAccessDetail(publicId, { refetchInterval: rotating ? 4000 : false });
   const catalogQuery = useCatalog();
   const rotateIp = useRotateIp(publicId);
   const swapAccess = useSwapAccess(publicId);
@@ -55,6 +57,7 @@ export function AccessDetailScreen() {
   const termsGate = useTermsGate();
   const { copied: pwCopied, copy: copyPassword } = useCopyToClipboard();
   const { copied: allCopied, copy: copyAll } = useCopyToClipboard();
+  const { copied: ipCopied, copy: copyIp } = useCopyToClipboard();
 
   const [passwordRevealed, setPasswordRevealed] = useState(false);
   const [rotateCooldownUntil, setRotateCooldownUntil] = useState<number | null>(null);
@@ -83,11 +86,29 @@ export function AccessDetailScreen() {
     return () => clearInterval(interval);
   }, [rotateCooldownUntil]);
 
+  // While rotating, useAccessDetail polls every 4s. Stop when the exit IP flips
+  // (rotation confirmed) or after ~90s (a mobile reboot can be slow).
+  const liveIp = detailQuery.data?.current_ip ?? null;
+  useEffect(() => {
+    if (!rotating) return;
+    if (liveIp && liveIp !== ipBeforeRotate) {
+      setRotating(false);
+      showToast(`${strings.access.newIpPrefix} ${liveIp}`);
+    }
+  }, [rotating, liveIp, ipBeforeRotate, showToast]);
+  useEffect(() => {
+    if (!rotating) return;
+    const timeout = setTimeout(() => setRotating(false), 90_000);
+    return () => clearTimeout(timeout);
+  }, [rotating]);
+
   async function handleRotate() {
     setRotateConfirmOpen(false);
+    setIpBeforeRotate(detailQuery.data?.current_ip ?? null);
     try {
       await rotateIp.mutateAsync();
-      showToast("IP rotated");
+      setRotating(true);
+      showToast(strings.access.rotatingHint);
     } catch (error) {
       if (isRetryAfterError(error)) {
         const seconds = getRetryAfterSeconds(error);
@@ -192,6 +213,26 @@ export function AccessDetailScreen() {
           </div>
         </div>
 
+        {/* current exit IP — lets the user verify Rotate IP actually changed it */}
+        <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-border-2 bg-surface-2 px-3 py-2">
+          <div className="min-w-0">
+            <div className="text-[10px] uppercase tracking-wide text-text-3">{strings.access.ipLabel}</div>
+            <div className="flex items-center gap-1.5">
+              <Num className="text-[14px] font-semibold text-text">{access.current_ip ?? "—"}</Num>
+              {rotating ? <RefreshCw size={12} className="animate-spin text-accent" aria-hidden="true" /> : null}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] border border-border-2 text-text-3 transition-colors hover:bg-accent/[.08] hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40"
+            aria-label="Copy IP"
+            disabled={!access.current_ip}
+            onClick={() => access.current_ip && copyIp(access.current_ip)}
+          >
+            {ipCopied ? <Check size={14} /> : <Copy size={14} />}
+          </button>
+        </div>
+
         <div className="mt-3.5">
           <div className="mb-1.5 flex items-baseline justify-between text-xs text-text-3">
             <span>{strings.common.expiresIn}</span>
@@ -209,7 +250,7 @@ export function AccessDetailScreen() {
           <Button
             variant="primary"
             block
-            disabled={rotateIp.isPending || rotateCooldownRemaining > 0}
+            disabled={rotateIp.isPending || rotating || rotateCooldownRemaining > 0}
             onClick={() => setRotateConfirmOpen(true)}
           >
             <RefreshCw size={15} aria-hidden="true" />
@@ -230,7 +271,9 @@ export function AccessDetailScreen() {
           </Button>
         ) : null}
 
-        <p className="mt-1.5 text-center text-[11px] leading-relaxed text-text-3">{strings.access.rotateNote}</p>
+        <p className={`mt-1.5 text-center text-[11px] leading-relaxed ${rotating ? "text-accent" : "text-text-3"}`}>
+          {rotating ? strings.access.rotatingHint : strings.access.rotateNote}
+        </p>
       </div>
 
       {/* ── credentials ── */}
