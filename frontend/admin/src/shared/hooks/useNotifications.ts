@@ -27,7 +27,10 @@ export function useUpdateNotificationSetting() {
 export function useGroupedNotificationSettings() {
   const query = useNotificationSettings();
   const groups = useMemo(() => {
-    const items = query.data ?? [];
+    // Defensive: the backend currently returns a message-text map, not the
+    // toggle-matrix array this screen expects (contract drift) — guard so the
+    // panel shows an empty state instead of crashing on `.filter`.
+    const items = Array.isArray(query.data) ? query.data : [];
     const payment = items.filter((i) => i.event_key.startsWith("payment"));
     const payout = items.filter((i) => i.event_key.startsWith("payout"));
     const rest = items.filter((i) => !i.event_key.startsWith("payment") && !i.event_key.startsWith("payout"));

@@ -882,13 +882,14 @@ async def order_detail(order_id: str, admin: CurrentAdmin, session: DbSession) -
 
 
 @router.get("/payments/manual-review")
-async def manual_review_orders(admin: CurrentAdmin, session: DbSession) -> list[dict[str, Any]]:
+async def manual_review_orders(admin: CurrentAdmin, session: DbSession) -> dict[str, Any]:
     rows = (
         await session.execute(
             select(Order).where(Order.status == "manual_review").order_by(Order.created_at)
         )
     ).scalars().all()
-    return [_order_view(o) for o in rows]
+    items = [_order_view(o) for o in rows]
+    return {"items": items, "total": len(items)}
 
 
 class ResolveBody(BaseModel):
@@ -994,12 +995,13 @@ def _request_view(r: Request) -> dict[str, Any]:
 @router.get("/requests")
 async def list_requests(
     admin: CurrentAdmin, session: DbSession, status: str | None = None
-) -> list[dict[str, Any]]:
+) -> dict[str, Any]:
     stmt = select(Request).order_by(Request.updated_at.desc())
     if status:
         stmt = stmt.where(Request.status == status)
     rows = (await session.execute(stmt)).scalars().all()
-    return [_request_view(r) for r in rows]
+    items = [_request_view(r) for r in rows]
+    return {"items": items, "total": len(items)}
 
 
 class RequestPatch(BaseModel):
@@ -1110,12 +1112,13 @@ def _payout_view(p: Payout) -> dict[str, Any]:
 @router.get("/payouts")
 async def list_payouts(
     admin: CurrentAdmin, session: DbSession, status: str = "requested"
-) -> list[dict[str, Any]]:
+) -> dict[str, Any]:
     stmt = select(Payout).order_by(Payout.requested_at)
     if status:
         stmt = stmt.where(Payout.status == status)
     rows = (await session.execute(stmt)).scalars().all()
-    return [_payout_view(p) for p in rows]
+    items = [_payout_view(p) for p in rows]
+    return {"items": items, "total": len(items)}
 
 
 async def _get_payout(session: DbSession, payout_id: int) -> Payout:
@@ -1252,11 +1255,12 @@ def _broadcast_view(b: Broadcast) -> dict[str, Any]:
 
 
 @router.get("/broadcasts")
-async def list_broadcasts(admin: CurrentAdmin, session: DbSession) -> list[dict[str, Any]]:
+async def list_broadcasts(admin: CurrentAdmin, session: DbSession) -> dict[str, Any]:
     rows = (
         await session.execute(select(Broadcast).order_by(Broadcast.created_at.desc()))
     ).scalars().all()
-    return [_broadcast_view(b) for b in rows]
+    items = [_broadcast_view(b) for b in rows]
+    return {"items": items, "total": len(items)}
 
 
 class BroadcastBody(BaseModel):
@@ -1422,9 +1426,10 @@ def _post_view(p: Post) -> dict[str, Any]:
 
 
 @router.get("/posts")
-async def list_posts(admin: CurrentAdmin, session: DbSession) -> list[dict[str, Any]]:
+async def list_posts(admin: CurrentAdmin, session: DbSession) -> dict[str, Any]:
     rows = (await session.execute(select(Post).order_by(Post.created_at.desc()))).scalars().all()
-    return [_post_view(p) for p in rows]
+    items = [_post_view(p) for p in rows]
+    return {"items": items, "total": len(items)}
 
 
 class PostBody(BaseModel):

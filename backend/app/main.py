@@ -58,16 +58,29 @@ def _mount_spas(app: FastAPI) -> None:
     """Serve the built SPAs at /app (mini-app) and /admin, if their dist/ is present.
 
     Candidate roots cover local dev (../frontend/<x>/dist) and the Docker image
-    (/static/<x>) where the multi-stage build copies the bundles.
+    (/static/<x>) where the multi-stage build copies the bundles. SPAStaticFiles
+    falls back to index.html on a 404 so client-side routes (e.g. /admin/requests)
+    survive a direct load or refresh instead of returning a raw 404.
     """
     import os
 
-    from fastapi.staticfiles import StaticFiles
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+    from starlette.staticfiles import StaticFiles
+    from starlette.types import Scope
+
+    class SPAStaticFiles(StaticFiles):
+        async def get_response(self, path: str, scope: Scope) -> Response:
+            try:
+                return await super().get_response(path, scope)
+            except StarletteHTTPException as exc:
+                if exc.status_code == 404:
+                    return await super().get_response("index.html", scope)
+                raise
 
     for mount, name in (("/app", "miniapp"), ("/admin", "admin")):
         for root in (f"../frontend/{name}/dist", f"/static/{name}"):
             if os.path.isdir(root):
-                app.mount(mount, StaticFiles(directory=root, html=True), name=name)
+                app.mount(mount, SPAStaticFiles(directory=root, html=True), name=name)
                 break
 
 
