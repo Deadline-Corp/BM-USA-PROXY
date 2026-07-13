@@ -607,7 +607,7 @@ def _connection_view(
         "health_note": c.health_note,
         "slots_total": 1,
         "slots_used": slots_used,
-        "last_rotated_at": None,
+        "last_rotated_at": c.last_rotated_at.isoformat() if c.last_rotated_at else None,
     }
 
 

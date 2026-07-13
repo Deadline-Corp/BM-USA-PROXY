@@ -112,8 +112,10 @@ async def rotate_ip(session: AsyncSession, *, access: Access, actor: str = "user
     if conn is None:
         raise ProvisioningError("connection missing")
     await get_provisioner().rotate_ip(iproxy_connection_id=conn.iproxy_connection_id)
+    now = _utcnow()
+    conn.last_rotated_at = now
     access.rotations_count += 1
-    access.last_rotation_at = _utcnow()
+    access.last_rotation_at = now
     session.add(AccessEvent(access_id=access.id, type="rotate_ip", actor=actor))
 
 

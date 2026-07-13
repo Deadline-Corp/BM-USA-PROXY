@@ -67,6 +67,7 @@ class Connection(Base):
     is_sellable: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     online_status: Mapped[str] = mapped_column(Text, nullable=False, server_default="unknown")
     last_online_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     health_note: Mapped[str | None] = mapped_column(Text)
     synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = created_at_col()

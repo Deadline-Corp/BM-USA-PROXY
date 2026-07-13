@@ -21,7 +21,6 @@ import type {
   LoginResponse,
   MarkPaidRequest,
   NotificationLogEntry,
-  NotificationSettingEntry,
   Order,
   Paginated,
   Payout,
@@ -258,12 +257,10 @@ export const notificationsApi = {
       .get<Paginated<NotificationLogEntry>>("/notifications/log", { params })
       .then((r) => r.data),
   getSettings: () =>
+    apiClient.get<Record<string, string>>("/notifications/settings").then((r) => r.data),
+  updateTexts: (texts: Record<string, string>) =>
     apiClient
-      .get<NotificationSettingEntry[]>("/notifications/settings")
-      .then((r) => r.data),
-  updateSettings: (event_key: string, body: Partial<Pick<NotificationSettingEntry, "telegram" | "email">>) =>
-    apiClient
-      .patch<NotificationSettingEntry>(`/notifications/settings/${event_key}`, body)
+      .patch<Record<string, string>>("/notifications/settings", { texts })
       .then((r) => r.data),
 };
 

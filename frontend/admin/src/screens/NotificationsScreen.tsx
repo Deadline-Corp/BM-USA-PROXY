@@ -1,5 +1,4 @@
-import { useMemo } from "react";
-import clsx from "clsx";
+import { useEffect, useMemo, useState } from "react";
 import { PageHead } from "@/shared/components/PageHead";
 import { Panel } from "@/shared/components/Panel";
 import { Button } from "@/shared/components/Button";
@@ -7,28 +6,49 @@ import { EmptyState } from "@/shared/components/EmptyState";
 import { ErrorState } from "@/shared/components/ErrorState";
 import { Skeleton } from "@/shared/components/Skeleton";
 import { formatRelative } from "@/shared/lib/format";
-import { useGroupedNotificationSettings, useNotificationLog, useUpdateNotificationSetting } from "@/shared/hooks/useNotifications";
+import {
+  useNotificationLog,
+  useNotificationSettings,
+  useUpdateNotificationTexts,
+} from "@/shared/hooks/useNotifications";
 import { usePagination } from "@/shared/hooks/usePagination";
 import { useToast } from "@/shared/components/Toast";
 import { apiErrorMessage } from "@/shared/api/client";
 import { strings } from "@/shared/strings";
-import { IconMail, IconRefresh, IconTelegram } from "@/shared/components/icons";
+import { IconRefresh } from "@/shared/components/icons";
+
+function humanize(code: string): string {
+  return code.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+}
 
 export function NotificationsScreen() {
   const toast = useToast();
   const { limit, offset } = usePagination(30);
   const logParams = useMemo(() => ({ limit, offset }), [limit, offset]);
   const logQuery = useNotificationLog(logParams);
-  const { groups, isLoading: settingsLoading, isError: settingsError, refetch: refetchSettings } = useGroupedNotificationSettings();
-  const updateMutation = useUpdateNotificationSetting();
+  const settingsQuery = useNotificationSettings();
+  const updateTexts = useUpdateNotificationTexts();
 
-  async function handleToggle(eventKey: string, channel: "telegram" | "email", current: boolean) {
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (settingsQuery.data) setDrafts(settingsQuery.data);
+  }, [settingsQuery.data]);
+
+  const dirty = useMemo(() => {
+    const server = settingsQuery.data ?? {};
+    return Object.keys(drafts).some((k) => (drafts[k] ?? "") !== (server[k] ?? ""));
+  }, [drafts, settingsQuery.data]);
+
+  async function handleSave() {
     try {
-      await updateMutation.mutateAsync({ eventKey, body: { [channel]: !current } });
+      await updateTexts.mutateAsync(drafts);
+      toast.success(strings.notifications.settingsSaved);
     } catch (err) {
       toast.error(apiErrorMessage(err));
     }
   }
+
+  const codes = Object.keys(settingsQuery.data ?? {});
 
   return (
     <div>
@@ -57,9 +77,12 @@ export function NotificationsScreen() {
             ) : (
               <div className="flex flex-col">
                 {logQuery.data?.items.map((n) => (
-                  <div key={n.id} className="flex items-center gap-3 px-3.5 py-3 border-b border-border last:border-b-0">
+                  <div
+                    key={n.id}
+                    className="flex items-center gap-3 px-3.5 py-3 border-b border-border last:border-b-0"
+                  >
                     <div className="min-w-0 flex-1">
-                      <div className="text-[.86rem] text-text font-medium">{n.type}</div>
+                      <div className="text-[.86rem] text-text font-medium">{humanize(n.type)}</div>
                       <div className="font-mono text-[.76rem] text-text-3 mt-0.5">{n.user}</div>
                     </div>
                     <span className="text-[.72rem] text-text-3">{formatRelative(n.created_at)}</span>
@@ -70,73 +93,43 @@ export function NotificationsScreen() {
           </div>
         </Panel>
 
-        {/* Settings matrix */}
+        {/* Message templates editor */}
         <Panel>
-          <Panel.Head title={strings.notifications.settingsTitle} subtitle="Telegram · Email" />
+          <Panel.Head title={strings.notifications.settingsTitle} subtitle={strings.notifications.settingsSubtitle} />
           <Panel.Body>
-            {settingsLoading ? (
+            {settingsQuery.isLoading ? (
               <Skeleton className="h-64" />
-            ) : settingsError ? (
-              <ErrorState onRetry={refetchSettings} />
-            ) : groups.length === 0 ? (
-              <EmptyState title="No notification events configured" />
+            ) : settingsQuery.isError ? (
+              <ErrorState onRetry={() => settingsQuery.refetch()} />
+            ) : codes.length === 0 ? (
+              <EmptyState title="No templates configured" />
             ) : (
-              <div className="flex flex-col gap-5">
-                {groups.map((group) => (
-                  <div key={group.label}>
-                    <div className="text-[.72rem] uppercase tracking-[.08em] text-text-3 font-semibold mb-2.5">{group.label}</div>
-                    <div className="flex flex-col gap-3">
-                      {group.items.map((item) => (
-                        <div key={item.event_key} className="flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="text-[.86rem] text-text">{item.label}</div>
-                            <div className="text-[.76rem] text-text-3 mt-0.5">{item.description}</div>
-                          </div>
-                          <div className="flex items-center gap-1.5 flex-none">
-                            <ChannelToggle
-                              icon={<IconTelegram className="w-3.5 h-3.5" />}
-                              label={strings.notifications.telegram}
-                              on={item.telegram}
-                              onClick={() => handleToggle(item.event_key, "telegram", item.telegram)}
-                            />
-                            <ChannelToggle
-                              icon={<IconMail className="w-3.5 h-3.5" />}
-                              label={strings.notifications.email}
-                              on={item.email}
-                              onClick={() => handleToggle(item.event_key, "email", item.email)}
-                            />
-                          </div>
-                        </div>
-                      ))}
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-4 max-h-[calc(100vh-320px)] overflow-y-auto pr-1">
+                  {codes.map((code) => (
+                    <div key={code}>
+                      <label className="block text-[.84rem] text-text font-medium">{humanize(code)}</label>
+                      <div className="font-mono text-[.68rem] text-text-3 mt-0.5 mb-1.5">{code}</div>
+                      <textarea
+                        value={drafts[code] ?? ""}
+                        onChange={(e) => setDrafts((d) => ({ ...d, [code]: e.target.value }))}
+                        placeholder={strings.notifications.settingsPlaceholder}
+                        rows={2}
+                        className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-[.84rem] text-text placeholder:text-text-3 focus:outline-none focus:border-accent-line resize-y"
+                      />
                     </div>
-                  </div>
-                ))}
-                <p className="text-[.76rem] text-text-3 pt-1 border-t border-border">
-                  Settings save automatically. Telegram bot must be authorized to deliver messages.
-                </p>
+                  ))}
+                </div>
+                <div className="flex items-center justify-end pt-1 border-t border-border">
+                  <Button variant="primary" size="sm" disabled={!dirty || updateTexts.isPending} onClick={handleSave}>
+                    {updateTexts.isPending ? strings.common.saving : strings.common.save}
+                  </Button>
+                </div>
               </div>
             )}
           </Panel.Body>
         </Panel>
       </div>
     </div>
-  );
-}
-
-function ChannelToggle({ icon, label, on, onClick }: { icon: React.ReactNode; label: string; on: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={on}
-      aria-label={`${label}: ${on ? "on" : "off"}`}
-      className={clsx(
-        "flex items-center gap-1.5 h-7 px-2.5 rounded-full border text-[.7rem] font-semibold transition-colors duration-150 ease-brand",
-        on ? "bg-accent-soft border-accent-line text-accent" : "bg-surface-2 border-border text-text-3",
-      )}
-    >
-      {icon}
-      {label === strings.notifications.telegram ? "TG" : label}
-    </button>
   );
 }
