@@ -129,7 +129,7 @@ export interface Tariff {
   code: string;
   name: string;
   price_usd: number;
-  duration_days: number;
+  duration_minutes: number;
   max_user_swaps: number;
   is_active: boolean;
 }

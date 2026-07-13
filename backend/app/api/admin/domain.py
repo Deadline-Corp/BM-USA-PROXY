@@ -79,6 +79,56 @@ async def _paginated(
     return list(rows), total
 
 
+# ── user display helper (shared by Client/Access/Order/Request/Payout/etc. views) ──
+def _user_display(user: User | None) -> str:
+    """Mirrors the admin frontend's expected `user` label: @handle > first name > #id."""
+    if user is None:
+        return "—"
+    if user.tg_username:
+        return f"@{user.tg_username}"
+    if user.first_name:
+        return user.first_name
+    return f"#{user.id}"
+
+
+async def _user_display_map(session: DbSession, user_ids: Sequence[int | None]) -> dict[int | None, str]:
+    """Bulk-resolve `_user_display` for many ids at once (avoids N+1 in list endpoints)."""
+    ids = {uid for uid in user_ids if uid is not None}
+    if not ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(User.id, User.tg_username, User.first_name).where(User.id.in_(ids))
+        )
+    ).all()
+    result: dict[int | None, str] = {}
+    for uid, tg_username, first_name in rows:
+        if tg_username:
+            result[uid] = f"@{tg_username}"
+        elif first_name:
+            result[uid] = first_name
+        else:
+            result[uid] = f"#{uid}"
+    return result
+
+
+async def _admin_display_map(
+    session: DbSession, admin_ids: Sequence[int | None]
+) -> dict[int | None, str]:
+    """Bulk-resolve admin display labels (display_name, falling back to email)."""
+    ids = {aid for aid in admin_ids if aid is not None}
+    if not ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(AdminUser.id, AdminUser.display_name, AdminUser.email).where(
+                AdminUser.id.in_(ids)
+            )
+        )
+    ).all()
+    return {aid: (display_name or email) for aid, display_name, email in rows}
+
+
 # ── dashboard ────────────────────────────────────────────────────────────
 @router.get("/dashboard")
 async def dashboard(admin: CurrentAdmin, session: DbSession) -> dict[str, Any]:
@@ -211,15 +261,14 @@ async def list_clients(
     for (user,) in rows:
         items.append(
             {
-                "id": user.id,
-                "tg_user_id": user.tg_user_id,
-                "tg_username": user.tg_username,
-                "first_name": user.first_name,
-                "email": user.email,
-                "status": user.status,
-                "total_spent": spent_by_user.get(user.id, 0.0),
-                "active": active_by_user.get(user.id, 0),
+                "id": str(user.id),
+                "telegram_username": user.tg_username,
+                "telegram_id": str(user.tg_user_id),
+                "display_name": user.first_name,
                 "created_at": user.created_at.isoformat(),
+                "has_active_access": active_by_user.get(user.id, 0) > 0,
+                "banned": user.status == "banned",
+                "operator_note": user.operator_note,
             }
         )
     return {"items": items, "total": total}
@@ -263,26 +312,46 @@ async def client_dossier(client_id: int, admin: CurrentAdmin, session: DbSession
         )
         or 0
     )
-    ledger = (
-        (await session.execute(
-            select(ReferralLedger)
-            .where(ReferralLedger.referrer_user_id == user.id)
-            .order_by(ReferralLedger.created_at.desc())
-        )).scalars().all()
-    )
+    referral_balances = await referral.balances(session, user.id)
+
+    # bulk-resolve city/carrier per access (via its connection's location)
+    conn_ids = {a.connection_id for a in accesses}
+    conn_lookup: dict[int, tuple[str | None, str | None]] = {}
+    if conn_ids:
+        conn_rows = (
+            await session.execute(
+                select(Connection.id, Location.city, Connection.carrier)
+                .outerjoin(Location, Location.id == Connection.location_id)
+                .where(Connection.id.in_(conn_ids))
+            )
+        ).all()
+        for cid, city, carrier in conn_rows:
+            conn_lookup[cid] = (city, carrier)
+
+    # bulk-resolve provider per order (via its most recent invoice)
+    order_ids = [o.id for o in orders]
+    provider_by_order: dict[int, str] = {}
+    if order_ids:
+        inv_rows = (
+            await session.execute(
+                select(Invoice.order_id, Invoice.provider)
+                .where(Invoice.order_id.in_(order_ids))
+                .order_by(Invoice.created_at.desc())
+            )
+        ).all()
+        for oid, provider in inv_rows:
+            provider_by_order.setdefault(oid, provider)
 
     return {
         "profile": {
-            "id": user.id,
-            "tg_user_id": user.tg_user_id,
-            "tg_username": user.tg_username,
-            "first_name": user.first_name,
-            "last_name": user.last_name,
-            "email": user.email,
-            "status": user.status,
-            "operator_note": user.operator_note,
+            "id": str(user.id),
+            "telegram_username": user.tg_username,
+            "telegram_id": str(user.tg_user_id),
+            "display_name": user.first_name,
             "created_at": user.created_at.isoformat(),
-            "last_seen_at": user.last_seen_at.isoformat() if user.last_seen_at else None,
+            "has_active_access": any(a.status in _ACTIVE_ACCESS for a in accesses),
+            "banned": user.status == "banned",
+            "operator_note": user.operator_note,
         },
         "tos": {
             "accepted": tos_row is not None,
@@ -292,9 +361,12 @@ async def client_dossier(client_id: int, admin: CurrentAdmin, session: DbSession
         },
         "accesses": [
             {
-                "public_id": str(a.public_id),
+                "id": str(a.public_id),
                 "tariff_code": a.tariff_code,
                 "status": a.status,
+                "city": conn_lookup.get(a.connection_id, (None, None))[0],
+                "carrier": conn_lookup.get(a.connection_id, (None, None))[1],
+                "ip": None,
                 "expires_at": a.expires_at.isoformat() if a.expires_at else None,
                 "created_at": a.created_at.isoformat(),
             }
@@ -302,30 +374,27 @@ async def client_dossier(client_id: int, admin: CurrentAdmin, session: DbSession
         ],
         "orders": [
             {
-                "public_id": str(o.public_id),
-                "tariff_code": o.tariff_code,
-                "amount_usd": float(o.amount_usd),
+                "id": str(o.public_id),
                 "status": o.status,
+                "provider": provider_by_order.get(o.id),
+                "amount_usd": float(o.amount_usd),
                 "created_at": o.created_at.isoformat(),
             }
             for o in orders
         ],
         "referral": {
             "code": user.referral_code,
-            "referred_count": referred_count,
-            "ledger": [
-                {
-                    "id": entry.id,
-                    "kind": entry.kind,
-                    "amount_usd": float(entry.amount_usd),
-                    "status": entry.status,
-                    "created_at": entry.created_at.isoformat(),
-                }
-                for entry in ledger
-            ],
+            "clicks": 0,
+            "attached": referred_count,
+            "balance_usd": referral_balances["available"],
         },
         "requests": [
-            {"id": r.id, "type": r.type, "subject": r.subject, "status": r.status}
+            {
+                "id": str(r.id),
+                "status": r.status,
+                "subject": r.subject,
+                "created_at": r.created_at.isoformat(),
+            }
             for r in requests
         ],
     }
@@ -522,20 +591,35 @@ async def toggle_tariff(
 
 
 # ── connections / pool ──────────────────────────────────────────────────
-def _connection_view(c: Connection) -> dict[str, Any]:
+def _connection_view(
+    c: Connection, *, city: str | None, state: str | None, slots_used: int
+) -> dict[str, Any]:
     return {
-        "id": c.id,
-        "iproxy_connection_id": c.iproxy_connection_id,
-        "name": c.name,
-        "location_id": c.location_id,
+        "id": str(c.id),
+        "external_id": c.iproxy_connection_id,
+        "city": city,
+        "state": state,
         "carrier": c.carrier,
-        "tier": c.tier,
+        "online": c.online_status == "online",
         "is_sellable": c.is_sellable,
-        "online_status": c.online_status,
-        "last_online_at": c.last_online_at.isoformat() if c.last_online_at else None,
+        "tier": c.tier,
+        "location_id": str(c.location_id) if c.location_id is not None else None,
         "health_note": c.health_note,
-        "synced_at": c.synced_at.isoformat() if c.synced_at else None,
+        "slots_total": 1,
+        "slots_used": slots_used,
+        "last_rotated_at": None,
     }
+
+
+async def _connection_slots_used(session: DbSession, connection_id: int) -> int:
+    return int(
+        await session.scalar(
+            select(func.count())
+            .select_from(Access)
+            .where(Access.connection_id == connection_id, Access.status.in_(_ACTIVE_ACCESS))
+        )
+        or 0
+    )
 
 
 @router.get("/connections")
@@ -570,7 +654,46 @@ async def list_connections(
     limit, offset = _page(limit, offset)
     total = int(await session.scalar(count_stmt) or 0)
     rows = (await session.execute(stmt.limit(limit).offset(offset))).scalars().all()
-    return {"items": [_connection_view(c) for c in rows], "total": total}
+
+    # bulk-resolve city/state (via Location) + slots_used (active-access count) per connection
+    location_ids = {c.location_id for c in rows if c.location_id is not None}
+    location_lookup: dict[int | None, tuple[str | None, str | None]] = {}
+    if location_ids:
+        loc_rows = (
+            await session.execute(
+                select(Location.id, Location.city, Location.state_code).where(
+                    Location.id.in_(location_ids)
+                )
+            )
+        ).all()
+        for lid, city_val, state_val in loc_rows:
+            location_lookup[lid] = (city_val, state_val)
+
+    connection_ids = [c.id for c in rows]
+    slots_used_by_conn: dict[int, int] = {}
+    if connection_ids:
+        used_rows = (
+            await session.execute(
+                select(Access.connection_id, func.count())
+                .where(
+                    Access.connection_id.in_(connection_ids),
+                    Access.status.in_(_ACTIVE_ACCESS),
+                )
+                .group_by(Access.connection_id)
+            )
+        ).all()
+        slots_used_by_conn = {cid: int(count) for cid, count in used_rows}
+
+    items = [
+        _connection_view(
+            c,
+            city=location_lookup.get(c.location_id, (None, None))[0],
+            state=location_lookup.get(c.location_id, (None, None))[1],
+            slots_used=slots_used_by_conn.get(c.id, 0),
+        )
+        for c in rows
+    ]
+    return {"items": items, "total": total}
 
 
 class ConnectionPatch(BaseModel):
@@ -593,7 +716,14 @@ async def patch_connection(
         setattr(conn, field, value)
     await audit.write(session, admin_id=admin.id, action="connection.update", entity="connection",
                        entity_id=conn.id, after=updates)
-    return _connection_view(conn)
+    location = await session.get(Location, conn.location_id) if conn.location_id else None
+    slots_used = await _connection_slots_used(session, conn.id)
+    return _connection_view(
+        conn,
+        city=location.city if location else None,
+        state=location.state_code if location else None,
+        slots_used=slots_used,
+    )
 
 
 @router.post("/connections/sync")
@@ -612,15 +742,15 @@ async def sync_connections(admin: CurrentAdmin, session: DbSession) -> dict[str,
 
 
 @router.get("/pool/summary")
-async def pool_summary(admin: CurrentAdmin, session: DbSession) -> list[dict[str, Any]]:
+async def pool_summary(admin: CurrentAdmin, session: DbSession) -> dict[str, Any]:
     rows = await session.execute(
         text(
             """
             SELECT
                 l.city,
+                l.state_code,
                 c.carrier,
                 count(*) AS total,
-                count(*) FILTER (WHERE c.is_sellable) AS sellable,
                 count(*) FILTER (
                     WHERE c.is_sellable AND c.online_status = 'online'
                       AND NOT EXISTS (
@@ -638,39 +768,66 @@ async def pool_summary(admin: CurrentAdmin, session: DbSession) -> list[dict[str
                 count(*) FILTER (WHERE c.online_status = 'offline') AS offline
             FROM connections c
             LEFT JOIN locations l ON l.id = c.location_id
-            GROUP BY l.city, c.carrier
+            GROUP BY l.city, l.state_code, c.carrier
             ORDER BY l.city NULLS LAST, c.carrier NULLS LAST
             """
         )
     )
-    return [
-        {
-            "city": r[0],
-            "carrier": r[1],
-            "total": int(r[2]),
-            "sellable": int(r[3]),
-            "free": int(r[4]),
-            "busy": int(r[5]),
-            "offline": int(r[6]),
-        }
-        for r in rows
-    ]
+    cities: list[dict[str, Any]] = []
+    slots_total = slots_used = slots_free = 0
+    for city, state, carrier, total, free, busy, offline in rows:
+        total, free, busy, offline = int(total), int(free), int(busy), int(offline)
+        slots_total += total
+        slots_used += busy
+        slots_free += free
+        cities.append(
+            {
+                "city": city,
+                "state": state,
+                "carrier": carrier,
+                "slots_total": total,
+                "slots_used": busy,
+                "online_nodes": free + busy,
+                "offline_nodes": offline,
+                "full_nodes": busy,
+            }
+        )
+    return {
+        "slots_total": slots_total,
+        "slots_used": slots_used,
+        "slots_free": slots_free,
+        "cities": cities,
+    }
 
 
 # ── accesses (packages) ─────────────────────────────────────────────────
-def _access_view(a: Access) -> dict[str, Any]:
+def _access_view(
+    a: Access, *, user_display: str, city: str | None, carrier: str | None
+) -> dict[str, Any]:
     return {
-        "public_id": str(a.public_id),
-        "user_id": a.user_id,
-        "connection_id": a.connection_id,
-        "tariff_code": a.tariff_code,
+        "id": str(a.public_id),
+        "user": user_display,
         "status": a.status,
-        "starts_at": a.starts_at.isoformat() if a.starts_at else None,
+        "city": city,
+        "carrier": carrier,
+        "ip": None,
+        "tariff_code": a.tariff_code,
         "expires_at": a.expires_at.isoformat() if a.expires_at else None,
-        "rotations_count": a.rotations_count,
-        "swap_count": a.swap_count,
         "created_at": a.created_at.isoformat(),
     }
+
+
+async def _access_extras(session: DbSession, a: Access) -> tuple[str, str | None, str | None]:
+    """Resolve (user_display, city, carrier) for a single access row (used by the
+    single-object mutation endpoints below; list_admin_accesses bulk-joins instead)."""
+    user = await session.get(User, a.user_id)
+    conn = await session.get(Connection, a.connection_id)
+    city: str | None = None
+    carrier = conn.carrier if conn else None
+    if conn is not None and conn.location_id is not None:
+        loc = await session.get(Location, conn.location_id)
+        city = loc.city if loc else None
+    return _user_display(user), city, carrier
 
 
 @router.get("/accesses")
@@ -711,7 +868,31 @@ async def list_admin_accesses(
     limit, offset = _page(limit, offset)
     total = int(await session.scalar(count_stmt) or 0)
     rows = (await session.execute(stmt.limit(limit).offset(offset))).scalars().all()
-    return {"items": [_access_view(a) for a in rows], "total": total}
+
+    user_display_map = await _user_display_map(session, [a.user_id for a in rows])
+    connection_ids = {a.connection_id for a in rows}
+    conn_lookup: dict[int, tuple[str | None, str | None]] = {}
+    if connection_ids:
+        conn_rows = (
+            await session.execute(
+                select(Connection.id, Connection.carrier, Location.city)
+                .outerjoin(Location, Location.id == Connection.location_id)
+                .where(Connection.id.in_(connection_ids))
+            )
+        ).all()
+        for cid, carrier, city_val in conn_rows:
+            conn_lookup[cid] = (city_val, carrier)
+
+    items = [
+        _access_view(
+            a,
+            user_display=user_display_map.get(a.user_id, "—"),
+            city=conn_lookup.get(a.connection_id, (None, None))[0],
+            carrier=conn_lookup.get(a.connection_id, (None, None))[1],
+        )
+        for a in rows
+    ]
+    return {"items": items, "total": total}
 
 
 async def _get_access(session: DbSession, access_id: str) -> Access:
@@ -733,7 +914,8 @@ async def admin_revoke_access(
     await revoke_access(session, access=access, reason=body.reason, actor=f"admin:{admin.id}")
     await audit.write(session, admin_id=admin.id, action="access.revoke", entity="access",
                        entity_id=access.id, after={"reason": body.reason})
-    return _access_view(access)
+    user_display, city, carrier = await _access_extras(session, access)
+    return _access_view(access, user_display=user_display, city=city, carrier=carrier)
 
 
 class ExtendAdminBody(BaseModel):
@@ -748,7 +930,8 @@ async def admin_extend_access(
     await extend_access(session, access=access, minutes=body.minutes)
     await audit.write(session, admin_id=admin.id, action="access.extend", entity="access",
                        entity_id=access.id, after={"minutes": body.minutes})
-    return _access_view(access)
+    user_display, city, carrier = await _access_extras(session, access)
+    return _access_view(access, user_display=user_display, city=city, carrier=carrier)
 
 
 @router.post("/accesses/{access_id}/rotate-ip")
@@ -759,7 +942,8 @@ async def admin_rotate_ip(
     await rotate_ip(session, access=access, actor=f"admin:{admin.id}")
     await audit.write(session, admin_id=admin.id, action="access.rotate_ip", entity="access",
                        entity_id=access.id)
-    return _access_view(access)
+    user_display, city, carrier = await _access_extras(session, access)
+    return _access_view(access, user_display=user_display, city=city, carrier=carrier)
 
 
 class ReissueBody(BaseModel):
@@ -778,23 +962,49 @@ async def admin_reissue_access(
     )
     await audit.write(session, admin_id=admin.id, action="access.reissue", entity="access",
                        entity_id=access.id)
-    return _access_view(access)
+    user_display, city, carrier = await _access_extras(session, access)
+    return _access_view(access, user_display=user_display, city=city, carrier=carrier)
 
 
 # ── orders / payments ────────────────────────────────────────────────────
-def _order_view(o: Order) -> dict[str, Any]:
+def _order_view(o: Order, *, user_display: str, provider: str | None) -> dict[str, Any]:
     return {
-        "public_id": str(o.public_id),
-        "user_id": o.user_id,
-        "tariff_code": o.tariff_code,
-        "amount_usd": float(o.amount_usd),
+        "id": str(o.public_id),
+        "user": user_display,
         "status": o.status,
-        "origin": o.origin,
-        "is_extension": o.is_extension,
-        "paid_at": o.paid_at.isoformat() if o.paid_at else None,
-        "completed_at": o.completed_at.isoformat() if o.completed_at else None,
+        "provider": provider,
+        "amount_usd": float(o.amount_usd),
         "created_at": o.created_at.isoformat(),
     }
+
+
+async def _order_extras(session: DbSession, o: Order) -> tuple[str, str | None]:
+    """Resolve (user_display, provider) for a single order (via its most recent invoice)."""
+    user = await session.get(User, o.user_id)
+    provider = await session.scalar(
+        select(Invoice.provider)
+        .where(Invoice.order_id == o.id)
+        .order_by(Invoice.created_at.desc())
+        .limit(1)
+    )
+    return _user_display(user), provider
+
+
+async def _bulk_order_providers(session: DbSession, order_ids: Sequence[int]) -> dict[int, str]:
+    """Bulk-resolve each order's most recent invoice provider (avoids N+1 in list endpoints)."""
+    if not order_ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(Invoice.order_id, Invoice.provider)
+            .where(Invoice.order_id.in_(order_ids))
+            .order_by(Invoice.created_at.desc())
+        )
+    ).all()
+    provider_by_order: dict[int, str] = {}
+    for order_id, provider in rows:
+        provider_by_order.setdefault(order_id, provider)  # first hit wins = most recent (desc)
+    return provider_by_order
 
 
 @router.get("/orders")
@@ -832,7 +1042,18 @@ async def list_orders(
     limit, offset = _page(limit, offset)
     total = int(await session.scalar(count_stmt) or 0)
     rows = (await session.execute(stmt.limit(limit).offset(offset))).scalars().all()
-    return {"items": [_order_view(o) for o in rows], "total": total}
+
+    user_display_map = await _user_display_map(session, [o.user_id for o in rows])
+    provider_by_order = await _bulk_order_providers(session, [o.id for o in rows])
+    items = [
+        _order_view(
+            o,
+            user_display=user_display_map.get(o.user_id, "—"),
+            provider=provider_by_order.get(o.id),
+        )
+        for o in rows
+    ]
+    return {"items": items, "total": total}
 
 
 async def _get_order(session: DbSession, order_id: str) -> Order:
@@ -855,26 +1076,30 @@ async def order_detail(order_id: str, admin: CurrentAdmin, session: DbSession) -
                 .order_by(PaymentEvent.received_at.desc())
             )).scalars().all()
         )
+    user = await session.get(User, order.user_id)
     return {
-        **_order_view(order),
+        **_order_view(
+            order,
+            user_display=_user_display(user),
+            provider=invoice.provider if invoice is not None else None,
+        ),
         "invoice": (
             {
-                "provider": invoice.provider,
-                "status": invoice.status,
+                "id": str(invoice.id),
                 "amount_usd": float(invoice.amount_usd),
-                "pay_address": invoice.pay_address,
-                "expires_at": invoice.expires_at.isoformat(),
+                "currency": invoice.crypto_currency or "USD",
+                "wallet_address": invoice.pay_address,
+                "memo": None,
             }
             if invoice is not None
             else None
         ),
-        "payment_events": [
+        "events": [
             {
-                "id": e.id,
-                "provider": e.provider,
-                "signature_valid": e.signature_valid,
-                "received_at": e.received_at.isoformat(),
-                "processing_result": e.processing_result,
+                "id": str(e.id),
+                "type": str((e.payload or {}).get("status") or e.processing_result or "event"),
+                "message": f"{e.provider} webhook: {e.processing_result or 'received, not yet processed'}",
+                "created_at": e.received_at.isoformat(),
             }
             for e in events
         ],
@@ -888,7 +1113,16 @@ async def manual_review_orders(admin: CurrentAdmin, session: DbSession) -> dict[
             select(Order).where(Order.status == "manual_review").order_by(Order.created_at)
         )
     ).scalars().all()
-    items = [_order_view(o) for o in rows]
+    user_display_map = await _user_display_map(session, [o.user_id for o in rows])
+    provider_by_order = await _bulk_order_providers(session, [o.id for o in rows])
+    items = [
+        _order_view(
+            o,
+            user_display=user_display_map.get(o.user_id, "—"),
+            provider=provider_by_order.get(o.id),
+        )
+        for o in rows
+    ]
     return {"items": items, "total": len(items)}
 
 
@@ -911,7 +1145,8 @@ async def resolve_order(
         raise ValidationError("action must be 'approve', 'fail', or 'refund'")
     await audit.write(session, admin_id=admin.id, action="order.resolve", entity="order",
                        entity_id=order.id, after={"action": body.action})
-    return _order_view(order)
+    user_display, provider = await _order_extras(session, order)
+    return _order_view(order, user_display=user_display, provider=provider)
 
 
 class RefundBody(BaseModel):
@@ -957,7 +1192,11 @@ async def refund_order(
     await audit.write(session, admin_id=admin.id, action="order.refund", entity="order",
                        entity_id=order.id, after={"refund_id": refund.id,
                                                    "amount_usd": body.amount_usd})
-    return {"order": _order_view(order), "refund_id": refund.id}
+    user_display, provider = await _order_extras(session, order)
+    return {
+        "order": _order_view(order, user_display=user_display, provider=provider),
+        "refund_id": refund.id,
+    }
 
 
 class MarkPaidBody(BaseModel):
@@ -974,21 +1213,19 @@ async def admin_mark_paid(
     await orders_svc.mark_paid(session, order=order, source="manual")
     await audit.write(session, admin_id=admin.id, action="order.mark_paid", entity="order",
                        entity_id=order.id, after={"reason": body.reason})
-    return _order_view(order)
+    user_display, provider = await _order_extras(session, order)
+    return _order_view(order, user_display=user_display, provider=provider)
 
 
 # ── requests (kanban) ────────────────────────────────────────────────────
-def _request_view(r: Request) -> dict[str, Any]:
+def _request_view(r: Request, *, user_display: str) -> dict[str, Any]:
     return {
-        "id": r.id,
-        "user_id": r.user_id,
-        "type": r.type,
+        "id": str(r.id),
+        "user": user_display,
         "subject": r.subject,
-        "body": r.body,
         "status": r.status,
-        "assignee_id": r.assignee_id,
+        "assignee_id": str(r.assignee_id) if r.assignee_id is not None else None,
         "created_at": r.created_at.isoformat(),
-        "updated_at": r.updated_at.isoformat(),
     }
 
 
@@ -1000,7 +1237,10 @@ async def list_requests(
     if status:
         stmt = stmt.where(Request.status == status)
     rows = (await session.execute(stmt)).scalars().all()
-    items = [_request_view(r) for r in rows]
+    user_display_map = await _user_display_map(session, [r.user_id for r in rows])
+    items = [
+        _request_view(r, user_display=user_display_map.get(r.user_id, "—")) for r in rows
+    ]
     return {"items": items, "total": len(items)}
 
 
@@ -1021,7 +1261,8 @@ async def patch_request(
         setattr(req, field, value)
     await audit.write(session, admin_id=admin.id, action="request.update", entity="request",
                        entity_id=req.id, after=updates)
-    return _request_view(req)
+    user = await session.get(User, req.user_id) if req.user_id is not None else None
+    return _request_view(req, user_display=_user_display(user))
 
 
 class RequestCommentBody(BaseModel):
@@ -1040,7 +1281,12 @@ async def add_request_comment(
     await session.flush()
     await audit.write(session, admin_id=admin.id, action="request.comment", entity="request",
                        entity_id=req.id, after={"comment_id": comment.id})
-    return {"id": comment.id, "body": comment.body, "created_at": comment.created_at.isoformat()}
+    return {
+        "id": str(comment.id),
+        "body": comment.body,
+        "author": admin.display_name,
+        "created_at": comment.created_at.isoformat(),
+    }
 
 
 # ── referrals ────────────────────────────────────────────────────────────
@@ -1075,17 +1321,15 @@ async def referrals_ledger(
     limit, offset = _page(limit, offset)
     total = int(await session.scalar(count_stmt) or 0)
     rows = (await session.execute(stmt.limit(limit).offset(offset))).scalars().all()
+    user_display_map = await _user_display_map(session, [entry.referrer_user_id for entry in rows])
     return {
         "items": [
             {
-                "id": entry.id,
-                "referrer_user_id": entry.referrer_user_id,
-                "referee_user_id": entry.referee_user_id,
-                "order_id": entry.order_id,
-                "kind": entry.kind,
-                "amount_usd": float(entry.amount_usd),
+                "id": str(entry.id),
+                "referrer_user_id": str(entry.referrer_user_id),
+                "referrer": user_display_map.get(entry.referrer_user_id, "—"),
                 "status": entry.status,
-                "hold_until": entry.hold_until.isoformat() if entry.hold_until else None,
+                "amount_usd": float(entry.amount_usd),
                 "created_at": entry.created_at.isoformat(),
             }
             for entry in rows
@@ -1094,18 +1338,13 @@ async def referrals_ledger(
     }
 
 
-def _payout_view(p: Payout) -> dict[str, Any]:
+def _payout_view(p: Payout, *, referrer_display: str) -> dict[str, Any]:
     return {
-        "id": p.id,
-        "referrer_user_id": p.referrer_user_id,
+        "id": str(p.id),
+        "referrer": referrer_display,
         "amount_usd": float(p.amount_usd),
-        "wallet_address": p.wallet_address,
-        "network": p.network,
         "status": p.status,
-        "tx_hash": p.tx_hash,
-        "reject_reason": p.reject_reason,
         "requested_at": p.requested_at.isoformat(),
-        "processed_at": p.processed_at.isoformat() if p.processed_at else None,
     }
 
 
@@ -1117,7 +1356,11 @@ async def list_payouts(
     if status:
         stmt = stmt.where(Payout.status == status)
     rows = (await session.execute(stmt)).scalars().all()
-    items = [_payout_view(p) for p in rows]
+    user_display_map = await _user_display_map(session, [p.referrer_user_id for p in rows])
+    items = [
+        _payout_view(p, referrer_display=user_display_map.get(p.referrer_user_id, "—"))
+        for p in rows
+    ]
     return {"items": items, "total": len(items)}
 
 
@@ -1144,7 +1387,8 @@ async def approve_payout(
     )
     await audit.write(session, admin_id=admin.id, action="payout.approve", entity="payout",
                        entity_id=payout.id)
-    return _payout_view(payout)
+    referrer = await session.get(User, payout.referrer_user_id)
+    return _payout_view(payout, referrer_display=_user_display(referrer))
 
 
 class PayoutRejectBody(BaseModel):
@@ -1177,7 +1421,8 @@ async def reject_payout(
     )
     await audit.write(session, admin_id=admin.id, action="payout.reject", entity="payout",
                        entity_id=payout.id, after={"reason": body.reason})
-    return _payout_view(payout)
+    referrer = await session.get(User, payout.referrer_user_id)
+    return _payout_view(payout, referrer_display=_user_display(referrer))
 
 
 class PayoutMarkPaidBody(BaseModel):
@@ -1208,7 +1453,8 @@ async def mark_payout_paid(
     )
     await audit.write(session, admin_id=admin.id, action="payout.mark_paid", entity="payout",
                        entity_id=payout.id, after={"tx_hash": body.tx_hash})
-    return _payout_view(payout)
+    referrer = await session.get(User, payout.referrer_user_id)
+    return _payout_view(payout, referrer_display=_user_display(referrer))
 
 
 @router.get("/settings/referral")
@@ -1240,17 +1486,17 @@ async def patch_referral_settings(
 
 # ── broadcasts ───────────────────────────────────────────────────────────
 def _broadcast_view(b: Broadcast) -> dict[str, Any]:
+    # sent_at prefers the completion timestamp (finished_at); while still in-flight
+    # (status='sending') falls back to started_at so the admin sees *something*.
+    sent_at = b.finished_at or b.started_at
     return {
-        "id": b.id,
+        "id": str(b.id),
         "title": b.title,
         "body": b.body,
         "audience_filter": b.audience_filter,
         "status": b.status,
         "scheduled_at": b.scheduled_at.isoformat() if b.scheduled_at else None,
-        "total_count": b.total_count,
-        "sent_count": b.sent_count,
-        "failed_count": b.failed_count,
-        "created_at": b.created_at.isoformat(),
+        "sent_at": sent_at.isoformat() if sent_at else None,
     }
 
 
@@ -1345,7 +1591,7 @@ async def broadcast_progress(
     broadcast = await _get_broadcast(session, broadcast_id)
     return {
         "total": broadcast.total_count,
-        "sent": broadcast.sent_count,
+        "delivered": broadcast.sent_count,
         "failed": broadcast.failed_count,
         "status": broadcast.status,
     }
@@ -1354,10 +1600,9 @@ async def broadcast_progress(
 # ── publications (channels / posts) ─────────────────────────────────────
 def _channel_view(c: Channel) -> dict[str, Any]:
     return {
-        "id": c.id,
-        "tg_chat_id": c.tg_chat_id,
-        "title": c.title,
-        "username": c.username,
+        "id": str(c.id),
+        "name": c.title,
+        "handle": c.username,
         "is_active": c.is_active,
     }
 
@@ -1412,16 +1657,14 @@ async def patch_channel(
 
 def _post_view(p: Post) -> dict[str, Any]:
     return {
-        "id": p.id,
-        "channel_id": p.channel_id,
+        "id": str(p.id),
+        "channel_id": str(p.channel_id),
         "title": p.title,
         "body": p.body,
-        "deep_link_code": p.deep_link_code,
         "status": p.status,
-        "scheduled_at": p.scheduled_at.isoformat() if p.scheduled_at else None,
-        "posted_at": p.posted_at.isoformat() if p.posted_at else None,
+        "published_at": p.posted_at.isoformat() if p.posted_at else None,
+        "views": 0,
         "clicks": p.clicks,
-        "created_at": p.created_at.isoformat(),
     }
 
 
@@ -1525,12 +1768,10 @@ async def post_attribution(
 # ── faq ──────────────────────────────────────────────────────────────────
 def _faq_view(f: FaqItem) -> dict[str, Any]:
     return {
-        "id": f.id,
-        "category": f.category,
+        "id": str(f.id),
         "question": f.question,
         "answer": f.answer,
-        "sort_order": f.sort_order,
-        "is_active": f.is_active,
+        "is_published": f.is_active,
     }
 
 
@@ -1621,17 +1862,15 @@ async def notifications_log(
     limit, offset = _page(limit, offset)
     total = int(await session.scalar(count_stmt) or 0)
     rows = (await session.execute(stmt.limit(limit).offset(offset))).scalars().all()
+    user_display_map = await _user_display_map(session, [n.user_id for n in rows])
     return {
         "items": [
             {
-                "id": n.id,
-                "user_id": n.user_id,
-                "template_code": n.template_code,
+                "id": str(n.id),
+                "user": user_display_map.get(n.user_id, "—"),
+                "type": n.template_code,
                 "status": n.status,
-                "attempts": n.attempts,
-                "last_error": n.last_error,
-                "scheduled_at": n.scheduled_at.isoformat(),
-                "sent_at": n.sent_at.isoformat() if n.sent_at else None,
+                "created_at": n.scheduled_at.isoformat(),
             }
             for n in rows
         ],
@@ -1831,16 +2070,14 @@ async def list_audit(
     limit, offset = _page(limit, offset)
     total = int(await session.scalar(count_stmt) or 0)
     rows = (await session.execute(stmt.limit(limit).offset(offset))).scalars().all()
+    admin_display_map = await _admin_display_map(session, [a.admin_id for a in rows])
     return {
         "items": [
             {
-                "id": a.id,
-                "admin_id": a.admin_id,
-                "action": a.action,
+                "id": str(a.id),
+                "admin": admin_display_map.get(a.admin_id, "—"),
                 "entity": a.entity,
-                "entity_id": a.entity_id,
-                "before": a.before,
-                "after": a.after,
+                "action": a.action,
                 "created_at": a.created_at.isoformat(),
             }
             for a in rows

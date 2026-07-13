@@ -66,7 +66,7 @@ export function TariffsScreen() {
             <table className="w-full border-collapse text-[.86rem]">
               <thead>
                 <tr>
-                  {[strings.tariffs.code, strings.tariffs.name, strings.tariffs.priceUsd, strings.tariffs.durationDays, strings.tariffs.maxUserSwaps, strings.tariffs.active, ""].map((h) => (
+                  {[strings.tariffs.code, strings.tariffs.name, strings.tariffs.priceUsd, strings.tariffs.durationMinutes, strings.tariffs.maxUserSwaps, strings.tariffs.active, ""].map((h) => (
                     <th key={h} className="text-left text-[.7rem] uppercase tracking-[.08em] text-text-3 font-semibold px-[14px] py-2.5 border-b border-border whitespace-nowrap">
                       {h}
                     </th>
@@ -79,7 +79,7 @@ export function TariffsScreen() {
                     <td className="px-[14px] py-3 font-mono text-[.82rem] text-text">{t.code}</td>
                     <td className="px-[14px] py-3 text-text font-medium">{t.name}</td>
                     <td className="px-[14px] py-3"><Num value={t.price_usd} usd className="text-text" /></td>
-                    <td className="px-[14px] py-3"><Num value={t.duration_days} className="text-text-2" /></td>
+                    <td className="px-[14px] py-3"><Num value={t.duration_minutes} className="text-text-2" /></td>
                     <td className="px-[14px] py-3"><Num value={t.max_user_swaps} className="text-text-2" /></td>
                     <td className="px-[14px] py-3">
                       <Switch checked={t.is_active} onChange={() => handleToggle(t.id)} disabled={toggleMutation.isPending} />

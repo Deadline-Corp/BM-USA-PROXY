@@ -16,7 +16,7 @@ const tariffSchema = z.object({
   code: z.string().min(1, "Code is required"),
   name: z.string().min(1, "Name is required"),
   price_usd: z.coerce.number().min(0, "Must be 0 or more"),
-  duration_days: z.coerce.number().int().min(1, "Must be at least 1 day"),
+  duration_minutes: z.coerce.number().int().min(1, "Must be at least 1 minute"),
   max_user_swaps: z.coerce.number().int().min(0, "Must be 0 or more"),
   is_active: z.boolean(),
 });
@@ -42,7 +42,7 @@ export function TariffFormModal({ open, onClose, tariff }: TariffFormModalProps)
     formState: { errors },
   } = useForm<TariffForm>({
     resolver: zodResolver(tariffSchema),
-    defaultValues: { code: "", name: "", price_usd: 0, duration_days: 30, max_user_swaps: 0, is_active: true },
+    defaultValues: { code: "", name: "", price_usd: 0, duration_minutes: 30, max_user_swaps: 0, is_active: true },
   });
 
   useEffect(() => {
@@ -53,11 +53,11 @@ export function TariffFormModal({ open, onClose, tariff }: TariffFormModalProps)
               code: tariff.code,
               name: tariff.name,
               price_usd: tariff.price_usd,
-              duration_days: tariff.duration_days,
+              duration_minutes: tariff.duration_minutes,
               max_user_swaps: tariff.max_user_swaps,
               is_active: tariff.is_active,
             }
-          : { code: "", name: "", price_usd: 0, duration_days: 30, max_user_swaps: 0, is_active: true },
+          : { code: "", name: "", price_usd: 0, duration_minutes: 30, max_user_swaps: 0, is_active: true },
       );
     }
   }, [open, tariff, reset]);
@@ -112,9 +112,9 @@ export function TariffFormModal({ open, onClose, tariff }: TariffFormModalProps)
           <Input
             type="number"
             min={1}
-            label={strings.tariffs.durationDays}
-            error={errors.duration_days?.message}
-            {...register("duration_days")}
+            label={strings.tariffs.durationMinutes}
+            error={errors.duration_minutes?.message}
+            {...register("duration_minutes")}
           />
         </div>
         <Input

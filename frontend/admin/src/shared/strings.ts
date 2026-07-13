@@ -161,7 +161,7 @@ export const strings = {
     code: "Code",
     name: "Name",
     priceUsd: "Price (USD)",
-    durationDays: "Duration (days)",
+    durationMinutes: "Duration (minutes)",
     maxUserSwaps: "Max user IP swaps",
     active: "Active",
   },
