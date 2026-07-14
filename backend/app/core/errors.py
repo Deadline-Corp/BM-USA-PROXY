@@ -49,6 +49,16 @@ class Forbidden(DomainError):
     status = 403
 
 
+class AccountBanned(Forbidden):
+    """The Telegram account is banned — the mini-app shows a dedicated banned screen.
+
+    A distinct ``code`` (vs. a bare Forbidden) lets the client tell "you are banned"
+    apart from any other 403 and render support-contact copy instead of a generic error.
+    """
+
+    code = "account_banned"
+
+
 class Conflict(DomainError):
     """Conflicting state (e.g. sold out, duplicate)."""
 

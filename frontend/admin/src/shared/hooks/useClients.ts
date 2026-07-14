@@ -51,8 +51,13 @@ export function useUnbanClient() {
 }
 
 export function useMessageClient() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, text }: { id: string; text: string }) => clientsApi.message(id, text),
+    // Refetch the dossier so the operator's reply shows up in the conversation thread.
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["clients", vars.id] });
+    },
   });
 }
 

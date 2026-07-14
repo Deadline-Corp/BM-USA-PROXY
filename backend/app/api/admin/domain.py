@@ -15,7 +15,7 @@ from typing import Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import ColumnElement, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentAdmin, DbSession, Owner
@@ -28,6 +28,7 @@ from app.models import (
     Broadcast,
     Channel,
     Connection,
+    ConversationMessage,
     FaqItem,
     Invoice,
     Location,
@@ -165,12 +166,21 @@ async def dashboard(admin: CurrentAdmin, session: DbSession) -> dict[str, Any]:
         )
         or 0
     )
+    unread_messages = int(
+        await session.scalar(
+            select(func.count())
+            .select_from(ConversationMessage)
+            .where(ConversationMessage.direction == "in", ConversationMessage.read_at.is_(None))
+        )
+        or 0
+    )
     return {
         "revenue": {"today": revenue_today, "d7": revenue_7d, "d30": revenue_30d},
         "active_accesses": active_accesses,
         "free_pool": free_pool,
         "pending_manual_review": pending_manual_review,
         "new_requests": new_requests,
+        "unread_messages": unread_messages,
     }
 
 
@@ -342,6 +352,22 @@ async def client_dossier(client_id: int, admin: CurrentAdmin, session: DbSession
         for oid, provider in inv_rows:
             provider_by_order.setdefault(oid, provider)
 
+    # conversation thread (inbound client DMs + operator replies); viewing the dossier
+    # marks the client's unread inbound messages as read (drives the operator badge).
+    msgs = (
+        await session.execute(
+            select(ConversationMessage)
+            .where(ConversationMessage.user_id == user.id)
+            .order_by(ConversationMessage.created_at.asc())
+            .limit(200)
+        )
+    ).scalars().all()
+    now = _utcnow()
+    for m in msgs:
+        if m.direction == "in" and m.read_at is None:
+            m.read_at = now
+    admin_display = await _admin_display_map(session, [m.admin_id for m in msgs])
+
     return {
         "profile": {
             "id": str(user.id),
@@ -397,6 +423,16 @@ async def client_dossier(client_id: int, admin: CurrentAdmin, session: DbSession
             }
             for r in requests
         ],
+        "messages": [
+            {
+                "id": str(m.id),
+                "direction": m.direction,
+                "text": m.body,
+                "admin": admin_display.get(m.admin_id) if m.admin_id else None,
+                "created_at": m.created_at.isoformat(),
+            }
+            for m in msgs
+        ],
     }
 
 
@@ -418,9 +454,20 @@ async def patch_client(
 @router.post("/clients/{client_id}/ban")
 async def ban_client(client_id: int, admin: CurrentAdmin, session: DbSession) -> dict[str, str]:
     user = await _get_user(session, client_id)
+    # Revoke any live access first — a ban must also kill the proxy the client holds,
+    # otherwise the deleted-from-the-app user keeps routing traffic through iproxy.
+    live = (
+        await session.execute(
+            select(Access).where(Access.user_id == user.id, Access.status.in_(_ACTIVE_ACCESS))
+        )
+    ).scalars().all()
+    for access in live:
+        await revoke_access(
+            session, access=access, reason="account banned", actor=f"admin:{admin.id}"
+        )
     user.status = "banned"
     await audit.write(session, admin_id=admin.id, action="client.ban", entity="user",
-                       entity_id=user.id)
+                       entity_id=user.id, after={"revoked_accesses": len(live)})
     return {"status": user.status}
 
 
@@ -442,6 +489,12 @@ async def message_client(
     client_id: int, body: ClientMessage, admin: CurrentAdmin, session: DbSession
 ) -> dict[str, bool]:
     user = await _get_user(session, client_id)
+    # Record the outbound side of the thread so the dossier shows the full conversation.
+    session.add(
+        ConversationMessage(
+            user_id=user.id, direction="out", admin_id=admin.id, body=body.text
+        )
+    )
     await enqueue(
         session, user_id=user.id, template_code="operator_message", payload={"text": body.text}
     )
@@ -836,7 +889,9 @@ async def list_admin_accesses(
     session: DbSession,
     status: str | None = None,
     city: str | None = None,
+    user: str | None = None,
     user_id: int | None = None,
+    expiring: bool = False,
     expiring_24h: bool = False,
     limit: int = 50,
     offset: int = 0,
@@ -849,13 +904,26 @@ async def list_admin_accesses(
     if user_id:
         stmt = stmt.where(Access.user_id == user_id)
         count_stmt = count_stmt.where(Access.user_id == user_id)
+    if user:
+        # Free-text match on @handle / first name / numeric telegram id — this is what
+        # the admin "User" filter box sends (the frontend passes ?user=..., not user_id).
+        term = user.strip().lstrip("@")
+        clauses: list[ColumnElement[bool]] = [
+            User.tg_username.ilike(f"%{term}%"),
+            User.first_name.ilike(f"%{term}%"),
+        ]
+        if term.isdigit():
+            clauses.append(User.tg_user_id == int(term))
+        match_ids = select(User.id).where(or_(*clauses))
+        stmt = stmt.where(Access.user_id.in_(match_ids))
+        count_stmt = count_stmt.where(Access.user_id.in_(match_ids))
     if city:
         conn_ids = select(Connection.id).join(
             Location, Location.id == Connection.location_id
         ).where(Location.city.ilike(f"%{city}%"))
         stmt = stmt.where(Access.connection_id.in_(conn_ids))
         count_stmt = count_stmt.where(Access.connection_id.in_(conn_ids))
-    if expiring_24h:
+    if expiring or expiring_24h:
         cutoff = _utcnow() + timedelta(hours=24)
         stmt = stmt.where(
             Access.status.in_(("active", "expiring")), Access.expires_at <= cutoff

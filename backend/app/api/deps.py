@@ -9,7 +9,7 @@ from fastapi import Depends, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import SessionFactory
-from app.core.errors import Forbidden, Unauthorized
+from app.core.errors import AccountBanned, Forbidden, Unauthorized
 from app.core.security import decode_token, is_blacklisted, parse_init_data
 from app.models import AdminUser, User
 
@@ -44,7 +44,7 @@ async def get_current_user(
 
     user = await upsert_from_telegram(session, identity)
     if user.status == "banned":
-        raise Forbidden("account banned")
+        raise AccountBanned("Your account has been banned.")
     # carry the start_param (deep-link payload) for referral/attribution binding
     user.__dict__["_start_param"] = identity.get("start_param")
     return user

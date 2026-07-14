@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import (
+    BigInteger,
     CheckConstraint,
     ForeignKey,
     Index,
@@ -12,6 +13,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import INET, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -78,6 +80,37 @@ class AppSetting(Base):
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class ConversationMessage(Base):
+    """Two-way client↔operator thread: inbound client DMs to the bot + operator replies.
+
+    Inbound rows (``direction='in'``) are captured by the bot catch-all handler; outbound
+    rows (``direction='out'``) are written when an operator messages the client from the
+    admin. ``read_at`` drives the operator "unread messages" badge — set when an operator
+    opens the client's dossier.
+    """
+
+    __tablename__ = "conversation_messages"
+
+    id: Mapped[int] = pk()
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    direction: Mapped[str] = mapped_column(Text, nullable=False)  # 'in' | 'out'
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    admin_id: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"))  # 'out' only
+    tg_message_id: Mapped[int | None] = mapped_column(BigInteger)  # 'in' only
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = created_at_col()
+
+    __table_args__ = (
+        CheckConstraint("direction IN ('in','out')", name="direction_valid"),
+        Index("ix_conv_user", "user_id", text("created_at DESC")),
+        Index(
+            "ix_conv_unread",
+            "user_id",
+            postgresql_where=text("direction = 'in' AND read_at IS NULL"),
+        ),
     )
 
 

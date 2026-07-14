@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { SlideOver } from "@/shared/components/SlideOver";
 import { Button } from "@/shared/components/Button";
 import { StatusBadge } from "@/shared/components/StatusBadge";
@@ -24,7 +25,7 @@ import { useToast } from "@/shared/components/Toast";
 import { apiErrorMessage } from "@/shared/api/client";
 import { strings } from "@/shared/strings";
 import { IconMail, IconPlus } from "@/shared/components/icons";
-import type { ClientDossier as ClientDossierData } from "@/shared/api/types";
+import type { ClientDossier as ClientDossierData, ConversationMessage } from "@/shared/api/types";
 
 interface ClientDossierProps {
   clientId: string | null;
@@ -50,6 +51,15 @@ export function ClientDossier({ clientId, onClose }: ClientDossierProps) {
   const [issueTariff, setIssueTariff] = useState("");
 
   const profile = data?.profile;
+
+  const qc = useQueryClient();
+  useEffect(() => {
+    // Opening a dossier marks the client's inbound messages read server-side —
+    // refresh the sidebar "unread" badge so it reflects the new count.
+    if (data?.messages?.some((m) => m.direction === "in")) {
+      qc.invalidateQueries({ queryKey: ["dashboard", "summary"] });
+    }
+  }, [data, qc]);
 
   if (!clientId) return null;
 
@@ -284,6 +294,19 @@ function DossierBody({
         </div>
       </div>
 
+      {/* Conversation */}
+      <Section title={strings.clients.dossierConversation}>
+        {data.messages.length === 0 ? (
+          <EmptyRow text={strings.clients.conversationEmpty} />
+        ) : (
+          <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3 max-h-[300px] overflow-y-auto">
+            {data.messages.map((m) => (
+              <MessageBubble key={m.id} message={m} />
+            ))}
+          </div>
+        )}
+      </Section>
+
       {/* TOS */}
       <Section title={strings.clients.dossierTos}>
         <StatusBadge
@@ -382,6 +405,28 @@ function DossierBody({
           </RowList>
         )}
       </Section>
+    </div>
+  );
+}
+
+function MessageBubble({ message }: { message: ConversationMessage }) {
+  const outbound = message.direction === "out";
+  return (
+    <div className={`flex flex-col max-w-[85%] ${outbound ? "self-end items-end" : "self-start items-start"}`}>
+      <div
+        className={`rounded-lg px-3 py-2 text-[.84rem] leading-snug whitespace-pre-wrap break-words ${
+          outbound
+            ? "bg-accent text-on-accent"
+            : "bg-surface-2 text-text border border-border"
+        }`}
+      >
+        {message.text}
+      </div>
+      <span className="text-[.66rem] text-text-3 mt-0.5 px-0.5">
+        {outbound ? message.admin ?? strings.clients.conversationOperator : strings.clients.conversationClient}
+        {" · "}
+        {formatDateTime(message.created_at)}
+      </span>
     </div>
   );
 }

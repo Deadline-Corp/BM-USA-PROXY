@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
-import { ApiError } from "./shared/api/client";
+import { ApiError, isBannedError } from "./shared/api/client";
+import { markBanned } from "./shared/auth/bannedState";
 import { AuthProvider } from "./shared/auth/AuthProvider";
 import { AuthGate } from "./shared/auth/AuthGate";
 import { ToastProvider } from "./shared/components/Toast";
@@ -22,7 +23,15 @@ function shouldRetry(failureCount: number, error: unknown): boolean {
   return failureCount < 2;
 }
 
+// A banned account 403s on every /api/twa call — catch it centrally (from any
+// query or mutation) and flip the banned flag so AuthGate can show the banned screen.
+const onError = (error: unknown) => {
+  if (isBannedError(error)) markBanned();
+};
+
 const queryClient = new QueryClient({
+  queryCache: new QueryCache({ onError }),
+  mutationCache: new MutationCache({ onError }),
   defaultOptions: {
     queries: {
       retry: shouldRetry,

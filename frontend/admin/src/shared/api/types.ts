@@ -47,6 +47,7 @@ export interface DashboardSummary {
   free_pool: number;
   pending_manual_review: number;
   new_requests: number;
+  unread_messages: number;
 }
 
 export interface RevenuePoint {
@@ -106,6 +107,16 @@ export interface ClientRequest {
   created_at: string;
 }
 
+export interface ConversationMessage {
+  id: string;
+  /** "in" = client → bot, "out" = operator → client. */
+  direction: "in" | "out";
+  text: string;
+  /** Display name of the operator who sent an "out" message; null for "in". */
+  admin: string | null;
+  created_at: string;
+}
+
 export interface ClientDossier {
   profile: Client;
   tos: ClientTos;
@@ -113,6 +124,7 @@ export interface ClientDossier {
   orders: ClientOrder[];
   referral: ClientReferral | null;
   requests: ClientRequest[];
+  messages: ConversationMessage[];
 }
 
 export interface IssueAccessRequest {

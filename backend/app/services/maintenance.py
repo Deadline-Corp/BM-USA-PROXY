@@ -48,7 +48,11 @@ async def sweep_access_expiries(session: AsyncSession) -> dict[str, int]:
                 dedupe_key=f"exp:{access.id}",
             )
             expired += 1
-        elif access.expires_at <= now + timedelta(hours=1) and access.warned_1h_at is None:
+        elif (
+            _allow_1h_warning(access)
+            and access.expires_at <= now + timedelta(hours=1)
+            and access.warned_1h_at is None
+        ):
             access.status = "expiring"
             access.warned_1h_at = now
             await enqueue(
@@ -57,7 +61,11 @@ async def sweep_access_expiries(session: AsyncSession) -> dict[str, int]:
                 dedupe_key=f"exp1:{access.id}",
             )
             warned += 1
-        elif access.expires_at <= now + timedelta(hours=24) and access.warned_24h_at is None:
+        elif (
+            _allow_24h_warning(access)
+            and access.expires_at <= now + timedelta(hours=24)
+            and access.warned_24h_at is None
+        ):
             access.status = "expiring"
             access.warned_24h_at = now
             await enqueue(
@@ -67,6 +75,28 @@ async def sweep_access_expiries(session: AsyncSession) -> dict[str, int]:
             )
             warned += 1
     return {"warned": warned, "expired": expired}
+
+
+def _granted_minutes(access: Access) -> float | None:
+    """Total granted lifetime (issue → expiry) in minutes, or None if it can't be
+    determined. starts_at + expires_at are stamped together at issue, so this is exact."""
+    if access.starts_at is None or access.expires_at is None:
+        return None
+    return (access.expires_at - access.starts_at).total_seconds() / 60.0
+
+
+def _allow_1h_warning(access: Access) -> bool:
+    """Skip the 1h warning for trial-length access (≤1h total) — a 1h proxy would
+    otherwise get warned the instant it's issued."""
+    total = _granted_minutes(access)
+    return total is None or total > 60
+
+
+def _allow_24h_warning(access: Access) -> bool:
+    """Only send the 24h warning when the access lasts longer than a day (weekly+).
+    Daily (≤24h) and trial access get no 24h warning."""
+    total = _granted_minutes(access)
+    return total is None or total > 24 * 60
 
 
 async def expire_invoices(session: AsyncSession) -> int:

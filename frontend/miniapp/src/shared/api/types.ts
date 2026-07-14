@@ -235,7 +235,11 @@ export interface AcceptTermsResponse {
 }
 
 // ── API error shape ──────────────────────────────────────────────────────
+// The backend renders domain errors as `{ error: { code, message } }`; FastAPI's
+// own validation errors use `detail`. Both are modelled here so the client can read
+// either, and detect specific codes (e.g. `account_banned`).
 export interface ApiErrorBody {
+  error?: { code?: string; message?: string };
   detail?: string | { message?: string } | Array<{ msg?: string }>;
   message?: string;
 }

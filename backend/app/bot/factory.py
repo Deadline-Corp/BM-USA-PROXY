@@ -30,7 +30,9 @@ def get_bot() -> Bot | None:
 @lru_cache
 def get_dispatcher() -> Dispatcher:
     dp = Dispatcher(storage=RedisStorage(redis=redis_client))
-    from app.bot.handlers import start
+    from app.bot.handlers import conversation, start
 
     dp.include_router(start.router)
+    # Catch-all last: only messages the command handlers didn't claim reach it.
+    dp.include_router(conversation.router)
     return dp

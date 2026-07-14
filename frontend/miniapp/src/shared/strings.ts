@@ -55,6 +55,12 @@ export const strings = {
     cta: "Open @BM_USA_Proxy_bot",
   },
 
+  banned: {
+    title: "You have been banned",
+    body: "Your access to BM USA Proxy has been suspended. If you believe this is a mistake, contact our support team and we'll take a look.",
+    cta: "Contact support",
+  },
+
   home: {
     heroLabel: "Active access",
     quickActionsLabel: "Quick actions",

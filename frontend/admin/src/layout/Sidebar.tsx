@@ -72,9 +72,9 @@ export function Sidebar() {
               >
                 {item.icon}
                 <span className="flex-1">{item.label}</span>
-                {item.accessory === "badge" && summary?.new_requests ? (
+                {item.accessory === "badge" && item.badgeKey && summary?.[item.badgeKey] ? (
                   <span className="font-mono tabular-nums text-[.72rem] font-semibold min-w-5 h-5 px-1.5 rounded-full bg-accent text-on-accent grid place-items-center">
-                    {summary.new_requests}
+                    {summary[item.badgeKey]}
                   </span>
                 ) : null}
                 {item.accessory === "dot" && (

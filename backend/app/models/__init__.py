@@ -14,7 +14,13 @@ from app.models.content import (
     RequestComment,
 )
 from app.models.referral import Payout, ReferralLedger
-from app.models.system import AppSetting, AuditLog, NotificationOutbox, TosAcceptance
+from app.models.system import (
+    AppSetting,
+    AuditLog,
+    ConversationMessage,
+    NotificationOutbox,
+    TosAcceptance,
+)
 from app.models.users import AdminUser, User
 
 __all__ = [
@@ -28,6 +34,7 @@ __all__ = [
     "BroadcastDelivery",
     "Channel",
     "Connection",
+    "ConversationMessage",
     "FaqItem",
     "Invoice",
     "Location",

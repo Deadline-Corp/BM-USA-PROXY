@@ -9,11 +9,12 @@ from __future__ import annotations
 import contextlib
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import Conflict, ProvisioningError
 from app.core.security import encrypt_credentials
-from app.models import Access, AccessEvent, Connection, Order
+from app.models import Access, AccessEvent, Connection, Order, Tariff
 from app.services.notifications import enqueue
 from app.services.provisioning.allocator import allocate
 from app.services.provisioning.registry import get_provisioner
@@ -122,9 +123,26 @@ async def rotate_ip(session: AsyncSession, *, access: Access, actor: str = "user
 async def swap_access(
     session: AsyncSession, *, access: Access, location_id: int | None, carrier: str | None
 ) -> None:
-    """Move an active access to a different connection, keeping expires_at (trial swap)."""
+    """Re-provision an access onto a fresh connection.
+
+    Two modes, auto-detected from state:
+    * **Swap** (access still live): keep the remaining time and force a *different*
+      connection — the trial swap / bad-IP replacement path.
+    * **Reactivate** (revoked/expired/no expiry — the admin "reissue" path): grant a
+      fresh full tariff duration and flip the access back to ``active``. The old
+      connection is already free, so it may be reused.
+    """
+    now = _utcnow()
+    reactivating = (
+        access.status in ("revoked", "expired")
+        or access.expires_at is None
+        or access.expires_at <= now
+    )
     alloc = await allocate(
-        session, location_id=location_id, carrier=carrier, exclude_id=access.connection_id
+        session,
+        location_id=location_id,
+        carrier=carrier,
+        exclude_id=None if reactivating else access.connection_id,
     )
     if alloc is None:
         raise Conflict("no free connection for the requested selection")
@@ -138,18 +156,34 @@ async def swap_access(
                 iproxy_access_id=access.iproxy_access_id,
             )
 
-    remaining = 60
-    if access.expires_at is not None:
-        remaining = max(1, int((access.expires_at - _utcnow()).total_seconds() // 60))
+    if reactivating:
+        tariff = await session.scalar(select(Tariff).where(Tariff.code == access.tariff_code))
+        duration = tariff.duration_minutes if tariff and tariff.duration_minutes else 60
+    else:
+        duration = 60
+        if access.expires_at is not None:
+            duration = max(1, int((access.expires_at - now).total_seconds() // 60))
+
     issued = await get_provisioner().issue(
-        iproxy_connection_id=new_iproxy_id, duration_minutes=remaining
+        iproxy_connection_id=new_iproxy_id, duration_minutes=duration
     )
     access.connection_id = new_conn_id
     access.iproxy_access_id = issued.iproxy_access_id
     access.credentials_enc = encrypt_credentials(issued.credentials)
     access.swap_count += 1
+    if reactivating:
+        access.status = "active"
+        access.starts_at = now
+        access.expires_at = now + timedelta(minutes=duration)
+        access.revoked_at = None
+        access.revoke_reason = None
+        access.warned_1h_at = None
+        access.warned_24h_at = None
     session.add(
         AccessEvent(
-            access_id=access.id, type="reissued", actor="user", meta={"reason": "trial_swap"}
+            access_id=access.id,
+            type="reissued",
+            actor="user",
+            meta={"reason": "admin_reissue" if reactivating else "trial_swap"},
         )
     )

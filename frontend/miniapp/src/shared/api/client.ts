@@ -35,6 +35,7 @@ export class ApiError extends Error {
 
 function extractMessage(body: ApiErrorBody | null, fallback: string): string {
   if (!body) return fallback;
+  if (body.error && typeof body.error === "object" && body.error.message) return body.error.message;
   if (typeof body.detail === "string") return body.detail;
   if (body.detail && typeof body.detail === "object" && !Array.isArray(body.detail)) {
     if (body.detail.message) return body.detail.message;
@@ -42,6 +43,14 @@ function extractMessage(body: ApiErrorBody | null, fallback: string): string {
   if (Array.isArray(body.detail) && body.detail[0]?.msg) return body.detail[0].msg as string;
   if (body.message) return body.message;
   return fallback;
+}
+
+/** True when an error is the backend's "account banned" 403 — the app shows a
+ *  dedicated banned screen for it rather than a generic error state. */
+export function isBannedError(err: unknown): boolean {
+  return (
+    err instanceof ApiError && err.status === 403 && err.body?.error?.code === "account_banned"
+  );
 }
 
 const API_BASE = "/api/twa";
