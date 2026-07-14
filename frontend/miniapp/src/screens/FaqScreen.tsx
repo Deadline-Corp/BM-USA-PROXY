@@ -17,7 +17,7 @@ function FaqAccordionItem({ item, open, onToggle }: { item: FaqItem; open: boole
     <div className={`overflow-hidden rounded border transition-colors duration-[180ms] ease-out ${open ? "border-border-2" : "border-border"} bg-surface`}>
       <button
         type="button"
-        className="flex min-h-[52px] w-full items-center gap-3 px-3.5 py-3.5 text-left text-text transition-colors hover:bg-surface-2"
+        className="flex min-h-[52px] w-full items-center gap-3 px-3.5 py-3.5 text-left text-text transition-colors [@media(hover:hover)]:hover:bg-surface-2"
         onClick={onToggle}
         aria-expanded={open}
       >
