@@ -42,7 +42,7 @@ const queryClient = new QueryClient({
  */
 function TabbedShell({ children }: { children: ReactNode }) {
   return (
-    <div className="flex h-[100dvh] flex-col bg-app">
+    <div className="flex h-[var(--tg-vh)] flex-col bg-app">
       <main className="scrollbar-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
         <div className="mx-auto w-full max-w-[480px] px-4 pb-6 pt-4">{children}</div>
       </main>
