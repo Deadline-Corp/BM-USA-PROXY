@@ -28,14 +28,14 @@ export function AdminsPanel() {
   const [editing, setEditing] = useState<AdminAccount | null>(null);
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [role, setRole] = useState<AdminRole>("support");
+  const [role, setRole] = useState<AdminRole>("operator");
   const [password, setPassword] = useState("");
 
   function openCreate() {
     setEditing(null);
     setEmail("");
     setDisplayName("");
-    setRole("support");
+    setRole("operator");
     setPassword("");
     setFormOpen(true);
   }
@@ -127,8 +127,7 @@ export function AdminsPanel() {
           <Input label="Display name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
           <Select label="Role" value={role} onChange={(e) => setRole(e.target.value as AdminRole)}>
             <option value="owner">Owner</option>
-            <option value="admin">Admin</option>
-            <option value="support">Support</option>
+            <option value="operator">Operator</option>
           </Select>
           <Input
             label={editing ? "New password (leave blank to keep current)" : strings.auth.passwordLabel}

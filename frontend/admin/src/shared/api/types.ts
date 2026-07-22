@@ -3,7 +3,7 @@
 // dossier sub-lists) are inferred from the spec's plain-English description
 // where the spec didn't give a literal JSON shape. Documented per-type below.
 
-export type AdminRole = "owner" | "admin" | "support";
+export type AdminRole = "owner" | "operator";
 
 export interface Admin {
   id: string;

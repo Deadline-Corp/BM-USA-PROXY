@@ -1,8 +1,9 @@
 """Admin domain API: dashboard, clients, tariffs, pool, accesses, orders, requests,
 referrals, broadcasts, publications, faq, notifications, system settings.
 
-Stage 2 scope: iproxy sync/broadcast-send/post-publish are stubbed (Stage 3/4 workers
-own the real dispatch); everything else is fully wired against the real tables.
+Broadcast-send and post-publish flip status here; the worker crons (publish_scheduled_posts,
+process_broadcasts) do the real Telegram dispatch via app.services.content. iproxy sync runs
+in the worker too (real-provider mode). Everything else is wired against the real tables.
 """
 
 from __future__ import annotations
@@ -46,7 +47,7 @@ from app.models import (
     User,
 )
 from app.models.access import Access
-from app.services import audit, referral
+from app.services import audit, content, referral
 from app.services import settings as settings_svc
 from app.services.notifications import enqueue
 from app.services.provisioning import allocator
@@ -1677,6 +1678,9 @@ async def send_now_broadcast(
     broadcast_id: int, admin: CurrentAdmin, session: DbSession
 ) -> dict[str, Any]:
     broadcast = await _get_broadcast(session, broadcast_id)
+    # Build the recipient list now so the worker's "sending" pass has deliveries to send;
+    # without this a send-now broadcast has 0 recipients and instantly marks itself done.
+    await content.materialize_broadcast(session, broadcast)
     broadcast.status = "sending"
     broadcast.started_at = _utcnow()
     await audit.write(session, admin_id=admin.id, action="broadcast.send_now", entity="broadcast",
@@ -1827,6 +1831,9 @@ async def patch_post(
 async def publish_post(post_id: int, admin: CurrentAdmin, session: DbSession) -> dict[str, Any]:
     post = await _get_post(session, post_id)
     post.status = "scheduled"
+    # Stamp a due time so publish_scheduled_posts picks it up (its query requires
+    # scheduled_at <= now); keep an existing future schedule if one was set.
+    post.scheduled_at = post.scheduled_at or _utcnow()
     await audit.write(session, admin_id=admin.id, action="post.publish", entity="post",
                        entity_id=post.id)
     return _post_view(post)
@@ -2105,6 +2112,8 @@ class AdminCreateBody(BaseModel):
 async def create_admin(
     body: AdminCreateBody, admin: Owner, session: DbSession
 ) -> dict[str, Any]:
+    if body.role not in ("owner", "operator"):
+        raise ValidationError("role must be 'owner' or 'operator'")
     existing = await session.scalar(select(AdminUser.id).where(AdminUser.email == body.email))
     if existing is not None:
         raise Conflict("admin with this email already exists")
@@ -2135,6 +2144,8 @@ async def patch_admin(
     target = await session.get(AdminUser, admin_id)
     if target is None:
         raise NotFound("admin not found")
+    if body.role is not None and body.role not in ("owner", "operator"):
+        raise ValidationError("role must be 'owner' or 'operator'")
     # Owner self-protection: an owner must not downgrade their own role or
     # deactivate themselves (would lock the system out of any active owner).
     if admin.id == admin_id:
