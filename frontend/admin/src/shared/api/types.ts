@@ -269,6 +269,12 @@ export interface RequestComment {
   created_at: string;
 }
 
+export interface RequestDetail extends SupportRequest {
+  type?: string;
+  body: string;
+  comments: RequestComment[];
+}
+
 // ---------- Referrals ----------
 
 export interface ReferralSummary {
@@ -334,6 +340,13 @@ export interface Channel {
   name: string;
   handle: string;
   is_active: boolean;
+}
+
+/** Body for registering a Telegram channel (matches the backend POST /channels). */
+export interface ChannelCreateInput {
+  tg_chat_id: number;
+  title: string;
+  username?: string;
 }
 
 export interface Post {

@@ -29,10 +29,24 @@ export function AppSettingsPanel() {
 
   const isDirty = draft && data && JSON.stringify(draft) !== JSON.stringify(data);
 
+  // Structured settings (Terms, notification texts) have their own dedicated editors;
+  // the generic key/value grid only shows scalar keys, so object values never render
+  // as "[object Object]" and the two editors never fight over the same key.
+  const isManaged = (key: string) => key.startsWith("notify_texts:") || key === "tos";
+  const visibleEntries = Object.entries(draft ?? data ?? {}).filter(
+    ([key, value]) => !isManaged(key) && (value === null || typeof value !== "object"),
+  );
+
   async function handleSave() {
-    if (!draft) return;
+    if (!draft || !data) return;
+    // Send ONLY the scalar keys that actually changed — the bulk PATCH /settings
+    // endpoint rejects keys outside its whitelist (tos / notify_texts have their own).
+    const changed: Record<string, unknown> = {};
+    for (const [key, value] of visibleEntries) {
+      if (value !== (data as Record<string, unknown>)[key]) changed[key] = value;
+    }
     try {
-      await updateMutation.mutateAsync(draft);
+      await updateMutation.mutateAsync(changed as Partial<AppSettings>);
       toast.success("Settings saved");
     } catch (err) {
       toast.error(apiErrorMessage(err));
@@ -58,26 +72,32 @@ export function AppSettingsPanel() {
           <Skeleton className="h-24" />
         ) : isError ? (
           <ErrorState onRetry={refetch} />
-        ) : !data || Object.keys(data).length === 0 ? (
-          <EmptyState title="No settings configured" />
+        ) : visibleEntries.length === 0 ? (
+          <EmptyState title="No editable settings" />
         ) : (
-          <div className="grid grid-cols-2 gap-4">
-            {Object.entries(draft ?? data).map(([key, value]) => (
-              <RequireRole
-                key={key}
-                role="owner"
-                fallback={
-                  <Input label={key.replace(/_/g, " ")} value={String(value)} disabled />
-                }
-              >
-                <Input
-                  label={key.replace(/_/g, " ")}
-                  value={String(value)}
-                  onChange={(e) => setDraft((prev) => ({ ...(prev ?? data), [key]: e.target.value }))}
-                />
-              </RequireRole>
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-2 gap-4">
+              {visibleEntries.map(([key, value]) => (
+                <RequireRole
+                  key={key}
+                  role="owner"
+                  fallback={
+                    <Input label={key.replace(/_/g, " ")} value={String(value)} disabled />
+                  }
+                >
+                  <Input
+                    label={key.replace(/_/g, " ")}
+                    value={String(value)}
+                    onChange={(e) => setDraft((prev) => ({ ...(prev ?? data), [key]: e.target.value }))}
+                  />
+                </RequireRole>
+              ))}
+            </div>
+            <p className="mt-4 text-[.78rem] text-text-3">
+              Terms of Service and notification message texts are edited on their own
+              screens — see the Terms of service panel below and the Notifications page.
+            </p>
+          </>
         )}
       </Panel.Body>
     </Panel>

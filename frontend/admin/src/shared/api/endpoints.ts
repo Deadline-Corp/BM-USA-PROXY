@@ -9,6 +9,7 @@ import type {
   BroadcastInput,
   BroadcastProgress,
   Channel,
+  ChannelCreateInput,
   Client,
   ClientDossier,
   Connection,
@@ -32,6 +33,7 @@ import type {
   ReferralLedgerEntry,
   ReferralSettings,
   ReferralSummary,
+  RequestDetail,
   ResolveOrderRequest,
   RevenuePoint,
   SupportRequest,
@@ -163,6 +165,8 @@ export const requestsApi = {
     apiClient
       .get<Paginated<SupportRequest>>("/requests", { params: { status } })
       .then((r) => r.data),
+  get: (id: string) =>
+    apiClient.get<RequestDetail>(`/requests/${id}`).then((r) => r.data),
   update: (id: string, body: Partial<Pick<SupportRequest, "status" | "assignee_id">>) =>
     apiClient.patch<SupportRequest>(`/requests/${id}`, body).then((r) => r.data),
   addComment: (id: string, body: string) =>
@@ -222,7 +226,7 @@ export const broadcastsApi = {
 
 export const publicationsApi = {
   listChannels: () => apiClient.get<Channel[]>("/channels").then((r) => r.data),
-  createChannel: (body: Omit<Channel, "id">) =>
+  createChannel: (body: ChannelCreateInput) =>
     apiClient.post<Channel>("/channels", body).then((r) => r.data),
   updateChannel: (id: string, body: Partial<Omit<Channel, "id">>) =>
     apiClient.patch<Channel>(`/channels/${id}`, body).then((r) => r.data),
@@ -269,7 +273,7 @@ export const notificationsApi = {
 export const systemApi = {
   getSettings: () => apiClient.get<AppSettings>("/settings").then((r) => r.data),
   updateSettings: (body: Partial<AppSettings>) =>
-    apiClient.patch<AppSettings>("/settings", body).then((r) => r.data),
+    apiClient.patch<AppSettings>("/settings", { values: body }).then((r) => r.data),
   getTerms: () => apiClient.get<Terms>("/terms").then((r) => r.data),
   putTerms: (body: Terms) => apiClient.put<Terms>("/terms", body).then((r) => r.data),
   listAdmins: () => apiClient.get<AdminAccount[]>("/admins").then((r) => r.data),

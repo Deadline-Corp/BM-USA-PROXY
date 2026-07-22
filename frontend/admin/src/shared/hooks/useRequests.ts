@@ -9,6 +9,15 @@ export function useRequestsList(status?: string) {
   });
 }
 
+/** Full request incl. the original message body and the operator comment thread. */
+export function useRequestDetail(id: string | null) {
+  return useQuery({
+    queryKey: ["requests", "detail", id],
+    queryFn: () => requestsApi.get(id as string),
+    enabled: id !== null,
+  });
+}
+
 export function useUpdateRequest() {
   const qc = useQueryClient();
   return useMutation({

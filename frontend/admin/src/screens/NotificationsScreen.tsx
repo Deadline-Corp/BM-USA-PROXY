@@ -40,8 +40,14 @@ export function NotificationsScreen() {
   }, [drafts, settingsQuery.data]);
 
   async function handleSave() {
+    // Persist only the codes the operator actually changed — untouched ones keep
+    // falling back to their built-in defaults instead of being frozen as overrides.
+    const server = settingsQuery.data ?? {};
+    const changed = Object.fromEntries(
+      Object.entries(drafts).filter(([code, value]) => (value ?? "") !== (server[code] ?? "")),
+    );
     try {
-      await updateTexts.mutateAsync(drafts);
+      await updateTexts.mutateAsync(changed);
       toast.success(strings.notifications.settingsSaved);
     } catch (err) {
       toast.error(apiErrorMessage(err));

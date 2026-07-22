@@ -1357,6 +1357,38 @@ async def add_request_comment(
     }
 
 
+@router.get("/requests/{request_id}")
+async def get_request(
+    request_id: int, admin: CurrentAdmin, session: DbSession
+) -> dict[str, Any]:
+    req = await session.get(Request, request_id)
+    if req is None:
+        raise NotFound("request not found")
+    user = await session.get(User, req.user_id) if req.user_id is not None else None
+    comments = (
+        await session.execute(
+            select(RequestComment)
+            .where(RequestComment.request_id == req.id)
+            .order_by(RequestComment.created_at.asc())
+        )
+    ).scalars().all()
+    admin_map = await _admin_display_map(session, [c.author_admin_id for c in comments])
+    return {
+        **_request_view(req, user_display=_user_display(user)),
+        "type": req.type,
+        "body": req.body,
+        "comments": [
+            {
+                "id": str(c.id),
+                "body": c.body,
+                "author": admin_map.get(c.author_admin_id, "—"),
+                "created_at": c.created_at.isoformat(),
+            }
+            for c in comments
+        ],
+    }
+
+
 # ── referrals ────────────────────────────────────────────────────────────
 @router.get("/referrals/summary")
 async def referrals_summary(admin: CurrentAdmin, session: DbSession) -> dict[str, Any]:
@@ -1948,11 +1980,16 @@ async def notifications_log(
 
 @router.get("/notifications/settings")
 async def get_notification_settings(admin: CurrentAdmin, session: DbSession) -> dict[str, Any]:
+    from app.bot.notifier import DEFAULT_TEXTS
     from app.services.notifications import TEMPLATES
 
     texts = {}
     for code in TEMPLATES:
-        texts[code] = await settings_svc.get(session, f"notify_texts:{code}", "")
+        override = await settings_svc.get(session, f"notify_texts:{code}", "")
+        # Return the EFFECTIVE text the client currently receives: the operator's
+        # override if set, otherwise the built-in default — so the admin sees the
+        # actual message each template sends, not a blank box.
+        texts[code] = override if override else DEFAULT_TEXTS.get(code, "")
     return texts
 
 

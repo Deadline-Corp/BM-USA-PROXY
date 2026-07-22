@@ -4,6 +4,8 @@ import { PageHead } from "@/shared/components/PageHead";
 import { Panel } from "@/shared/components/Panel";
 import { DataTable } from "@/shared/components/DataTable";
 import { Button } from "@/shared/components/Button";
+import { Modal } from "@/shared/components/Modal";
+import { Input } from "@/shared/components/form/Input";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { Num } from "@/shared/components/Num";
 import { EmptyState } from "@/shared/components/EmptyState";
@@ -11,7 +13,7 @@ import { ErrorState } from "@/shared/components/ErrorState";
 import { Skeleton } from "@/shared/components/Skeleton";
 import { IconPlus } from "@/shared/components/icons";
 import { formatDate } from "@/shared/lib/format";
-import { useChannels, usePosts, usePublishPost } from "@/shared/hooks/usePublications";
+import { useChannels, useCreateChannel, usePosts, usePublishPost } from "@/shared/hooks/usePublications";
 import { usePagination } from "@/shared/hooks/usePagination";
 import { useToast } from "@/shared/components/Toast";
 import { apiErrorMessage } from "@/shared/api/client";
@@ -26,7 +28,31 @@ export function PublicationsScreen() {
   const postsParams = useMemo(() => ({ limit, offset }), [limit, offset]);
   const postsQuery = usePosts(postsParams);
   const publishMutation = usePublishPost();
+  const createChannel = useCreateChannel();
   const [composerOpen, setComposerOpen] = useState(false);
+  const [channelOpen, setChannelOpen] = useState(false);
+  const [chId, setChId] = useState("");
+  const [chTitle, setChTitle] = useState("");
+  const [chHandle, setChHandle] = useState("");
+
+  async function handleCreateChannel() {
+    const tgChatId = Number(chId);
+    if (!Number.isFinite(tgChatId) || tgChatId === 0 || !chTitle.trim()) return;
+    try {
+      await createChannel.mutateAsync({
+        tg_chat_id: tgChatId,
+        title: chTitle.trim(),
+        username: chHandle.trim().replace(/^@/, "") || undefined,
+      });
+      toast.success("Channel added");
+      setChId("");
+      setChTitle("");
+      setChHandle("");
+      setChannelOpen(false);
+    } catch (err) {
+      toast.error(apiErrorMessage(err));
+    }
+  }
 
   async function handlePublish(id: string) {
     try {
@@ -77,7 +103,15 @@ export function PublicationsScreen() {
 
       <div className="grid grid-cols-[1fr_2fr] gap-4 max-[1000px]:grid-cols-1">
         <Panel>
-          <Panel.Head title={strings.publications.channels} />
+          <Panel.Head
+            title={strings.publications.channels}
+            actions={
+              <Button variant="quiet" size="sm" onClick={() => setChannelOpen(true)}>
+                <IconPlus className="w-3.5 h-3.5" />
+                {strings.publications.newChannel}
+              </Button>
+            }
+          />
           <div className="flex flex-col">
             {channelsQuery.isLoading ? (
               <Skeleton className="h-20 m-4" />
@@ -118,6 +152,44 @@ export function PublicationsScreen() {
       </div>
 
       <PostComposer open={composerOpen} onClose={() => setComposerOpen(false)} />
+
+      <Modal
+        open={channelOpen}
+        onClose={() => setChannelOpen(false)}
+        title={strings.publications.newChannel}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setChannelOpen(false)}>
+              {strings.common.cancel}
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleCreateChannel}
+              disabled={!chId.trim() || !chTitle.trim()}
+              isLoading={createChannel.isPending}
+            >
+              {strings.common.create}
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-4">
+          <Input
+            label="Telegram chat ID"
+            hint="The channel's numeric ID, e.g. -1001234567890. Add the bot as an admin of the channel first."
+            value={chId}
+            onChange={(e) => setChId(e.target.value)}
+            placeholder="-1001234567890"
+          />
+          <Input label="Title" value={chTitle} onChange={(e) => setChTitle(e.target.value)} />
+          <Input
+            label="Username (optional)"
+            value={chHandle}
+            onChange={(e) => setChHandle(e.target.value)}
+            placeholder="@channel_handle"
+          />
+        </div>
+      </Modal>
     </div>
   );
 }
