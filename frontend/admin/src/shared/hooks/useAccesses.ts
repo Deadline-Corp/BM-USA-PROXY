@@ -13,7 +13,10 @@ export function useRevokeAccess() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) => accessesApi.revoke(id, reason),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["accesses"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["accesses"] });
+      qc.invalidateQueries({ queryKey: ["clients"] }); // revoke flips the client's ACCESS column
+    },
   });
 }
 
@@ -37,6 +40,9 @@ export function useReissueAccess() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, connectionId }: { id: string; connectionId?: string }) => accessesApi.reissue(id, connectionId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["accesses"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["accesses"] });
+      qc.invalidateQueries({ queryKey: ["clients"] }); // reissue re-grants access → ACCESS column changes
+    },
   });
 }

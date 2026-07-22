@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { ColumnDef } from "@tanstack/react-table";
 import { PageHead } from "@/shared/components/PageHead";
+import { Button } from "@/shared/components/Button";
 import { Panel } from "@/shared/components/Panel";
 import { DataTable } from "@/shared/components/DataTable";
 import { StatusBadge } from "@/shared/components/StatusBadge";
@@ -12,7 +13,7 @@ import { usePagination } from "@/shared/hooks/usePagination";
 import { strings } from "@/shared/strings";
 import type { Client } from "@/shared/api/types";
 import { ClientDossier } from "@/screens/clients/ClientDossier";
-import { IconSearch } from "@/shared/components/icons";
+import { IconRefresh, IconSearch } from "@/shared/components/icons";
 
 export function ClientsScreen() {
   const [searchParams] = useSearchParams();
@@ -33,7 +34,7 @@ export function ClientsScreen() {
     [query, hasActive, bannedOnly, limit, offset],
   );
 
-  const { data, isLoading, isError, refetch } = useClientsList(params);
+  const { data, isLoading, isError, refetch, isFetching } = useClientsList(params);
 
   const columns = useMemo<ColumnDef<Client, any>[]>(
     () => [
@@ -88,7 +89,16 @@ export function ClientsScreen() {
 
   return (
     <div>
-      <PageHead title={strings.clients.title} subtitle={strings.clients.subtitle} />
+      <PageHead
+        title={strings.clients.title}
+        subtitle={strings.clients.subtitle}
+        actions={
+          <Button variant="ghost" size="sm" onClick={() => refetch()} disabled={isFetching}>
+            <IconRefresh className={isFetching ? "animate-spin" : undefined} />
+            {strings.common.refresh}
+          </Button>
+        }
+      />
 
       <Panel>
         <DataTable

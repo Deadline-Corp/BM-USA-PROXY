@@ -6,6 +6,9 @@ export function useClientsList(params: ListParams) {
   return useQuery({
     queryKey: ["clients", params],
     queryFn: () => clientsApi.list(params),
+    // Safety net for changes NOT driven by this operator (a client buys/trials via
+    // the bot, or another operator acts): refresh when the admin tab regains focus.
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -65,8 +68,11 @@ export function useIssueAccess() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, body }: { id: string; body: IssueAccessRequest }) => clientsApi.issueAccess(id, body),
-    onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ["clients", vars.id] });
+    onSuccess: () => {
+      // Prefix-invalidate the whole "clients" tree so BOTH the list
+      // (["clients", params]) and the open dossier (["clients", id]) refetch —
+      // issuing access flips the client's ACCESS column in the list.
+      qc.invalidateQueries({ queryKey: ["clients"] });
       qc.invalidateQueries({ queryKey: ["accesses"] });
     },
   });
