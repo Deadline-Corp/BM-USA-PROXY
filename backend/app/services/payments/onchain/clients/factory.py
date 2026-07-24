@@ -11,9 +11,12 @@ from app.services.payments.onchain.config import OnchainConfig
 
 _DEFAULT_ENDPOINTS: dict[str, str] = {
     "tron": "https://api.trongrid.io",
+    "bitcoin": "https://mempool.space/api",
+    "litecoin": "https://litecoinspace.org/api",
 }
 
 _EVM_CHAINS = frozenset({"ethereum", "bsc"})
+_UTXO_CHAINS = frozenset({"bitcoin", "litecoin"})
 
 # Max scan window per tick, in the chain's cursor units.
 # Tron cursor = milliseconds; EVM/UTXO cursor = block numbers.
@@ -21,6 +24,9 @@ _MAX_SCAN: dict[str, int] = {
     "tron": 15 * 60 * 1000,  # 15 minutes of transfers
     "ethereum": 100,         # ~20 min of blocks; native scan iterates each block
     "bsc": 200,              # ~10 min of 3s blocks
+    # UTXO scans the address API (not per-block), so the cursor jumps to tip each tick
+    "bitcoin": 10_000,
+    "litecoin": 10_000,
 }
 
 
@@ -38,6 +44,11 @@ def build_client(chain: str, config: OnchainConfig) -> ChainClient | None:
         if not evm_endpoint:  # EVM needs a provider URL (Infura/Alchemy/public node)
             return None
         return EvmClient(chain=chain, endpoint=evm_endpoint)
+    if chain in _UTXO_CHAINS:
+        from app.services.payments.onchain.clients.utxo import UtxoClient
+
+        endpoint = config.rpc.endpoint(chain) or _DEFAULT_ENDPOINTS[chain]
+        return UtxoClient(chain=chain, endpoint=endpoint)
     return None
 
 

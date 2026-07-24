@@ -181,7 +181,7 @@ def test_factory_builds_tron_and_skips_others() -> None:
     assert client is not None and client.chain == "tron"
     assert build_client("ethereum", cfg) is None
     assert chain_max_scan("tron") == 15 * 60 * 1000
-    assert chain_max_scan("bitcoin") == 500
+    assert chain_max_scan("solana") == 500  # unconfigured chain → default window
 
 
 # ── DB pipeline: real Tron client → watcher → activation ──────────────────
