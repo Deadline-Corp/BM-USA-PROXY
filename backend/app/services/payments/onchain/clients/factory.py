@@ -13,19 +13,31 @@ _DEFAULT_ENDPOINTS: dict[str, str] = {
     "tron": "https://api.trongrid.io",
 }
 
-# Max scan window per tick, in the chain's cursor units (Tron cursor = milliseconds).
+_EVM_CHAINS = frozenset({"ethereum", "bsc"})
+
+# Max scan window per tick, in the chain's cursor units.
+# Tron cursor = milliseconds; EVM/UTXO cursor = block numbers.
 _MAX_SCAN: dict[str, int] = {
     "tron": 15 * 60 * 1000,  # 15 minutes of transfers
+    "ethereum": 100,         # ~20 min of blocks; native scan iterates each block
+    "bsc": 200,              # ~10 min of 3s blocks
 }
 
 
 def build_client(chain: str, config: OnchainConfig) -> ChainClient | None:
-    """Construct the engine for ``chain``, or ``None`` if not implemented yet."""
+    """Construct the engine for ``chain``, or ``None`` if unimplemented / unconfigured."""
     if chain == "tron":
         from app.services.payments.onchain.clients.tron import TronClient
 
         endpoint = config.rpc.endpoint("tron") or _DEFAULT_ENDPOINTS["tron"]
         return TronClient(endpoint=endpoint, api_key=config.rpc.api_key("tron"))
+    if chain in _EVM_CHAINS:
+        from app.services.payments.onchain.clients.evm import EvmClient
+
+        evm_endpoint = config.rpc.endpoint(chain)
+        if not evm_endpoint:  # EVM needs a provider URL (Infura/Alchemy/public node)
+            return None
+        return EvmClient(chain=chain, endpoint=evm_endpoint)
     return None
 
 
