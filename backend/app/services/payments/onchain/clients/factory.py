@@ -13,20 +13,22 @@ _DEFAULT_ENDPOINTS: dict[str, str] = {
     "tron": "https://api.trongrid.io",
     "bitcoin": "https://mempool.space/api",
     "litecoin": "https://litecoinspace.org/api",
+    "solana": "https://api.mainnet-beta.solana.com",
 }
 
 _EVM_CHAINS = frozenset({"ethereum", "bsc"})
 _UTXO_CHAINS = frozenset({"bitcoin", "litecoin"})
 
 # Max scan window per tick, in the chain's cursor units.
-# Tron cursor = milliseconds; EVM/UTXO cursor = block numbers.
+# Tron cursor = milliseconds; EVM/UTXO cursor = block numbers; Solana cursor = slots.
 _MAX_SCAN: dict[str, int] = {
     "tron": 15 * 60 * 1000,  # 15 minutes of transfers
     "ethereum": 100,         # ~20 min of blocks; native scan iterates each block
     "bsc": 200,              # ~10 min of 3s blocks
-    # UTXO scans the address API (not per-block), so the cursor jumps to tip each tick
+    # UTXO/Solana walk the address/signature API (not per-block): cursor jumps to tip
     "bitcoin": 10_000,
     "litecoin": 10_000,
+    "solana": 10_000,
 }
 
 
@@ -49,6 +51,11 @@ def build_client(chain: str, config: OnchainConfig) -> ChainClient | None:
 
         endpoint = config.rpc.endpoint(chain) or _DEFAULT_ENDPOINTS[chain]
         return UtxoClient(chain=chain, endpoint=endpoint)
+    if chain == "solana":
+        from app.services.payments.onchain.clients.solana import SolanaClient
+
+        endpoint = config.rpc.endpoint("solana") or _DEFAULT_ENDPOINTS["solana"]
+        return SolanaClient(endpoint=endpoint)
     return None
 
 
