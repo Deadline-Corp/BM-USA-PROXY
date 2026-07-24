@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     payment_api_key: str | None = None
     payment_webhook_secret: str | None = None
 
+    # On-chain watcher (provider='onchain'; see doc 15). Both are raw JSON strings.
+    onchain_methods: str | None = None  # array of enabled rails + receiving addresses
+    onchain_rpc: str | None = None      # object of per-chain RPC endpoints + api keys
+
     # Feature flags
     feature_real_payments: bool = False
     feature_real_provisioning: bool = False  # real iproxy issuance (decoupled from payments)

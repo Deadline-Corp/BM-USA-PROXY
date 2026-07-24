@@ -20,6 +20,7 @@ from app.services import referral
 from app.services import settings as settings_svc
 from app.services.catalog import trial_available
 from app.services.notifications import enqueue
+from app.services.payments.base import InvoiceDTO
 from app.services.payments.registry import get_payment_provider
 from app.services.provisioning.allocator import count_available
 from app.services.provisioning.lifecycle import extend_access, provision_access
@@ -30,6 +31,29 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+def _build_invoice(*, order: Order, provider_name: str, dto: InvoiceDTO, ttl: int) -> Invoice:
+    """Construct the Invoice row from a provider DTO (incl. on-chain fields, when present)."""
+    return Invoice(
+        order_id=order.id,
+        provider=provider_name,
+        provider_invoice_id=dto.provider_invoice_id,
+        status="pending",
+        amount_usd=order.amount_usd,
+        crypto_currency=dto.crypto_currency,
+        crypto_network=dto.crypto_network,
+        crypto_amount=dto.crypto_amount,
+        pay_address=dto.pay_address,
+        payment_url=dto.payment_url,
+        expires_at=_utcnow() + timedelta(minutes=ttl),
+        chain=dto.chain,
+        base_amount=dto.base_amount,
+        amount_tolerance=dto.amount_tolerance,
+        locked_rate=dto.locked_rate,
+        rate_locked_at=_utcnow() if dto.locked_rate is not None else None,
+        reference_pubkey=dto.reference_pubkey,
+    )
+
+
 async def create_order(
     session: AsyncSession,
     *,
@@ -37,6 +61,8 @@ async def create_order(
     tariff_code: str,
     location_id: int | None = None,
     carrier: str | None = None,
+    asset: str | None = None,
+    network: str | None = None,
 ) -> tuple[Order, Invoice | None]:
     if not await is_tos_accepted(session, user):
         raise TermsNotAccepted("accept the Terms of Use first")
@@ -83,20 +109,10 @@ async def create_order(
         order_public_id=str(order.public_id),
         amount_usd=Decimal(str(order.amount_usd)),
         ttl_minutes=ttl,
+        asset=asset,
+        network=network,
     )
-    invoice = Invoice(
-        order_id=order.id,
-        provider=provider.name,
-        provider_invoice_id=dto.provider_invoice_id,
-        status="pending",
-        amount_usd=order.amount_usd,
-        crypto_currency=dto.crypto_currency,
-        crypto_network=dto.crypto_network,
-        crypto_amount=dto.crypto_amount,
-        pay_address=dto.pay_address,
-        payment_url=dto.payment_url,
-        expires_at=_utcnow() + timedelta(minutes=ttl),
-    )
+    invoice = _build_invoice(order=order, provider_name=provider.name, dto=dto, ttl=ttl)
     session.add(invoice)
     await session.flush()
     return order, invoice
@@ -128,7 +144,13 @@ async def mark_paid(session: AsyncSession, *, order: Order, source: str) -> None
 
 
 async def create_extension_order(
-    session: AsyncSession, *, user: User, access: Access, tariff_code: str
+    session: AsyncSession,
+    *,
+    user: User,
+    access: Access,
+    tariff_code: str,
+    asset: str | None = None,
+    network: str | None = None,
 ) -> tuple[Order, Invoice | None]:
     tariff = await session.scalar(
         select(Tariff).where(Tariff.code == tariff_code, Tariff.is_active)
@@ -155,20 +177,10 @@ async def create_extension_order(
         order_public_id=str(order.public_id),
         amount_usd=Decimal(str(order.amount_usd)),
         ttl_minutes=ttl,
+        asset=asset,
+        network=network,
     )
-    invoice = Invoice(
-        order_id=order.id,
-        provider=provider.name,
-        provider_invoice_id=dto.provider_invoice_id,
-        status="pending",
-        amount_usd=order.amount_usd,
-        crypto_currency=dto.crypto_currency,
-        crypto_network=dto.crypto_network,
-        crypto_amount=dto.crypto_amount,
-        pay_address=dto.pay_address,
-        payment_url=dto.payment_url,
-        expires_at=_utcnow() + timedelta(minutes=ttl),
-    )
+    invoice = _build_invoice(order=order, provider_name=provider.name, dto=dto, ttl=ttl)
     session.add(invoice)
     await session.flush()
     return order, invoice

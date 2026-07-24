@@ -20,6 +20,12 @@ class InvoiceDTO:
     crypto_network: str | None
     crypto_amount: Decimal | None
     expires_at_epoch: int
+    # on-chain provider extras (None for hosted processors)
+    chain: str | None = None
+    base_amount: Decimal | None = None
+    amount_tolerance: Decimal | None = None
+    locked_rate: Decimal | None = None
+    reference_pubkey: str | None = None
 
 
 @dataclass(slots=True)
@@ -41,7 +47,13 @@ class PaymentProvider(Protocol):
     name: str
 
     async def create_invoice(
-        self, *, order_public_id: str, amount_usd: Decimal, ttl_minutes: int
+        self,
+        *,
+        order_public_id: str,
+        amount_usd: Decimal,
+        ttl_minutes: int,
+        asset: str | None = None,
+        network: str | None = None,
     ) -> InvoiceDTO: ...
 
     async def fetch_invoice(self, provider_invoice_id: str) -> InvoiceStatusDTO: ...

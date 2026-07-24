@@ -20,7 +20,13 @@ class MockPaymentProvider:
     name = "mock"
 
     async def create_invoice(
-        self, *, order_public_id: str, amount_usd: Decimal, ttl_minutes: int
+        self,
+        *,
+        order_public_id: str,
+        amount_usd: Decimal,
+        ttl_minutes: int,
+        asset: str | None = None,
+        network: str | None = None,
     ) -> InvoiceDTO:
         return InvoiceDTO(
             provider_invoice_id=f"mock-{order_public_id}",

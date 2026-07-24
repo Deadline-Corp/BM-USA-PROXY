@@ -13,6 +13,7 @@ from app.models.content import (
     Request,
     RequestComment,
 )
+from app.models.onchain import ChainCursor, InvoiceStatusHistory, OnchainDepositLedger
 from app.models.referral import Payout, ReferralLedger
 from app.models.system import (
     AppSetting,
@@ -32,13 +33,16 @@ __all__ = [
     "AuditLog",
     "Broadcast",
     "BroadcastDelivery",
+    "ChainCursor",
     "Channel",
     "Connection",
     "ConversationMessage",
     "FaqItem",
     "Invoice",
+    "InvoiceStatusHistory",
     "Location",
     "NotificationOutbox",
+    "OnchainDepositLedger",
     "Order",
     "Payout",
     "PaymentEvent",

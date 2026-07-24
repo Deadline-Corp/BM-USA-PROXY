@@ -20,5 +20,11 @@ def get_payment_provider() -> PaymentProvider:
                 "PAYMENT_PROVIDER='mock' is forbidden when prod/real-payments are enabled"
             )
         return MockPaymentProvider()
+    if provider == "onchain":
+        # self-hosted multi-chain watcher (doc 15). Imported lazily so the on-chain
+        # config is only parsed when this rail is actually selected.
+        from app.services.payments.onchain import OnchainProvider
+
+        return OnchainProvider()
     # Stage 3 (DG-1): bitpay | coinbase | cryptomus adapters registered here.
     raise NotImplementedError(f"payment provider '{provider}' not implemented yet")
