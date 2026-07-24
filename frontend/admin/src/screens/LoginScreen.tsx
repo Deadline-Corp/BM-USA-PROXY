@@ -8,6 +8,7 @@ import { apiErrorMessage } from "@/shared/api/client";
 import { useAuthStore } from "@/shared/auth/authStore";
 import { Button } from "@/shared/components/Button";
 import { Input } from "@/shared/components/form/Input";
+import { isSafeInternalPath } from "@/shared/lib/safePath";
 import { strings } from "@/shared/strings";
 
 const loginSchema = z.object({
@@ -34,7 +35,10 @@ export function LoginScreen() {
     try {
       const { access_token, admin } = await authApi.login(values);
       setSession(access_token, admin);
-      const from = (location.state as { from?: string } | null)?.from ?? "/";
+      // `from` comes from the address bar via AuthGate — only follow it if it is a
+      // real internal path, never a protocol-relative/backslash-smuggled absolute URL.
+      const requested = (location.state as { from?: string } | null)?.from;
+      const from = requested && isSafeInternalPath(requested) ? requested : "/";
       navigate(from, { replace: true });
     } catch (err) {
       setFormError(apiErrorMessage(err, strings.auth.genericError));
