@@ -4,6 +4,7 @@ import {
   IconClients,
   IconDashboard,
   IconFaq,
+  IconLedger,
   IconNotifications,
   IconPackages,
   IconPools,
@@ -53,6 +54,7 @@ export const navGroups: NavGroupConfig[] = [
       { to: "/pools", label: strings.nav.pools, icon: <IconPools />, accessory: "dot" },
       { to: "/tariffs", label: strings.nav.tariffs, icon: <IconTariffs /> },
       { to: "/referrals", label: strings.nav.referrals, icon: <IconReferrals /> },
+      { to: "/ledger", label: strings.nav.ledger, icon: <IconLedger /> },
     ],
   },
   {

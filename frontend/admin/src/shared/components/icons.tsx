@@ -90,6 +90,16 @@ export function IconReferrals(props: IconProps) {
   );
 }
 
+export function IconLedger(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M5 3h9l5 5v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
+      <path d="M13 3v6h6" />
+      <path d="M8 13h6M8 17h4" />
+    </svg>
+  );
+}
+
 export function IconBroadcasts(props: IconProps) {
   return (
     <svg {...base} {...props}>

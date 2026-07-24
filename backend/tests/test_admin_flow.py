@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from decimal import Decimal
+
 import pytest_asyncio
 from app.api import deps
 from app.core.config import settings
 from app.core.redis import redis_client
 from app.main import app
+from app.models import OnchainDepositLedger
 from httpx import ASGITransport, AsyncClient
 from scripts.seed import (
     seed_admin,
@@ -104,3 +108,46 @@ async def test_create_tariff_then_visible_in_twa_catalog(raw_client: AsyncClient
     body = listing.json()
     rows = body["items"] if isinstance(body, dict) else body
     assert any(t["code"] == "biweekly" for t in rows)
+
+
+async def test_onchain_ledger_endpoints(engine, raw_client: AsyncClient) -> None:
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    async with async_sessionmaker(engine, expire_on_commit=False)() as s:
+        s.add(
+            OnchainDepositLedger(
+                status="paid", chain="tron", asset="USDT", network="trc20", txid="0xt1",
+                to_address="TAddr", amount=Decimal("10.005"), confirmations=20,
+                observed_at=datetime.now(UTC),
+            )
+        )
+        s.add(
+            OnchainDepositLedger(
+                status="unmatched", chain="bitcoin", asset="BTC", network="native", txid="0xb1",
+                to_address="bc1q", amount=Decimal("0.5"), confirmations=3,
+                observed_at=datetime.now(UTC),
+            )
+        )
+        await s.commit()
+
+    token = await _login(raw_client)
+    raw_client.headers["Authorization"] = f"Bearer {token}"
+
+    listing = (await raw_client.get("/api/admin/payments/ledger")).json()
+    assert listing["total"] == 2
+    assert {row["status"] for row in listing["items"]} == {"paid", "unmatched"}
+
+    filtered = (
+        await raw_client.get("/api/admin/payments/ledger", params={"status": "unmatched"})
+    ).json()
+    assert filtered["total"] == 1
+    assert filtered["items"][0]["chain"] == "bitcoin"
+
+    summary = (await raw_client.get("/api/admin/payments/ledger/summary")).json()
+    assert summary["by_status"]["paid"] == 1
+    assert summary["by_status"]["unmatched"] == 1
+    assert summary["unmatched_total"] == 1
+    assert summary["events_24h"] == 2
+
+    del raw_client.headers["Authorization"]
+    assert (await raw_client.get("/api/admin/payments/ledger")).status_code == 401

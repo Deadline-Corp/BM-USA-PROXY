@@ -249,6 +249,34 @@ export interface MarkPaidRequest {
   reason: string;
 }
 
+// ---------- On-chain deposit ledger (append-only) ----------
+
+export interface DepositLedgerEntry {
+  id: string;
+  created_at: string;
+  status: string;
+  chain: string;
+  asset: string;
+  network: string;
+  txid: string;
+  log_index: number;
+  from_address: string | null;
+  to_address: string;
+  amount: string;
+  amount_usd: number | null;
+  confirmations: number;
+  block_number: number | null;
+  invoice_id: string | null;
+  user: string | null;
+  user_id: string | null;
+}
+
+export interface DepositLedgerSummary {
+  by_status: Record<string, number>;
+  events_24h: number;
+  unmatched_total: number;
+}
+
 // ---------- Requests ----------
 
 export type RequestStatus = "new" | "in_progress" | "waiting" | "done";

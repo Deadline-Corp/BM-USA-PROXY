@@ -15,6 +15,8 @@ import type {
   Connection,
   ConnectionUpdate,
   DashboardSummary,
+  DepositLedgerEntry,
+  DepositLedgerSummary,
   FaqItem,
   IssueAccessRequest,
   ListParams,
@@ -156,6 +158,17 @@ export const ordersApi = {
     apiClient.post<Order>(`/orders/${id}/refund`, body).then((r) => r.data),
   markPaid: (id: string, body: MarkPaidRequest) =>
     apiClient.post<Order>(`/orders/${id}/mark-paid`, body).then((r) => r.data),
+};
+
+// ---------- On-chain payments ledger ----------
+
+export const paymentsApi = {
+  ledger: (params: ListParams) =>
+    apiClient
+      .get<Paginated<DepositLedgerEntry>>("/payments/ledger", { params })
+      .then((r) => r.data),
+  ledgerSummary: () =>
+    apiClient.get<DepositLedgerSummary>("/payments/ledger/summary").then((r) => r.data),
 };
 
 // ---------- Requests ----------

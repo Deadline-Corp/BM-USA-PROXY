@@ -34,6 +34,7 @@ from app.models import (
     Invoice,
     Location,
     NotificationOutbox,
+    OnchainDepositLedger,
     Order,
     PaymentEvent,
     Payout,
@@ -1193,6 +1194,99 @@ async def manual_review_orders(admin: CurrentAdmin, session: DbSession) -> dict[
         for o in rows
     ]
     return {"items": items, "total": len(items)}
+
+
+# ── on-chain deposit ledger (observability + audit; append-only, doc 15) ──
+def _ledger_view(row: OnchainDepositLedger, *, user_display: str | None) -> dict[str, Any]:
+    return {
+        "id": str(row.id),
+        "created_at": row.created_at.isoformat(),
+        "status": row.status,
+        "chain": row.chain,
+        "asset": row.asset,
+        "network": row.network,
+        "txid": row.txid,
+        "log_index": row.log_index,
+        "from_address": row.from_address,
+        "to_address": row.to_address,
+        "amount": str(row.amount),
+        "amount_usd": float(row.amount_usd) if row.amount_usd is not None else None,
+        "confirmations": row.confirmations,
+        "block_number": row.block_number,
+        "invoice_id": str(row.invoice_id) if row.invoice_id is not None else None,
+        "user": user_display,
+        "user_id": str(row.user_id) if row.user_id is not None else None,
+    }
+
+
+@router.get("/payments/ledger")
+async def list_deposit_ledger(
+    admin: CurrentAdmin,
+    session: DbSession,
+    status: str | None = None,
+    chain: str | None = None,
+    invoice_id: int | None = None,
+    txid: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Append-only on-chain deposit ledger — every observed transfer + status change."""
+    stmt = select(OnchainDepositLedger)
+    count_stmt = select(func.count()).select_from(OnchainDepositLedger)
+    conds: list[ColumnElement[bool]] = []
+    if status:
+        conds.append(OnchainDepositLedger.status == status)
+    if chain:
+        conds.append(OnchainDepositLedger.chain == chain)
+    if invoice_id:
+        conds.append(OnchainDepositLedger.invoice_id == invoice_id)
+    if txid:
+        conds.append(OnchainDepositLedger.txid == txid)
+    for cond in conds:
+        stmt = stmt.where(cond)
+        count_stmt = count_stmt.where(cond)
+    stmt = stmt.order_by(
+        OnchainDepositLedger.created_at.desc(), OnchainDepositLedger.id.desc()
+    )
+    limit, offset = _page(limit, offset)
+    total = int(await session.scalar(count_stmt) or 0)
+    rows = (await session.execute(stmt.limit(limit).offset(offset))).scalars().all()
+    user_display_map = await _user_display_map(session, [r.user_id for r in rows])
+    items = [_ledger_view(r, user_display=user_display_map.get(r.user_id)) for r in rows]
+    return {"items": items, "total": total}
+
+
+@router.get("/payments/ledger/summary")
+async def deposit_ledger_summary(admin: CurrentAdmin, session: DbSession) -> dict[str, Any]:
+    """Counts by status + recent volume — the on-chain watcher observability panel."""
+    by_status = (
+        await session.execute(
+            select(OnchainDepositLedger.status, func.count()).group_by(
+                OnchainDepositLedger.status
+            )
+        )
+    ).all()
+    since = _utcnow() - timedelta(hours=24)
+    events_24h = int(
+        await session.scalar(
+            select(func.count())
+            .select_from(OnchainDepositLedger)
+            .where(OnchainDepositLedger.created_at >= since)
+        )
+        or 0
+    )
+    return {
+        "by_status": {status: int(count) for status, count in by_status},
+        "events_24h": events_24h,
+        "unmatched_total": int(
+            await session.scalar(
+                select(func.count())
+                .select_from(OnchainDepositLedger)
+                .where(OnchainDepositLedger.status == "unmatched")
+            )
+            or 0
+        ),
+    }
 
 
 class ResolveBody(BaseModel):
