@@ -38,6 +38,7 @@ class WorkerSettings:
         cron(jobs.expiry_sweeper, second=0),
         cron(jobs.invoice_expirer, second=30),
         cron(jobs.reconcile_invoices, minute=_FIVE_MIN, second=15),
+        cron(jobs.watch_onchain_deposits, second={0, 15, 30, 45}, run_at_startup=True),
         cron(jobs.release_referral_holds, minute=0, second=45),
         cron(jobs.sync_connections, minute=_FIVE_MIN, second=45),
         cron(jobs.publish_scheduled_posts, second=5),

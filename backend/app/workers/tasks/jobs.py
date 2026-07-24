@@ -13,6 +13,7 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.db import SessionFactory
+from app.core.logging import log
 from app.models import Broadcast, Invoice
 from app.services import referral
 from app.services.maintenance import expire_invoices, sweep_access_expiries
@@ -91,6 +92,41 @@ async def reconcile_invoices(ctx: dict) -> int:
         await s.commit()
     await _beat(ctx, "reconcile_invoices")
     return reconciled
+
+
+async def watch_onchain_deposits(ctx: dict) -> dict[str, int] | None:
+    """Scan each configured chain for inbound deposits and finalize matched invoices.
+
+    Inert unless PAYMENT_PROVIDER=onchain. One fresh session per chain (isolation); a
+    failure on one chain is logged and never blocks the others.
+    """
+    if settings.payment_provider != "onchain":
+        await _beat(ctx, "watch_onchain_deposits")
+        return None
+
+    from app.services.payments.onchain.clients import build_client, chain_max_scan
+    from app.services.payments.onchain.config import get_onchain_config
+    from app.services.payments.onchain.watcher import run_chain_tick
+
+    config = get_onchain_config()
+    finalized: dict[str, int] = {}
+    for chain in sorted(config.chains_in_use()):
+        client = build_client(chain, config)
+        if client is None:
+            continue
+        try:
+            async with SessionFactory() as s:
+                report = await run_chain_tick(
+                    s, client, config=config, max_blocks=chain_max_scan(chain)
+                )
+                await s.commit()
+            finalized[chain] = report.finalized
+        except Exception:
+            log.exception("onchain.tick_failed", chain=chain)
+        finally:
+            await client.aclose()
+    await _beat(ctx, "watch_onchain_deposits")
+    return finalized
 
 
 async def sync_connections(ctx: dict) -> dict[str, Any]:
