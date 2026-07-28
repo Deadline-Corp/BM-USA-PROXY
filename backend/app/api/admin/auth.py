@@ -36,7 +36,7 @@ def _set_refresh_cookie(response: Response, token: str) -> None:
         REFRESH_COOKIE,
         token,
         httponly=True,
-        secure=settings.is_prod,
+        secure=settings.env != "local",  # Secure on staging + prod, not just prod
         samesite="strict",
         path=REFRESH_PATH,
         max_age=settings.admin_refresh_ttl_days * 86400,

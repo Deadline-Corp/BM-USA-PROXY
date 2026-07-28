@@ -129,6 +129,41 @@ async def watch_onchain_deposits(ctx: dict) -> dict[str, int] | None:
     return finalized
 
 
+async def daily_reconciliation(ctx: dict) -> dict[str, Any]:
+    """Settle yesterday: cross-check paid orders vs the on-chain ledger, alert on drift."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.services.payments.reconciliation import reconcile_day
+
+    day = (datetime.now(UTC) - timedelta(days=1)).date()
+    async with SessionFactory() as s:
+        report = await reconcile_day(s, day)
+
+    if report["clean"]:
+        log.info("reconciliation.clean", date=report["date"], paid=report["paid"]["count"])
+    else:
+        log.warning(
+            "reconciliation.discrepancies", date=report["date"], issues=report["issue_count"]
+        )
+        if settings.ops_alert_chat_id:
+            from app.bot.factory import get_bot
+
+            bot = get_bot()
+            if bot is not None:
+                d = report["discrepancies"]
+                msg = (
+                    f"⚠️ Payment reconciliation {report['date']}: {report['issue_count']} issue(s)\n"
+                    f"• unmatched deposits: {len(d['unmatched_deposits'])}\n"
+                    f"• paid without ledger: {len(d['paid_without_ledger'])}\n"
+                    f"• stuck confirming: {len(d['stuck_confirming'])}\n"
+                    f"• paid not provisioned: {len(d['paid_not_provisioned'])}"
+                )
+                with contextlib.suppress(Exception):
+                    await bot.send_message(settings.ops_alert_chat_id, msg, parse_mode=None)
+    await _beat(ctx, "daily_reconciliation")
+    return report
+
+
 async def sync_connections(ctx: dict) -> dict[str, Any]:
     """Mirror iproxy inventory + online status into `connections` (real provider only)."""
     if not settings.feature_real_provisioning:

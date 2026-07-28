@@ -1289,6 +1289,19 @@ async def deposit_ledger_summary(admin: CurrentAdmin, session: DbSession) -> dic
     }
 
 
+@router.get("/payments/reconciliation")
+async def payment_reconciliation(
+    admin: CurrentAdmin, session: DbSession, date: str | None = None
+) -> dict[str, Any]:
+    """Daily settlement check — did we miss (or over-credit) any payment? Defaults to today."""
+    from datetime import date as date_cls
+
+    from app.services.payments.reconciliation import reconcile_day
+
+    day = date_cls.fromisoformat(date) if date else datetime.now(UTC).date()
+    return await reconcile_day(session, day)
+
+
 class ResolveBody(BaseModel):
     action: str  # 'approve' | 'fail' | 'refund'
 
