@@ -56,7 +56,13 @@ async def capture_message(message: Message) -> None:
     # Best-effort operator alert — never let a failed notify drop the stored message.
     if settings.ops_alert_chat_id and message.bot is not None:
         with contextlib.suppress(Exception):
+            # parse_mode=None: the bot defaults to HTML, and both `display`
+            # (first_name) and `body` are attacker-controlled — rendering them as
+            # HTML allows link/markup injection into the operator alert AND lets a
+            # malformed tag raise TelegramBadRequest that the suppress() below would
+            # swallow, silently blinding the operator. This alert needs no markup.
             await message.bot.send_message(
                 settings.ops_alert_chat_id,
                 f"💬 New message from {display}:\n{body[:500]}",
+                parse_mode=None,
             )

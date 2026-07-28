@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import (
@@ -76,8 +76,27 @@ async def create_order(
     # trial / per-user limit — advisory lock to serialize concurrent attempts
     if tariff.max_per_user is not None:
         await session.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": user.id})
-        if tariff.code == "trial" and not await trial_available(session, user):
-            raise ValidationError("trial already used")
+        if tariff.code == "trial":
+            if not await trial_available(session, user):
+                raise ValidationError("trial already used")
+        else:
+            # generic per-user cap for any tariff carrying max_per_user (promos etc.);
+            # previously ONLY the trial code was enforced, so any other capped tariff
+            # could be bought without limit.
+            used = int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(Order)
+                    .where(
+                        Order.user_id == user.id,
+                        Order.tariff_id == tariff.id,
+                        Order.status.in_(("paid", "provisioning", "completed")),
+                    )
+                )
+                or 0
+            )
+            if used >= tariff.max_per_user:
+                raise ValidationError("purchase limit reached for this tariff")
 
     if await count_available(session, location_id=location_id, carrier=carrier) == 0:
         raise Conflict("sold out for the requested city/carrier")

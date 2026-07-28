@@ -5,6 +5,7 @@ from __future__ import annotations
 import hmac
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
@@ -39,6 +40,22 @@ def create_app() -> FastAPI:
         allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
     )
     app.add_exception_handler(DomainError, domain_error_handler)  # type: ignore[arg-type]
+
+    @app.middleware("http")
+    async def _security_headers(request: Request, call_next: Any) -> Response:
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        if settings.is_prod:
+            response.headers.setdefault(
+                "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+            )
+        # The operator console must never be framed (clickjacking). The Telegram
+        # mini-app at /app is intentionally left frameable — Telegram embeds it.
+        if request.url.path.startswith("/admin"):
+            response.headers.setdefault("X-Frame-Options", "DENY")
+            response.headers.setdefault("Content-Security-Policy", "frame-ancestors 'none'")
+        return response
 
     from app.api.health import router as health_router
     from app.api.twa.router import router as twa_router

@@ -43,11 +43,33 @@ def test_prod_refuses_missing_credentials_key() -> None:
 def test_prod_accepts_real_secrets() -> None:
     s = Settings(
         env="prod",
-        admin_jwt_secret="a-proper-real-secret",
+        admin_jwt_secret="a-proper-real-secret-at-least-32-chars",
         bot_webhook_secret="real-secret",
         credentials_key="k",
     )
     assert s.is_prod
+
+
+def test_prod_refuses_short_jwt_secret() -> None:
+    with pytest.raises(PydanticValidationError):
+        Settings(
+            env="prod",
+            admin_jwt_secret="too-short",
+            bot_webhook_secret="real-secret",
+            credentials_key="k",
+        )
+
+
+def test_staging_also_enforces_secrets() -> None:
+    # a public staging tier registers a Telegram webhook and is internet-reachable,
+    # so non-local envs are held to the same secret bar as prod.
+    with pytest.raises(PydanticValidationError):
+        Settings(
+            env="staging",
+            admin_jwt_secret="change-me-in-prod-please-32bytes-min",
+            bot_webhook_secret="real-secret",
+            credentials_key="k",
+        )
 
 
 # ── P2: 'paid' is forward-only + amount-checked ─────────────────────────

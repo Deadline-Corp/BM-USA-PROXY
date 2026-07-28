@@ -20,7 +20,7 @@ from sqlalchemy import ColumnElement, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentAdmin, DbSession, Owner
-from app.core.errors import Conflict, NotFound, ValidationError
+from app.core.errors import Conflict, Forbidden, NotFound, ValidationError
 from app.core.security import hash_password
 from app.models import (
     AdminUser,
@@ -1295,7 +1295,7 @@ class ResolveBody(BaseModel):
 
 @router.post("/orders/{order_id}/resolve")
 async def resolve_order(
-    order_id: str, body: ResolveBody, admin: CurrentAdmin, session: DbSession
+    order_id: str, body: ResolveBody, admin: Owner, session: DbSession
 ) -> dict[str, Any]:
     order = await _get_order(session, order_id)
     if body.action == "approve":
@@ -1303,6 +1303,8 @@ async def resolve_order(
     elif body.action == "fail":
         order.status = "cancelled"
     elif body.action == "refund":
+        if admin.role != "owner":
+            raise Forbidden("only an owner can refund an order")
         order.status = "refunded"
     else:
         raise ValidationError("action must be 'approve', 'fail', or 'refund'")
@@ -1321,11 +1323,27 @@ class RefundBody(BaseModel):
 
 @router.post("/orders/{order_id}/refund")
 async def refund_order(
-    order_id: str, body: RefundBody, admin: CurrentAdmin, session: DbSession
+    order_id: str, body: RefundBody, admin: Owner, session: DbSession
 ) -> dict[str, Any]:
     order = await _get_order(session, order_id)
-    if not 0 < body.amount_usd <= float(order.amount_usd):
-        raise ValidationError("refund amount must be > 0 and <= the order amount")
+    if order.paid_at is None:
+        raise ValidationError("cannot refund an order that was never paid")
+    already_refunded = Decimal(
+        str(
+            await session.scalar(
+                select(func.coalesce(func.sum(Refund.amount_usd), 0)).where(
+                    Refund.order_id == order.id
+                )
+            )
+            or 0
+        )
+    )
+    if body.amount_usd <= 0 or already_refunded + Decimal(str(body.amount_usd)) > Decimal(
+        str(order.amount_usd)
+    ):
+        raise ValidationError(
+            "refund amount must be > 0 and total refunds must not exceed the order amount"
+        )
     order.status = "refunded"
 
     active_access = await session.scalar(
@@ -1568,7 +1586,7 @@ async def _get_payout(session: DbSession, payout_id: int) -> Payout:
 
 @router.post("/payouts/{payout_id}/approve")
 async def approve_payout(
-    payout_id: int, admin: CurrentAdmin, session: DbSession
+    payout_id: int, admin: Owner, session: DbSession
 ) -> dict[str, Any]:
     payout = await _get_payout(session, payout_id)
     if payout.status != "requested":
@@ -1626,7 +1644,7 @@ class PayoutMarkPaidBody(BaseModel):
 
 @router.post("/payouts/{payout_id}/mark-paid")
 async def mark_payout_paid(
-    payout_id: int, body: PayoutMarkPaidBody, admin: CurrentAdmin, session: DbSession
+    payout_id: int, body: PayoutMarkPaidBody, admin: Owner, session: DbSession
 ) -> dict[str, Any]:
     payout = await _get_payout(session, payout_id)
     if payout.status not in ("requested", "approved"):

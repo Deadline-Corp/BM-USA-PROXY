@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from app.api.deps import CurrentAdmin, DbSession
 from app.core.config import settings
 from app.core.errors import Unauthorized
-from app.core.security import blacklist_token, decode_token
+from app.core.security import blacklist_token, decode_token, is_blacklisted
 from app.models import AdminUser
 from app.services.auth_admin import authenticate, issue_tokens
 from app.services.ratelimit_helpers import login_guard
@@ -60,9 +60,18 @@ async def refresh(request: Request, response: Response, session: DbSession) -> d
     if not token:
         raise Unauthorized("no refresh token")
     claims = decode_token(token, expected_type="refresh")
+    jti = claims.get("jti")
+    exp = claims.get("exp")
+    # Reject a refresh token that was revoked (logout) or already rotated away.
+    if jti and await is_blacklisted(str(jti)):
+        raise Unauthorized("refresh token revoked")
     admin = await session.get(AdminUser, int(claims["sub"]))
     if admin is None or not admin.is_active:
         raise Unauthorized("admin not found or inactive")
+    # Single-use rotation: burn the just-used refresh token so a captured copy
+    # (incl. one replayed after logout) can never mint another session.
+    if jti and exp:
+        await blacklist_token(str(jti), int(exp))
     access, new_refresh = issue_tokens(admin)  # rotate refresh
     _set_refresh_cookie(response, new_refresh)
     return {"access_token": access}

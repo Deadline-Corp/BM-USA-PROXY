@@ -151,3 +151,56 @@ async def test_onchain_ledger_endpoints(engine, raw_client: AsyncClient) -> None
 
     del raw_client.headers["Authorization"]
     assert (await raw_client.get("/api/admin/payments/ledger")).status_code == 401
+
+
+async def test_refresh_rotation_is_single_use(raw_client: AsyncClient) -> None:
+    """A refresh token is burned on use and on logout — a captured copy can't be replayed."""
+    await _login(raw_client)
+    captured = raw_client.cookies.get("bm_refresh")
+    assert captured
+
+    # rotating once invalidates the token just used
+    assert (await raw_client.post("/api/admin/auth/refresh")).status_code == 200
+    replay = await raw_client.post("/api/admin/auth/refresh", cookies={"bm_refresh": captured})
+    assert replay.status_code == 401  # old refresh token can't mint another session
+
+    # and logout invalidates the current one too
+    current = raw_client.cookies.get("bm_refresh")
+    assert (await raw_client.post("/api/admin/auth/logout")).status_code == 200
+    after = await raw_client.post("/api/admin/auth/refresh", cookies={"bm_refresh": current})
+    assert after.status_code == 401
+
+
+async def test_operator_forbidden_from_money_actions(engine, raw_client: AsyncClient) -> None:
+    """Owner-only money-out endpoints reject an operator token (BFLA regression)."""
+    from app.core.security import hash_password
+    from app.models import AdminUser
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    async with async_sessionmaker(engine, expire_on_commit=False)() as s:
+        s.add(
+            AdminUser(
+                email="operator@test.local", display_name="Op", role="operator",
+                password_hash=hash_password("op-pw-123456"), is_active=True,
+            )
+        )
+        await s.commit()
+
+    login = await raw_client.post(
+        "/api/admin/auth/login",
+        json={"email": "operator@test.local", "password": "op-pw-123456"},
+    )
+    assert login.status_code == 200
+    raw_client.headers["Authorization"] = f"Bearer {login.json()['access_token']}"
+
+    fake = "00000000-0000-0000-0000-000000000000"
+    # the Owner dependency rejects before the handler body runs → 403, not 404
+    assert (
+        await raw_client.post(
+            f"/api/admin/orders/{fake}/refund", json={"amount_usd": 1, "reason": "x"}
+        )
+    ).status_code == 403
+    assert (
+        await raw_client.post(f"/api/admin/orders/{fake}/resolve", json={"action": "approve"})
+    ).status_code == 403
+    assert (await raw_client.post("/api/admin/payouts/1/approve")).status_code == 403

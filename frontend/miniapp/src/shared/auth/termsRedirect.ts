@@ -11,14 +11,20 @@ const RETURN_TO_KEY = "bm_terms_return_to";
  * an open redirect, since the remembered path comes from the address bar.
  */
 export function isSafeInternalPath(path: string): boolean {
-  if (!path.startsWith("/")) return false;
-  let decoded = path;
-  try {
-    decoded = decodeURIComponent(path);
-  } catch {
-    // malformed escapes — judge the raw string only
+  if (typeof path !== "string" || !path.startsWith("/")) return false;
+  // Reject control chars (a raw TAB/LF/CR inside "/\t/evil.com" is dropped by the URL
+  // parser and would otherwise cross origin), then let the browser's URL parser decide.
+  for (let i = 0; i < path.length; i++) {
+    const code = path.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) return false;
   }
-  return !/^\/[/\\]/.test(path) && !/^\/[/\\]/.test(decoded);
+  if (/^\/[/\\]/.test(path)) return false;
+  try {
+    const origin = window.location.origin;
+    return new URL(path, origin).origin === origin;
+  } catch {
+    return false;
+  }
 }
 
 export function rememberReturnTo(path: string): void {

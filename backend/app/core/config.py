@@ -77,12 +77,17 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _require_prod_secrets(self) -> Settings:
-        """Fail closed: prod must not boot on default/missing secrets (CWE-798)."""
-        if self.env != "prod":
+        """Fail closed: any non-local env must not boot on default/missing/weak secrets.
+
+        Only an explicit ``ENV=local`` is exempt (CWE-798 / CWE-1188). A public staging
+        tier registers a Telegram webhook and is internet-reachable, so it must be held
+        to the same bar as prod — a default ``BOT_WEBHOOK_SECRET`` there is forgeable.
+        """
+        if self.env == "local":
             return self
         missing: list[str] = []
-        if self.admin_jwt_secret == _DEFAULT_JWT_SECRET:
-            missing.append("ADMIN_JWT_SECRET")
+        if self.admin_jwt_secret == _DEFAULT_JWT_SECRET or len(self.admin_jwt_secret) < 32:
+            missing.append("ADMIN_JWT_SECRET (default or shorter than 32 chars)")
         if self.bot_webhook_secret == _DEFAULT_WEBHOOK_SECRET:
             missing.append("BOT_WEBHOOK_SECRET")
         if not self.credentials_key:
@@ -94,7 +99,8 @@ class Settings(BaseSettings):
                 missing.append("PAYMENT_WEBHOOK_SECRET")
         if missing:
             raise ValueError(
-                "prod refuses to start with default/missing secrets: " + ", ".join(missing)
+                f"{self.env} refuses to start with default/missing/weak secrets: "
+                + ", ".join(missing)
             )
         return self
 

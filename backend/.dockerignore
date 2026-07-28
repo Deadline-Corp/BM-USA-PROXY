@@ -6,3 +6,8 @@ __pycache__
 .venv
 venv
 tests
+
+# Never bake secrets into the image layers (mirrors the root .dockerignore).
+.env
+.env.*
+!.env.example

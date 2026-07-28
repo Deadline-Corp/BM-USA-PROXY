@@ -1,5 +1,8 @@
+# Local-dev convenience: expose Postgres/Redis to the host for tooling.
+# Bound to loopback ONLY — publishing to 0.0.0.0 would expose an unauthenticated
+# Redis and a weak-default-credential Postgres to the local network.
 services:
   postgres:
-    ports: ["5432:5432"]
+    ports: ["127.0.0.1:5432:5432"]
   redis:
-    ports: ["6379:6379"]
+    ports: ["127.0.0.1:6379:6379"]
