@@ -171,8 +171,8 @@ async def test_refresh_rotation_is_single_use(raw_client: AsyncClient) -> None:
     assert after.status_code == 401
 
 
-async def test_operator_forbidden_from_money_actions(engine, raw_client: AsyncClient) -> None:
-    """Owner-only money-out endpoints reject an operator token (BFLA regression)."""
+async def test_operator_money_actions_are_capped(engine, raw_client: AsyncClient) -> None:
+    """Operators run the business, so they may move money — but only up to the ceiling."""
     from app.core.security import hash_password
     from app.models import AdminUser
     from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -194,13 +194,15 @@ async def test_operator_forbidden_from_money_actions(engine, raw_client: AsyncCl
     raw_client.headers["Authorization"] = f"Bearer {login.json()['access_token']}"
 
     fake = "00000000-0000-0000-0000-000000000000"
-    # the Owner dependency rejects before the handler body runs → 403, not 404
-    assert (
-        await raw_client.post(
-            f"/api/admin/orders/{fake}/refund", json={"amount_usd": 1, "reason": "x"}
-        )
-    ).status_code == 403
-    assert (
-        await raw_client.post(f"/api/admin/orders/{fake}/resolve", json={"action": "approve"})
-    ).status_code == 403
-    assert (await raw_client.post("/api/admin/payouts/1/approve")).status_code == 403
+    # Over the ceiling → 403 before anything is touched (default operator limit is $200).
+    over = await raw_client.post(
+        f"/api/admin/orders/{fake}/refund", json={"amount_usd": 5000, "reason": "x"}
+    )
+    assert over.status_code == 403, over.text
+
+    # Under the ceiling → the authority check passes; the request then fails only because
+    # the order doesn't exist (404), proving the operator was NOT blocked by role.
+    under = await raw_client.post(
+        f"/api/admin/orders/{fake}/refund", json={"amount_usd": 10, "reason": "x"}
+    )
+    assert under.status_code == 404, under.text

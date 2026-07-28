@@ -132,6 +132,33 @@ async def _admin_display_map(
     return {aid: (display_name or email) for aid, display_name, email in rows}
 
 
+# ── money authority (operators run the business; owner is the escalation tier) ──
+# Operators perform day-to-day money-out actions (refunds, referral payouts) up to a
+# configurable USD ceiling; anything above it requires an owner. This keeps the business
+# running without an owner in the loop, while bounding what one compromised or rogue
+# operator account can move. Every action is audit-logged regardless.
+_OPERATOR_LIMIT_DEFAULTS: dict[str, float] = {
+    "operator_payout_limit_usd": 200.0,
+    "operator_refund_limit_usd": 200.0,
+}
+
+
+async def _require_money_authority(
+    session: DbSession, admin: AdminUser, amount_usd: float, setting_key: str
+) -> None:
+    """Allow an operator to move money up to the configured ceiling; owner above it."""
+    if admin.role == "owner":
+        return
+    limit = float(
+        await settings_svc.get(session, setting_key, _OPERATOR_LIMIT_DEFAULTS[setting_key])
+    )
+    if amount_usd > limit:
+        raise Forbidden(
+            f"amount ${amount_usd:.2f} exceeds the operator limit of ${limit:.2f} — "
+            "ask an owner to approve this one"
+        )
+
+
 # ── dashboard ────────────────────────────────────────────────────────────
 @router.get("/dashboard")
 async def dashboard(admin: CurrentAdmin, session: DbSession) -> dict[str, Any]:
@@ -1311,13 +1338,26 @@ async def resolve_order(
     order_id: str, body: ResolveBody, admin: Owner, session: DbSession
 ) -> dict[str, Any]:
     order = await _get_order(session, order_id)
+    # This endpoint exists to clear the manual-review queue. Restricting it to that state
+    # (and refusing to re-provision) is what stops one order from being turned into N live
+    # accesses — the real defect here, independent of who calls it.
+    if order.status != "manual_review":
+        raise Conflict("only an order in manual_review can be resolved")
     if body.action == "approve":
+        existing = await session.scalar(
+            select(Access).where(
+                Access.order_id == order.id, Access.status.in_(_ACTIVE_ACCESS)
+            )
+        )
+        if existing is not None:
+            raise Conflict("this order already has a live access")
         await provision_access(session, order=order)
     elif body.action == "fail":
         order.status = "cancelled"
     elif body.action == "refund":
-        if admin.role != "owner":
-            raise Forbidden("only an owner can refund an order")
+        await _require_money_authority(
+            session, admin, float(order.amount_usd), "operator_refund_limit_usd"
+        )
         order.status = "refunded"
     else:
         raise ValidationError("action must be 'approve', 'fail', or 'refund'")
@@ -1336,8 +1376,11 @@ class RefundBody(BaseModel):
 
 @router.post("/orders/{order_id}/refund")
 async def refund_order(
-    order_id: str, body: RefundBody, admin: Owner, session: DbSession
+    order_id: str, body: RefundBody, admin: CurrentAdmin, session: DbSession
 ) -> dict[str, Any]:
+    await _require_money_authority(
+        session, admin, body.amount_usd, "operator_refund_limit_usd"
+    )
     order = await _get_order(session, order_id)
     if order.paid_at is None:
         raise ValidationError("cannot refund an order that was never paid")
@@ -1599,11 +1642,14 @@ async def _get_payout(session: DbSession, payout_id: int) -> Payout:
 
 @router.post("/payouts/{payout_id}/approve")
 async def approve_payout(
-    payout_id: int, admin: Owner, session: DbSession
+    payout_id: int, admin: CurrentAdmin, session: DbSession
 ) -> dict[str, Any]:
     payout = await _get_payout(session, payout_id)
     if payout.status != "requested":
         raise Conflict("payout is not in 'requested' state")
+    await _require_money_authority(
+        session, admin, float(payout.amount_usd), "operator_payout_limit_usd"
+    )
     payout.status = "approved"
     payout.operator_id = admin.id
     payout.processed_at = _utcnow()
@@ -1657,11 +1703,14 @@ class PayoutMarkPaidBody(BaseModel):
 
 @router.post("/payouts/{payout_id}/mark-paid")
 async def mark_payout_paid(
-    payout_id: int, body: PayoutMarkPaidBody, admin: Owner, session: DbSession
+    payout_id: int, body: PayoutMarkPaidBody, admin: CurrentAdmin, session: DbSession
 ) -> dict[str, Any]:
     payout = await _get_payout(session, payout_id)
     if payout.status not in ("requested", "approved"):
         raise Conflict("payout must be requested or approved")
+    await _require_money_authority(
+        session, admin, float(payout.amount_usd), "operator_payout_limit_usd"
+    )
     payout.status = "paid"
     payout.operator_id = admin.id
     payout.tx_hash = body.tx_hash
@@ -2162,6 +2211,9 @@ _SETTINGS_WHITELIST: frozenset[str] = frozenset(
         "rotation_cooldown_sec",
         "pool_low_watermark",
         "attribution",
+        # ceilings for what an operator may move without an owner (see _require_money_authority)
+        "operator_payout_limit_usd",
+        "operator_refund_limit_usd",
     }
 )
 
