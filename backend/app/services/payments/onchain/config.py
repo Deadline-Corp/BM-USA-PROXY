@@ -22,7 +22,7 @@ or xpub. Sweeping is out of scope by design (single shared address per rail).
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from functools import lru_cache
 
@@ -88,6 +88,7 @@ class RpcConfig:
 class OnchainConfig:
     methods: dict[tuple[str, str], MethodConfig]
     rpc: RpcConfig
+    network: str = "mainnet"  # "mainnet" | "testnet" — selects default RPC endpoints
 
     def method(self, asset: str, network: str) -> MethodConfig | None:
         return self.methods.get((asset.upper(), network.lower()))
@@ -137,6 +138,17 @@ def _parse_methods(methods_json: str | None) -> dict[tuple[str, str], MethodConf
         )
         tolerance_pct = Decimal(str(entry.get("tolerance_pct", "0")))
         min_amount_usd = Decimal(str(entry.get("min_amount_usd", "0")))
+        # per-rail overrides — needed on testnet, where the token contract/mint (and
+        # sometimes decimals) differ from the mainnet defaults pinned in assets.py.
+        overrides: dict[str, object] = {}
+        if entry.get("token_contract"):
+            overrides["token_contract"] = str(entry["token_contract"])
+        if entry.get("token_mint"):
+            overrides["token_mint"] = str(entry["token_mint"])
+        if entry.get("decimals") is not None:
+            overrides["decimals"] = int(entry["decimals"])
+        if overrides:
+            spec = replace(spec, **overrides)  # type: ignore[arg-type]
         out[spec.key] = MethodConfig(
             spec=spec,
             address=address,
@@ -172,9 +184,15 @@ def _parse_rpc(rpc_json: str | None) -> RpcConfig:
     return RpcConfig(endpoints=endpoints, api_keys=api_keys)
 
 
-def load_config(methods_json: str | None, rpc_json: str | None) -> OnchainConfig:
+def load_config(
+    methods_json: str | None, rpc_json: str | None, network: str = "mainnet"
+) -> OnchainConfig:
     """Build an :class:`OnchainConfig` from the two raw JSON strings (pure, testable)."""
-    return OnchainConfig(methods=_parse_methods(methods_json), rpc=_parse_rpc(rpc_json))
+    return OnchainConfig(
+        methods=_parse_methods(methods_json),
+        rpc=_parse_rpc(rpc_json),
+        network="testnet" if str(network).lower() == "testnet" else "mainnet",
+    )
 
 
 @lru_cache(maxsize=1)
@@ -182,7 +200,7 @@ def get_onchain_config() -> OnchainConfig:
     """Cached config built from application settings."""
     from app.core.config import settings
 
-    return load_config(settings.onchain_methods, settings.onchain_rpc)
+    return load_config(settings.onchain_methods, settings.onchain_rpc, settings.onchain_network)
 
 
 def reset_config_cache() -> None:

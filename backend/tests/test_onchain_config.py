@@ -6,7 +6,30 @@ import json
 from decimal import Decimal
 
 import pytest
+from app.services.payments.onchain.clients import build_client
 from app.services.payments.onchain.config import OnchainConfigError, load_config
+
+
+def test_testnet_contract_override_and_network() -> None:
+    # On testnet the token contract differs from the mainnet default → overridable per rail.
+    cfg = load_config(
+        json.dumps(
+            [{"asset": "USDT", "network": "trc20", "address": "TX",
+              "token_contract": "TTestnetUSDTxxxxxxxxxxxxxxxxxxxxxx", "decimals": 6}]
+        ),
+        "{}",
+        network="testnet",
+    )
+    assert cfg.network == "testnet"
+    m = cfg.require_method("USDT", "trc20")
+    assert m.spec.token_contract == "TTestnetUSDTxxxxxxxxxxxxxxxxxxxxxx"
+
+
+def test_factory_uses_testnet_defaults() -> None:
+    # EVM has no keyless mainnet default (→ None) but a public testnet default (→ built).
+    methods = json.dumps([{"asset": "USDC", "network": "erc20", "address": "0xabc"}])
+    assert build_client("ethereum", load_config(methods, "{}", network="mainnet")) is None
+    assert build_client("ethereum", load_config(methods, "{}", network="testnet")) is not None
 
 
 def test_parse_methods_and_rpc() -> None:

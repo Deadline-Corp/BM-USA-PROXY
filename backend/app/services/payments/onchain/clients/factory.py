@@ -14,10 +14,28 @@ _DEFAULT_ENDPOINTS: dict[str, str] = {
     "bitcoin": "https://mempool.space/api",
     "litecoin": "https://litecoinspace.org/api",
     "solana": "https://api.mainnet-beta.solana.com",
+    # ethereum/bsc mainnet have no reliable keyless public RPC → require ONCHAIN_RPC.
+}
+
+# Public testnet defaults (override any via ONCHAIN_RPC). Tron=Nile, EVM=Sepolia/BSC-testnet,
+# Solana=devnet, Bitcoin=testnet4, Litecoin=testnet.
+_TESTNET_ENDPOINTS: dict[str, str] = {
+    "tron": "https://nile.trongrid.io",
+    "ethereum": "https://ethereum-sepolia-rpc.publicnode.com",
+    "bsc": "https://data-seed-prebsc-1-s1.binance.org:8545",
+    "solana": "https://api.devnet.solana.com",
+    "bitcoin": "https://mempool.space/testnet4/api",
+    "litecoin": "https://litecoinspace.org/testnet/api",
 }
 
 _EVM_CHAINS = frozenset({"ethereum", "bsc"})
 _UTXO_CHAINS = frozenset({"bitcoin", "litecoin"})
+
+
+def _default_endpoint(chain: str, network: str) -> str | None:
+    if network == "testnet":
+        return _TESTNET_ENDPOINTS.get(chain)
+    return _DEFAULT_ENDPOINTS.get(chain)
 
 # Max scan window per tick, in the chain's cursor units.
 # Tron cursor = milliseconds; EVM/UTXO cursor = block numbers; Solana cursor = slots.
@@ -34,28 +52,25 @@ _MAX_SCAN: dict[str, int] = {
 
 def build_client(chain: str, config: OnchainConfig) -> ChainClient | None:
     """Construct the engine for ``chain``, or ``None`` if unimplemented / unconfigured."""
+    endpoint = config.rpc.endpoint(chain) or _default_endpoint(chain, config.network)
     if chain == "tron":
         from app.services.payments.onchain.clients.tron import TronClient
 
-        endpoint = config.rpc.endpoint("tron") or _DEFAULT_ENDPOINTS["tron"]
-        return TronClient(endpoint=endpoint, api_key=config.rpc.api_key("tron"))
+        return TronClient(endpoint=endpoint or "", api_key=config.rpc.api_key("tron"))
     if chain in _EVM_CHAINS:
         from app.services.payments.onchain.clients.evm import EvmClient
 
-        evm_endpoint = config.rpc.endpoint(chain)
-        if not evm_endpoint:  # EVM needs a provider URL (Infura/Alchemy/public node)
+        if not endpoint:  # EVM mainnet needs a provider URL (Infura/Alchemy/public node)
             return None
-        return EvmClient(chain=chain, endpoint=evm_endpoint)
+        return EvmClient(chain=chain, endpoint=endpoint)
     if chain in _UTXO_CHAINS:
         from app.services.payments.onchain.clients.utxo import UtxoClient
 
-        endpoint = config.rpc.endpoint(chain) or _DEFAULT_ENDPOINTS[chain]
-        return UtxoClient(chain=chain, endpoint=endpoint)
+        return UtxoClient(chain=chain, endpoint=endpoint or "")
     if chain == "solana":
         from app.services.payments.onchain.clients.solana import SolanaClient
 
-        endpoint = config.rpc.endpoint("solana") or _DEFAULT_ENDPOINTS["solana"]
-        return SolanaClient(endpoint=endpoint)
+        return SolanaClient(endpoint=endpoint or "")
     return None
 
 
