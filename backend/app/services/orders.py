@@ -54,6 +54,39 @@ def _build_invoice(*, order: Order, provider_name: str, dto: InvoiceDTO, ttl: in
     )
 
 
+async def _ensure_unique_crypto_amount(session: AsyncSession, provider_name: str, dto: InvoiceDTO) -> None:
+    """Nudge the on-chain expected amount until it's unique among OPEN invoices on this rail.
+
+    With one shared receiving address per rail, the amount is the routing key — two open
+    invoices sharing it are ambiguous and strand a payment. The hash-derived delta makes
+    collisions rare; this closes them deterministically (the DB partial-unique index is the
+    hard backstop). Only touches on-chain invoices.
+    """
+    if provider_name != "onchain" or dto.crypto_amount is None:
+        return
+    from app.services.payments.onchain.amounts import _quantum
+    from app.services.payments.onchain.assets import find_spec
+
+    spec = find_spec(dto.crypto_currency or "", dto.crypto_network or "")
+    step = _quantum(spec.quote_decimals) if spec else Decimal("0.000001")
+    for _ in range(1000):
+        clash = await session.scalar(
+            select(Invoice.id)
+            .where(
+                Invoice.provider == "onchain",
+                Invoice.crypto_currency == dto.crypto_currency,
+                Invoice.crypto_network == dto.crypto_network,
+                Invoice.pay_address == dto.pay_address,
+                Invoice.crypto_amount == dto.crypto_amount,
+                Invoice.status.in_(("pending", "confirming")),
+            )
+            .limit(1)
+        )
+        if clash is None:
+            return
+        dto.crypto_amount += step
+
+
 async def create_order(
     session: AsyncSession,
     *,
@@ -131,6 +164,7 @@ async def create_order(
         asset=asset,
         network=network,
     )
+    await _ensure_unique_crypto_amount(session, provider.name, dto)
     invoice = _build_invoice(order=order, provider_name=provider.name, dto=dto, ttl=ttl)
     session.add(invoice)
     await session.flush()
@@ -205,6 +239,7 @@ async def create_extension_order(
         asset=asset,
         network=network,
     )
+    await _ensure_unique_crypto_amount(session, provider.name, dto)
     invoice = _build_invoice(order=order, provider_name=provider.name, dto=dto, ttl=ttl)
     session.add(invoice)
     await session.flush()

@@ -56,6 +56,7 @@ class OnchainDepositLedger(Base):
     amount_usd: Mapped[float | None] = mapped_column(Numeric(38, 18))
     confirmations: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     block_number: Mapped[int | None] = mapped_column(BigInteger)
+    block_hash: Mapped[str | None] = mapped_column(Text)
     block_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     invoice_id: Mapped[int | None] = mapped_column(ForeignKey("invoices.id"))

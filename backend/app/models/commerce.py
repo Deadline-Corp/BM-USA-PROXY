@@ -98,6 +98,7 @@ class Invoice(Base):
     rate_locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reference_pubkey: Mapped[str | None] = mapped_column(Text)
     matched_txid: Mapped[str | None] = mapped_column(Text)
+    matched_log_index: Mapped[int | None] = mapped_column(Integer)
     confirmations: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     created_at: Mapped[datetime] = created_at_col()
     updated_at: Mapped[datetime] = updated_at_col()
@@ -115,6 +116,20 @@ class Invoice(Base):
             "status",
             "expires_at",
             postgresql_where=text("status IN ('created','pending','confirming')"),
+        ),
+        # F1: no two OPEN on-chain invoices on the same rail may share an expected amount
+        # (the amount is the routing key). create_order nudges to keep it unique; this is
+        # the DB backstop. Mirrors migration 0006.
+        Index(
+            "uq_onchain_open_invoice_amount",
+            "crypto_currency",
+            "crypto_network",
+            "pay_address",
+            "crypto_amount",
+            unique=True,
+            postgresql_where=text(
+                "provider = 'onchain' AND status IN ('pending', 'confirming')"
+            ),
         ),
     )
 

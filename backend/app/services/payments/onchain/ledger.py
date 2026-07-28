@@ -107,13 +107,19 @@ class LedgerWriter:
         value: str | None = await self.session.scalar(stmt)
         return value
 
-    async def latest_deposit(self, txid: str) -> OnchainDepositLedger | None:
-        """Most recent ledger row for a tx (any log index) — used to re-finalize stragglers."""
-        stmt = (
-            select(OnchainDepositLedger)
-            .where(OnchainDepositLedger.txid == txid)
-            .order_by(OnchainDepositLedger.created_at.desc(), OnchainDepositLedger.id.desc())
-            .limit(1)
-        )
+    async def latest_deposit(
+        self, txid: str, log_index: int | None = None
+    ) -> OnchainDepositLedger | None:
+        """Most recent ledger row for a transfer — used to re-finalize stragglers.
+
+        Scoped by log_index when known, so a multi-output tx re-loads the exact output
+        that paid this invoice rather than an arbitrary row sharing the txid.
+        """
+        stmt = select(OnchainDepositLedger).where(OnchainDepositLedger.txid == txid)
+        if log_index is not None:
+            stmt = stmt.where(OnchainDepositLedger.log_index == log_index)
+        stmt = stmt.order_by(
+            OnchainDepositLedger.created_at.desc(), OnchainDepositLedger.id.desc()
+        ).limit(1)
         row: OnchainDepositLedger | None = await self.session.scalar(stmt)
         return row

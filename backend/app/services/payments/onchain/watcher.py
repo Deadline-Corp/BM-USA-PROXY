@@ -212,6 +212,7 @@ async def process_transfer(
         prev = invoice.status
         invoice.status = "confirming"
         invoice.matched_txid = transfer.txid
+        invoice.matched_log_index = transfer.log_index
         invoice.confirmations = confs
         await ledger.record_invoice_status(
             invoice.id,
@@ -264,7 +265,7 @@ async def finalize_confirming(
         invoice.confirmations = confs
         if confs < method.confirmations:
             continue
-        deposit = await ledger.latest_deposit(invoice.matched_txid)
+        deposit = await ledger.latest_deposit(invoice.matched_txid, invoice.matched_log_index)
         if deposit is None:
             continue
         transfer = _transfer_from_ledger(deposit)

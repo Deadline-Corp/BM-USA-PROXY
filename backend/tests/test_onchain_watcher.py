@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+import pytest
 from app.models import Access, Invoice, Order, Tariff, User
 from app.models.commerce import PaymentEvent
 from app.models.onchain import InvoiceStatusHistory, OnchainDepositLedger
@@ -252,20 +253,14 @@ async def test_unmatched_deposit_is_parked(session) -> None:
     assert await _latest_ledger_status(session, "0xdep4") == "unmatched"
 
 
-async def test_ambiguous_amount_not_credited(session) -> None:
+async def test_duplicate_open_amount_rejected(session) -> None:
+    # F1: two OPEN on-chain invoices on the same rail can no longer share an expected
+    # amount — the partial-unique index makes the ambiguous-collision impossible at the DB
+    # level (create_order nudges to avoid it; this proves the hard backstop).
+    from sqlalchemy.exc import IntegrityError
+
     await _seed(session)
     expected = Decimal("10.005000")
-    order1, inv1 = await _make_order(session, inv_id="oc-5a", expected=expected)
-    order2, inv2 = await _make_order(session, inv_id="oc-5b", expected=expected)
-    client = FakeChainClient(
-        chain="tron", head=1000, scan_rounds=[[_transfer("0xdep5", expected, 20)]]
-    )
-
-    await run_chain_tick(session, client, config=_config())
-    await session.refresh(inv1)
-    await session.refresh(inv2)
-    assert inv1.status == "pending"
-    assert inv2.status == "pending"
-    assert await _access_count(session, order1.id) == 0
-    assert await _access_count(session, order2.id) == 0
-    assert await _latest_ledger_status(session, "0xdep5") == "unmatched"
+    await _make_order(session, inv_id="oc-5a", expected=expected)
+    with pytest.raises(IntegrityError):
+        await _make_order(session, inv_id="oc-5b", expected=expected)
