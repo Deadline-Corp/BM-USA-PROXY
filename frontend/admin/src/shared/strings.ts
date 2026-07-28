@@ -226,7 +226,7 @@ export const strings = {
     settings: "Referral settings",
     commissionPct: "Commission %",
     minPayoutUsd: "Minimum payout (USD)",
-    cookieDays: "Attribution window (days)",
+    holdDays: "Hold before payout (days)",
   },
   broadcasts: {
     title: "Broadcasts",

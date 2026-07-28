@@ -15,7 +15,7 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import ColumnElement, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1735,13 +1735,19 @@ async def mark_payout_paid(
 @router.get("/settings/referral")
 async def get_referral_settings(admin: CurrentAdmin, session: DbSession) -> dict[str, Any]:
     return {
-        "referral_pct": await settings_svc.get(session, "referral_pct", 10),
+        # default must match services/referral.accrue's fallback, or the screen would show
+        # one number while accruals used another
+        "referral_pct": await settings_svc.get(session, "referral_pct", 20),
         "referral_hold_days": await settings_svc.get(session, "referral_hold_days", 14),
         "referral_min_payout_usd": await settings_svc.get(session, "referral_min_payout_usd", 20),
     }
 
 
 class ReferralSettingsPatch(BaseModel):
+    # Reject unknown keys instead of ignoring them: a client sending the wrong field names
+    # used to get a 200 with nothing saved, which is how the admin form silently broke.
+    model_config = ConfigDict(extra="forbid")
+
     referral_pct: float | None = Field(default=None, ge=0, le=100)
     referral_hold_days: int | None = Field(default=None, ge=0, le=365)
     referral_min_payout_usd: float | None = Field(default=None, ge=0)
@@ -1749,8 +1755,10 @@ class ReferralSettingsPatch(BaseModel):
 
 @router.patch("/settings/referral")
 async def patch_referral_settings(
-    body: ReferralSettingsPatch, admin: Owner, session: DbSession
+    body: ReferralSettingsPatch, admin: CurrentAdmin, session: DbSession
 ) -> dict[str, Any]:
+    # Operator-editable, same tier as tariff pricing — the referral percentage is a
+    # day-to-day commercial dial, not an ownership-level setting.
     updates = body.model_dump(exclude_unset=True)
     for key, value in updates.items():
         await settings_svc.set_value(session, key, value, admin_id=admin.id)

@@ -29,7 +29,6 @@ import { apiErrorMessage } from "@/shared/api/client";
 import { strings } from "@/shared/strings";
 import type { Payout, ReferralLedgerEntry, ReferralSettings } from "@/shared/api/types";
 import { IconClients, IconMail, IconReferrals, IconWallet } from "@/shared/components/icons";
-import { RequireRole } from "@/shared/auth/RequireRole";
 
 export function ReferralsScreen() {
   const toast = useToast();
@@ -140,10 +139,11 @@ export function ReferralsScreen() {
             />
           </Panel>
 
-          <RequireRole role="owner">
-            <Panel>
-              <Panel.Head title={strings.referrals.settings} />
-              <Panel.Body>
+          {/* Operator-editable: the referral percentage is a day-to-day commercial dial,
+              same tier as tariff pricing. */}
+          <Panel>
+            <Panel.Head title={strings.referrals.settings} />
+            <Panel.Body>
                 {settingsQuery.isLoading || !settings ? (
                   <Skeleton className="h-24" />
                 ) : (
@@ -153,21 +153,25 @@ export function ReferralsScreen() {
                         type="number"
                         step="0.1"
                         label={strings.referrals.commissionPct}
-                        value={settings.commission_pct ?? 0}
-                        onChange={(e) => setSettingsDraft({ ...settings, commission_pct: Number(e.target.value) })}
+                        value={settings.referral_pct ?? 0}
+                        onChange={(e) => setSettingsDraft({ ...settings, referral_pct: Number(e.target.value) })}
                       />
                       <Input
                         type="number"
                         step="0.01"
                         label={strings.referrals.minPayoutUsd}
-                        value={settings.min_payout_usd ?? 0}
-                        onChange={(e) => setSettingsDraft({ ...settings, min_payout_usd: Number(e.target.value) })}
+                        value={settings.referral_min_payout_usd ?? 0}
+                        onChange={(e) =>
+                          setSettingsDraft({ ...settings, referral_min_payout_usd: Number(e.target.value) })
+                        }
                       />
                       <Input
                         type="number"
-                        label={strings.referrals.cookieDays}
-                        value={settings.cookie_days ?? 0}
-                        onChange={(e) => setSettingsDraft({ ...settings, cookie_days: Number(e.target.value) })}
+                        label={strings.referrals.holdDays}
+                        value={settings.referral_hold_days ?? 0}
+                        onChange={(e) =>
+                          setSettingsDraft({ ...settings, referral_hold_days: Number(e.target.value) })
+                        }
                       />
                     </div>
                     {settingsDraft && (
@@ -179,9 +183,8 @@ export function ReferralsScreen() {
                     )}
                   </div>
                 )}
-              </Panel.Body>
-            </Panel>
-          </RequireRole>
+            </Panel.Body>
+          </Panel>
         </div>
 
         <Panel>

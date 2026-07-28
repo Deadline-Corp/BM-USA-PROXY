@@ -331,9 +331,11 @@ export interface Payout {
 }
 
 export interface ReferralSettings {
-  commission_pct: number;
-  min_payout_usd: number;
-  cookie_days: number;
+  // field names must match the backend contract (GET/PATCH /settings/referral) exactly —
+  // extra keys are silently dropped by the Pydantic model, so a mismatch saves nothing
+  referral_pct: number;
+  referral_min_payout_usd: number;
+  referral_hold_days: number;
 }
 
 // ---------- Broadcasts ----------

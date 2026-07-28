@@ -153,6 +153,35 @@ async def test_onchain_ledger_endpoints(engine, raw_client: AsyncClient) -> None
     assert (await raw_client.get("/api/admin/payments/ledger")).status_code == 401
 
 
+async def test_referral_commission_is_settable_from_admin(raw_client: AsyncClient) -> None:
+    """PATCH /settings/referral must actually persist — and be operator-editable."""
+    token = await _login(raw_client)
+    raw_client.headers["Authorization"] = f"Bearer {token}"
+
+    before = (await raw_client.get("/api/admin/settings/referral")).json()
+    assert "referral_pct" in before
+
+    saved = await raw_client.patch(
+        "/api/admin/settings/referral",
+        json={"referral_pct": 12.5, "referral_min_payout_usd": 30, "referral_hold_days": 7},
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["referral_pct"] == 12.5
+
+    # round-trip: a fresh read returns the stored value, not the default
+    after = (await raw_client.get("/api/admin/settings/referral")).json()
+    assert after["referral_pct"] == 12.5
+    assert after["referral_min_payout_usd"] == 30
+    assert after["referral_hold_days"] == 7
+
+    # unknown keys (the old frontend contract) must not silently look like a success
+    stale = await raw_client.patch(
+        "/api/admin/settings/referral", json={"commission_pct": 99}
+    )
+    assert stale.status_code == 422, stale.text
+    assert (await raw_client.get("/api/admin/settings/referral")).json()["referral_pct"] == 12.5
+
+
 async def test_refresh_rotation_is_single_use(raw_client: AsyncClient) -> None:
     """A refresh token is burned on use and on logout — a captured copy can't be replayed."""
     await _login(raw_client)
