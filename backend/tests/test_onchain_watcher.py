@@ -264,3 +264,29 @@ async def test_duplicate_open_amount_rejected(session) -> None:
     await _make_order(session, inv_id="oc-5a", expected=expected)
     with pytest.raises(IntegrityError):
         await _make_order(session, inv_id="oc-5b", expected=expected)
+
+
+async def test_reorg_rollback_flags_order(session) -> None:
+    # F8: a deposit we finalized a few minutes ago whose tx is no longer canonical
+    # (confirmations dropped to 0) → reorg_rollback + order to manual_review (no auto-revoke).
+    await _seed(session)
+    expected = Decimal("10.005000")
+    order, invoice = await _make_order(session, inv_id="oc-reorg", expected=expected)
+    invoice.status = "paid"
+    order.status = "completed"
+    ago = datetime.now(UTC) - timedelta(minutes=5)
+    session.add(
+        OnchainDepositLedger(
+            status="paid", chain="tron", asset="USDT", network="trc20", txid="0xreorg",
+            to_address=ADDR, amount=expected, amount_usd=expected, confirmations=20,
+            observed_at=ago, created_at=ago, invoice_id=invoice.id, user_id=order.user_id,
+        )
+    )
+    await session.flush()
+
+    client = FakeChainClient(chain="tron", head=1000, confs={"0xreorg": 0})
+    await run_chain_tick(session, client, config=_config())
+
+    # same identity-mapped object revalidate mutated (not yet committed, so don't refresh)
+    assert order.status == "manual_review"
+    assert await _latest_ledger_status(session, "0xreorg") == "reorg_rollback"

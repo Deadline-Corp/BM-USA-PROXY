@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -41,6 +41,12 @@ _TERMINAL_LEDGER = frozenset(
 
 # safety bound on how many blocks one tick will scan (chain clients may lower this)
 DEFAULT_MAX_BLOCKS = 500
+
+# reorg re-validation looks at deposits finalized between MIN_AGE and WINDOW ago —
+# skipping the just-finalized ones (which can't have reorged yet and whose fresh confs
+# depth we already know), and stopping once they're too old for a reorg to matter.
+_REVALIDATION_WINDOW_MINUTES = 30
+_REVALIDATION_MIN_AGE_MINUTES = 1
 
 
 @dataclass(slots=True)
@@ -291,6 +297,65 @@ async def _get_cursor(session: AsyncSession, chain: str, head: int) -> ChainCurs
     return cursor
 
 
+async def revalidate_finalized(
+    session: AsyncSession, client: ChainClient, ledger: LedgerWriter
+) -> int:
+    """Re-check recently-finalized deposits against the canonical chain (F8, reorg guard).
+
+    If a deposit's tx is no longer canonical (confirmations dropped to 0) shortly after we
+    finalized it, record a reorg_rollback row and route the order to manual_review + alert.
+    We do NOT auto-revoke the access — a transient RPC miss must not punish a paying
+    customer; the operator resolves. Only the recent post-finalization window is checked.
+    """
+    now = datetime.now(UTC)
+    window_start = now - timedelta(minutes=_REVALIDATION_WINDOW_MINUTES)
+    min_age = now - timedelta(minutes=_REVALIDATION_MIN_AGE_MINUTES)
+    rows = list(
+        await session.scalars(
+            select(OnchainDepositLedger)
+            .where(
+                OnchainDepositLedger.chain == client.chain,
+                OnchainDepositLedger.status.in_(("paid", "overpaid")),
+                OnchainDepositLedger.created_at >= window_start,
+                OnchainDepositLedger.created_at <= min_age,
+            )
+            .order_by(OnchainDepositLedger.created_at.desc())
+        )
+    )
+    seen: set[tuple[str, int]] = set()
+    reorged = 0
+    for dep in rows:
+        key = (dep.txid, dep.log_index)
+        if key in seen:
+            continue
+        seen.add(key)
+        latest = await ledger.latest_status(
+            dep.txid, dep.log_index, asset=dep.asset, network=dep.network
+        )
+        if latest not in ("paid", "overpaid"):
+            continue  # already superseded / rolled back
+        if await client.confirmations(dep.txid) > 0:
+            continue  # still canonical
+        transfer = _transfer_from_ledger(dep)
+        await ledger.record_deposit(
+            transfer, "reorg_rollback", invoice_id=dep.invoice_id, user_id=dep.user_id,
+            confirmations=0,
+            amount_usd=Decimal(str(dep.amount_usd)) if dep.amount_usd is not None else None,
+            meta={"reason": "tx no longer canonical after finalization"},
+        )
+        if dep.invoice_id is not None:
+            invoice = await session.get(Invoice, dep.invoice_id)
+            if invoice is not None:
+                order = await session.get(Order, invoice.order_id)
+                if order is not None and order.status != "manual_review":
+                    order.status = "manual_review"
+        log.error(
+            "onchain.reorg_suspected", chain=client.chain, txid=dep.txid, invoice=dep.invoice_id
+        )
+        reorged += 1
+    return reorged
+
+
 async def run_chain_tick(
     session: AsyncSession,
     client: ChainClient,
@@ -330,6 +395,7 @@ async def run_chain_tick(
         cursor.updated_at = datetime.now(UTC)
 
     finalized = await finalize_confirming(session, client, config, ledger)
+    await revalidate_finalized(session, client, ledger)
     return TickReport(
         chain=client.chain,
         from_block=from_block,
