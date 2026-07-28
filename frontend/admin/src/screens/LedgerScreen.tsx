@@ -6,7 +6,7 @@ import { DataTable } from "@/shared/components/DataTable";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { Num } from "@/shared/components/Num";
 import { Select } from "@/shared/components/form/Select";
-import { formatDateTime } from "@/shared/lib/format";
+import { formatCryptoAmount, formatDateTime } from "@/shared/lib/format";
 import { useDepositLedger, useLedgerSummary } from "@/shared/hooks/useLedger";
 import { usePagination } from "@/shared/hooks/usePagination";
 import { strings } from "@/shared/strings";
@@ -59,8 +59,11 @@ export function LedgerScreen() {
         accessorKey: "amount",
         cell: ({ row }) => (
           <div className="leading-tight">
-            <div className="font-mono text-[.82rem] text-text">
-              {row.original.amount} {row.original.asset}
+            <div
+              className="font-mono text-[.82rem] text-text"
+              title={`${row.original.amount} ${row.original.asset}`}
+            >
+              {formatCryptoAmount(row.original.amount)} {row.original.asset}
             </div>
             {row.original.amount_usd != null && (
               <Num value={row.original.amount_usd} usd className="text-[.72rem] text-text-3" />

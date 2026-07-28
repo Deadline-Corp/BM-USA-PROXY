@@ -2,6 +2,20 @@ export function formatUsd(value: number): string {
   return `$${value.toFixed(2)}`;
 }
 
+/**
+ * Render an on-chain amount for humans. The API sends the ledger's full
+ * NUMERIC(38,18) precision as a string ("31.500000000000000000") so no value is
+ * ever lost in transit; operators only need the significant digits. Kept as
+ * string maths — parseFloat would silently round large/precise amounts.
+ */
+export function formatCryptoAmount(value: string | null | undefined): string {
+  if (value === null || value === undefined || value === "") return "—";
+  if (!/^-?\d+(\.\d+)?$/.test(value)) return value; // unexpected shape — show as-is
+  if (!value.includes(".")) return value;
+  const trimmed = value.replace(/0+$/, "").replace(/\.$/, "");
+  return trimmed === "" || trimmed === "-" ? "0" : trimmed;
+}
+
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
