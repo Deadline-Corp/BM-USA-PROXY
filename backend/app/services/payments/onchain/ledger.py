@@ -85,13 +85,21 @@ class LedgerWriter:
         await self.session.flush()
         return row
 
-    async def latest_status(self, txid: str, log_index: int) -> str | None:
-        """Current state of a transfer = the most recent ledger row for its identity."""
+    async def latest_status(
+        self, txid: str, log_index: int, *, asset: str, network: str
+    ) -> str | None:
+        """Current state of a transfer = the most recent ledger row for its identity.
+
+        Scoped by asset+network too, so two transfers sharing a (txid, log_index=0) but a
+        different asset (e.g. SOL + USDC in one Solana tx) don't shadow each other.
+        """
         stmt = (
             select(OnchainDepositLedger.status)
             .where(
                 OnchainDepositLedger.txid == txid,
                 OnchainDepositLedger.log_index == log_index,
+                OnchainDepositLedger.asset == asset,
+                OnchainDepositLedger.network == network,
             )
             .order_by(OnchainDepositLedger.created_at.desc(), OnchainDepositLedger.id.desc())
             .limit(1)

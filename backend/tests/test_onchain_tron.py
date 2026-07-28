@@ -105,6 +105,24 @@ async def test_get_block_height_returns_timestamp() -> None:
     assert await client.get_block_height() == 1700000000000
 
 
+async def test_scan_trc20_ignores_reported_decimals() -> None:
+    # A hostile RPC lies decimals=0 to inflate a real 10.005 USDT transfer 10^6x. The
+    # client must use its own pinned spec.decimals (6), not the response's token_info.
+    now_ts = 1700000000000
+    http = FakeHttp()
+    http.on_post("getnowblock", _nowblock(1000, now_ts))
+    http.on_get(
+        "transactions/trc20",
+        _trc20_page([_trc20_item("txlie", 10005000, ADDR, block_ts=now_ts - 60000, decimals=0)]),
+    )
+    client = TronClient(endpoint="https://x", http=http)
+    res = await client.scan(
+        from_block=0, to_block=now_ts, methods=_tron_config().methods_for_chain("tron")
+    )
+    assert len(res) == 1
+    assert res[0].amount == Decimal("10.005")  # pinned 6 decimals, not the lied 0
+
+
 async def test_scan_trc20_parses_amount_and_confirmations() -> None:
     now_ts = 1700000000000
     http = FakeHttp()

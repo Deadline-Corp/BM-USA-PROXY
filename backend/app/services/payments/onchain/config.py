@@ -34,7 +34,7 @@ DEFAULT_CONFIRMATIONS: dict[str, int] = {
     "ethereum": 12,
     "bsc": 15,
     "solana": 0,      # Solana uses the "finalized" commitment instead of a count
-    "bitcoin": 2,
+    "bitcoin": 6,     # ~1h; 2 was cheap-double-spend range for irreversible delivery
     "litecoin": 6,
 }
 

@@ -50,6 +50,7 @@ class PriceOracle:
         self._source = source or _coingecko_source
         self._ttl = ttl_seconds
         self._cache: dict[str, tuple[float, Decimal]] = {}
+        self._last_good: dict[str, Decimal] = {}  # sanity baseline per asset
         self._lock = asyncio.Lock()
 
     async def usd_price(self, spec: AssetSpec) -> Decimal:
@@ -72,6 +73,15 @@ class PriceOracle:
             price = await self._source(coingecko_id)
             if price <= 0:
                 raise PriceUnavailable(f"non-positive price for {coingecko_id}: {price}")
+            # Sanity band: a single unauthenticated source with no bound lets a bogus
+            # 1000x quote turn a $1000 order into a dust invoice. Reject a move beyond
+            # 5x from the last accepted price (generous for real volatility between fetches).
+            prev = self._last_good.get(coingecko_id)
+            if prev is not None and not (prev / 5 <= price <= prev * 5):
+                raise PriceUnavailable(
+                    f"price for {coingecko_id} left the sanity band: {prev} -> {price}"
+                )
+            self._last_good[coingecko_id] = price
             self._cache[coingecko_id] = (time.monotonic(), price)
             return price
 

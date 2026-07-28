@@ -129,7 +129,13 @@ async def _finalize(
         dto=PaymentEventDTO(
             provider_invoice_id=invoice.provider_invoice_id,
             status=emit_status,
-            provider_event_id=f"{transfer.txid}:{transfer.log_index}",
+            # include chain+asset+network so two transfers sharing a txid but a
+            # different asset (e.g. SOL + USDC in one Solana tx, or USDT + TRX in one
+            # Tron tx, all log_index 0) don't collide on the dedupe key.
+            provider_event_id=(
+                f"{transfer.chain}:{transfer.asset}:{transfer.network}"
+                f":{transfer.txid}:{transfer.log_index}"
+            ),
         ),
     )
     if event_id is not None:
@@ -165,7 +171,9 @@ async def process_transfer(
     if method is None:
         return False  # not a rail we watch
 
-    latest = await ledger.latest_status(transfer.txid, transfer.log_index)
+    latest = await ledger.latest_status(
+        transfer.txid, transfer.log_index, asset=transfer.asset, network=transfer.network
+    )
     if latest in _TERMINAL_LEDGER:
         return False  # already settled
 
@@ -260,8 +268,15 @@ async def finalize_confirming(
         if deposit is None:
             continue
         transfer = _transfer_from_ledger(deposit)
-        if await _finalize(session, transfer, invoice, confs, config, ledger):
-            finalized += 1
+        try:
+            async with session.begin_nested():
+                done = await _finalize(session, transfer, invoice, confs, config, ledger)
+            if done:
+                finalized += 1
+        except Exception:
+            log.exception(
+                "onchain.finalize_failed", chain=client.chain, invoice=invoice.id
+            )
     return finalized
 
 
@@ -298,9 +313,18 @@ async def run_chain_tick(
         to_block = min(head, from_block + max_blocks - 1)
         transfers = await client.scan(from_block=from_block, to_block=to_block, methods=methods)
         for transfer in transfers:
-            await process_transfer(
-                session, transfer, config=config, ledger=ledger, matcher=matcher
-            )
+            # SAVEPOINT per transfer: one poisoned deposit (e.g. an IntegrityError
+            # deep in activation) must not roll back the cursor + every other transfer
+            # in this tick and wedge the chain forever. Isolate and carry on.
+            try:
+                async with session.begin_nested():
+                    await process_transfer(
+                        session, transfer, config=config, ledger=ledger, matcher=matcher
+                    )
+            except Exception:
+                log.exception(
+                    "onchain.transfer_failed", chain=client.chain, txid=transfer.txid
+                )
         cursor.last_scanned_block = to_block
         cursor.updated_at = datetime.now(UTC)
 

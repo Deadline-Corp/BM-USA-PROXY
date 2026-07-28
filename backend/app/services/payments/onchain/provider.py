@@ -60,6 +60,13 @@ class OnchainProvider:
     ) -> InvoiceDTO:
         method = self._resolve_method(asset, network)
         spec = method.spec
+        # Enforce the per-rail minimum (was parsed from config but never read), so a
+        # deposit can't be quoted below the amount that makes network fees worthwhile.
+        if method.min_amount_usd > 0 and amount_usd < method.min_amount_usd:
+            raise OnchainConfigError(
+                f"amount {amount_usd} is below the {spec.asset}/{spec.network} "
+                f"minimum of {method.min_amount_usd} USD"
+            )
 
         quote = await self._oracle.quote(amount_usd, spec)
         expected = expected_amount(quote.crypto_amount, spec, order_public_id)

@@ -91,11 +91,17 @@ class TronClient:
             for item in (data or {}).get("data", []):
                 if item.get("type") not in (None, "Transfer"):
                     continue
-                token = item.get("token_info") or {}
-                decimals = int(token.get("decimals", spec.decimals))
+                # Trust our own pinned decimals for the exact contract we queried, NOT
+                # the RPC-reported token_info.decimals — a hostile/compromised endpoint
+                # could report decimals=0 to inflate a dust transfer 10^6× into a "paid".
+                contract = (item.get("token_info") or {}).get("address")
+                if contract and contract != spec.token_contract:
+                    continue
                 try:
-                    amount = Decimal(str(item["value"])) / (Decimal(10) ** decimals)
+                    amount = Decimal(str(item["value"])) / (Decimal(10) ** spec.decimals)
                 except (KeyError, ArithmeticError):
+                    continue
+                if amount <= 0:  # match the other scanners; ignore dust/garbage
                     continue
                 block_ts = int(item.get("block_timestamp", now_ts))
                 out.append(

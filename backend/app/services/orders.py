@@ -176,6 +176,12 @@ async def create_extension_order(
     )
     if tariff is None or float(tariff.price_usd) == 0 or tariff.duration_minutes is None:
         raise Conflict("tariff not valid for extension")
+    # Only a live access can be extended. Extending an already-expired one would, on
+    # payment, resurrect it to 'active' — and if its connection was re-sold in the
+    # meantime that violates the one-live-access-per-connection unique index and poisons
+    # the payment tick. Reject at the source.
+    if access.status not in ("active", "expiring"):
+        raise Conflict("this access can no longer be extended; buy a new one")
 
     order = Order(
         user_id=user.id,

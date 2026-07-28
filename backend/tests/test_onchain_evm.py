@@ -9,6 +9,7 @@ from typing import Any
 
 from app.models import Access, Invoice, Order, Tariff, User
 from app.services.payments.onchain import load_config, run_chain_tick
+from app.services.payments.onchain.assets import USDC_ERC20, USDT_BEP20
 from app.services.payments.onchain.clients import build_client, chain_max_scan
 from app.services.payments.onchain.clients.evm import _TRANSFER_TOPIC, EvmClient, _addr_topic
 from scripts.seed import seed_dev_fixtures, seed_locations, seed_settings, seed_tariffs
@@ -41,8 +42,11 @@ class FakeRpc:
         return None
 
 
-def _log(txid: str, amount_base: int, *, block_number: int, log_index: int = 0) -> dict:
+def _log(
+    txid: str, amount_base: int, *, block_number: int, log_index: int = 0, contract: str = USDC_ERC20
+) -> dict:
     return {
+        "address": contract,
         "transactionHash": txid,
         "blockNumber": hex(block_number),
         "logIndex": hex(log_index),
@@ -88,7 +92,8 @@ async def test_scan_token_logs() -> None:
 async def test_scan_token_bep20_18_decimals() -> None:
     rpc = FakeRpc()
     rpc.on("eth_blockNumber", hex(50))
-    rpc.on("eth_getLogs", [_log("0xbnb", 5 * 10**18, block_number=40)])  # BEP20 USDT 18dp → 5
+    # BEP20 USDT 18dp → 5
+    rpc.on("eth_getLogs", [_log("0xbnb", 5 * 10**18, block_number=40, contract=USDT_BEP20)])
     client = EvmClient(chain="bsc", endpoint="https://rpc", http=rpc)
     res = await client.scan(
         from_block=1,
@@ -96,6 +101,21 @@ async def test_scan_token_bep20_18_decimals() -> None:
         methods=_evm_config("bsc", "USDT", "bep20").methods_for_chain("bsc"),
     )
     assert res[0].amount == Decimal("5")
+
+
+async def test_scan_token_rejects_wrong_contract() -> None:
+    # A hostile RPC returns a log from an arbitrary contract — it must be dropped, not
+    # accepted as a real USDC transfer (SSRF / untrusted-response hardening).
+    rpc = FakeRpc()
+    rpc.on("eth_blockNumber", hex(120))
+    rpc.on("eth_getLogs", [_log("0xevil", 10005000, block_number=100, contract="0xdeadbeef")])
+    client = EvmClient(chain="ethereum", endpoint="https://rpc", http=rpc)
+    res = await client.scan(
+        from_block=1,
+        to_block=120,
+        methods=_evm_config("ethereum", "USDC", "erc20").methods_for_chain("ethereum"),
+    )
+    assert res == []
 
 
 async def test_scan_native_eth() -> None:

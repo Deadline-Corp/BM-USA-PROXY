@@ -106,6 +106,10 @@ async def expire_invoices(session: AsyncSession) -> int:
             select(Invoice).where(
                 Invoice.status.in_(("created", "pending", "confirming")),
                 Invoice.expires_at < now,
+                # never expire an invoice whose on-chain deposit is already in flight —
+                # the watcher's finalize pass only sees 'confirming' invoices, so
+                # expiring one mid-confirmation strands the customer's funds.
+                Invoice.matched_txid.is_(None),
             )
         )
     ).scalars().all()

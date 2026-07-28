@@ -97,13 +97,21 @@ class EvmClient:
             }
         ]
         logs = await self._rpc("eth_getLogs", params)
+        contract = (spec.token_contract or "").lower()
         out: list[IncomingTransfer] = []
         for entry in logs or []:
+            # Re-verify the emitting contract and event signature instead of trusting
+            # that the RPC honoured our filter — a hostile endpoint could return a log
+            # from an arbitrary contract and have it accepted as a real USDT/USDC transfer.
+            if str(entry.get("address", "")).lower() != contract:
+                continue
+            topics = entry.get("topics") or []
+            if not topics or str(topics[0]).lower() != _TRANSFER_TOPIC:
+                continue
             block_number = _to_int(entry.get("blockNumber"))
             amount = Decimal(_to_int(entry.get("data"))) / (Decimal(10) ** spec.decimals)
             if amount <= 0:
                 continue
-            topics = entry.get("topics") or []
             out.append(
                 IncomingTransfer(
                     chain=self.chain,
