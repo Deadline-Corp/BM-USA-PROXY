@@ -10,6 +10,7 @@ import { Num } from "../shared/components/Num";
 import { Sheet } from "../shared/components/Sheet";
 import { useCopyToClipboard } from "../shared/hooks/useCopyToClipboard";
 import { ApiError } from "../shared/api/client";
+import type { PayoutRail } from "../shared/api/types";
 import { formatUsd } from "../shared/lib/format";
 import { ErrorState } from "../shared/components/ErrorState";
 
@@ -37,12 +38,17 @@ export function ReferralScreen() {
 
   const [payoutSheetOpen, setPayoutSheetOpen] = useState(false);
   const [walletAddress, setWalletAddress] = useState("");
-  const [network, setNetwork] = useState("TRC-20");
+  const [network, setNetwork] = useState("");
+
+  // The rails we actually pay out on come from the API — offering a network we don't
+  // support just produces a request the backend has to reject.
+  const rails = referralQuery.data?.payout_rails ?? [];
+  const selectedNetwork = network || rails[0]?.network || "";
 
   const link = referralQuery.data ? `${REFERRAL_BOT_LINK_BASE}${referralQuery.data.code}` : "";
-  const belowMin = referralQuery.data
-    ? referralQuery.data.balances.available < referralQuery.data.min_payout_usd
-    : true;
+  const available = referralQuery.data?.balances.available ?? 0;
+  // threshold may be 0, but there's still nothing to withdraw at a zero balance
+  const belowMin = available <= 0 || available < (referralQuery.data?.min_payout_usd ?? 0);
 
   async function handleShare() {
     const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(
@@ -53,7 +59,7 @@ export function ReferralScreen() {
 
   async function handlePayoutSubmit() {
     try {
-      await requestPayout.mutateAsync({ wallet_address: walletAddress, network });
+      await requestPayout.mutateAsync({ wallet_address: walletAddress, network: selectedNetwork });
       setPayoutSheetOpen(false);
       setWalletAddress("");
       showToast(strings.referral.payoutSent);
@@ -196,8 +202,9 @@ export function ReferralScreen() {
           onClose={() => setPayoutSheetOpen(false)}
           walletAddress={walletAddress}
           setWalletAddress={setWalletAddress}
-          network={network}
+          network={selectedNetwork}
           setNetwork={setNetwork}
+          rails={rails}
           onSubmit={handlePayoutSubmit}
           pending={requestPayout.isPending}
         />
@@ -212,11 +219,12 @@ interface PayoutSheetProps {
   setWalletAddress: (v: string) => void;
   network: string;
   setNetwork: (v: string) => void;
+  rails: PayoutRail[];
   onSubmit: () => void;
   pending: boolean;
 }
 
-function PayoutSheet({ onClose, walletAddress, setWalletAddress, network, setNetwork, onSubmit, pending }: PayoutSheetProps) {
+function PayoutSheet({ onClose, walletAddress, setWalletAddress, network, setNetwork, rails, onSubmit, pending }: PayoutSheetProps) {
   return (
     <Sheet
       open
@@ -250,10 +258,11 @@ function PayoutSheet({ onClose, walletAddress, setWalletAddress, network, setNet
             value={network}
             onChange={(e) => setNetwork(e.target.value)}
           >
-            <option value="TRC-20">USDT · TRC-20</option>
-            <option value="ERC-20">USDT · ERC-20</option>
-            <option value="BTC">BTC</option>
-            <option value="ETH">ETH</option>
+            {rails.map((rail) => (
+              <option key={rail.network} value={rail.network}>
+                {rail.asset} · {rail.label}
+              </option>
+            ))}
           </select>
         </div>
       </div>

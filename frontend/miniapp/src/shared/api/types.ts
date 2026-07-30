@@ -167,11 +167,19 @@ export interface ReferralBalances {
   paid: number;
 }
 
+/** A rail we actually pay out on — the form is built from these, never hardcoded. */
+export interface PayoutRail {
+  network: string;
+  asset: string;
+  label: string;
+}
+
 export interface Referral {
   code: string;
   signups: number;
   balances: ReferralBalances;
   min_payout_usd: number;
+  payout_rails: PayoutRail[];
 }
 
 export interface ReferralPayoutBody {
