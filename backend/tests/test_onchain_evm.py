@@ -103,6 +103,45 @@ async def test_scan_token_bep20_18_decimals() -> None:
     assert res[0].amount == Decimal("5")
 
 
+async def test_get_logs_splits_range_when_provider_refuses() -> None:
+    """A provider range/limit error must not abort the scan — halve and retry.
+
+    Measured on real testnet RPCs: Sepolia/publicnode serves ~50 blocks then demands a
+    token, and the BSC data-seed node refuses even a 5-block span. Without splitting, one
+    such error aborts the tick and the cursor never advances, silently stalling the chain.
+    """
+    class LimitedRpc(FakeRpc):
+        """Rejects any getLogs wider than 4 blocks, like a real capped provider."""
+
+        def __init__(self, log_at: int) -> None:
+            super().__init__()
+            self.log_at = log_at
+            self.refusals = 0
+
+        async def post(self, url: str, *, json: Any | None = None, headers: dict | None = None) -> Any:
+            if json["method"] != "eth_getLogs":
+                return await super().post(url, json=json, headers=headers)
+            f = int(json["params"][0]["fromBlock"], 16)
+            t = int(json["params"][0]["toBlock"], 16)
+            if t - f > 4:
+                self.refusals += 1
+                return {"jsonrpc": "2.0", "id": 1, "error": {"code": -32602, "message": "limit exceeded"}}
+            hits = [_log("0xdeep", 7000000, block_number=self.log_at)] if f <= self.log_at <= t else []
+            return {"jsonrpc": "2.0", "id": 1, "result": hits}
+
+    rpc = LimitedRpc(log_at=1_040)
+    rpc.on("eth_blockNumber", hex(1_100))
+    client = EvmClient(chain="ethereum", endpoint="https://rpc", http=rpc)
+    res = await client.scan(
+        from_block=1_000,
+        to_block=1_100,
+        methods=_evm_config("ethereum", "USDC", "erc20").methods_for_chain("ethereum"),
+    )
+    assert rpc.refusals > 0, "the fake provider should have refused the wide range first"
+    assert len(res) == 1, "the transfer must still be found after splitting"
+    assert res[0].amount == Decimal("7")
+
+
 async def test_scan_token_rejects_wrong_contract() -> None:
     # A hostile RPC returns a log from an arbitrary contract — it must be dropped, not
     # accepted as a real USDC transfer (SSRF / untrusted-response hardening).

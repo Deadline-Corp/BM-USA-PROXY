@@ -26,6 +26,9 @@ from app.services.payments.onchain.config import MethodConfig
 # keccak256("Transfer(address,address,uint256)")
 _TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
 
+# how many times a failing getLogs range may be halved before we give up and surface it
+_MAX_SPLIT_DEPTH = 8
+
 
 class EvmRpcError(RuntimeError):
     """A JSON-RPC call returned an error object."""
@@ -84,19 +87,52 @@ class EvmClient:
                 transfers += await self._scan_native(method, from_block, to_block, head)
         return transfers
 
-    async def _scan_token(
-        self, method: MethodConfig, from_block: int, to_block: int, head: int
-    ) -> list[IncomingTransfer]:
-        spec = method.spec
+    async def _get_logs(
+        self, *, from_block: int, to_block: int, address: str, topics: list, depth: int = 0
+    ) -> list:
+        """eth_getLogs with automatic range splitting.
+
+        Providers cap getLogs differently (block span, result count, archive depth) and
+        answer with an error rather than a partial result. Measured on public testnet RPCs:
+        Sepolia/publicnode serves ~50 blocks then demands a token, and the BSC data-seed
+        node refuses even a 5-block span. Without splitting, one such error aborts the whole
+        tick and the cursor never advances — the chain silently stops being watched. So on
+        failure we halve the range and retry, down to a single block.
+        """
         params = [
             {
                 "fromBlock": hex(from_block),
                 "toBlock": hex(to_block),
-                "address": spec.token_contract,
-                "topics": [_TRANSFER_TOPIC, None, _addr_topic(method.address)],
+                "address": address,
+                "topics": topics,
             }
         ]
-        logs = await self._rpc("eth_getLogs", params)
+        try:
+            return list(await self._rpc("eth_getLogs", params) or [])
+        except EvmRpcError:
+            if from_block >= to_block or depth >= _MAX_SPLIT_DEPTH:
+                raise
+            mid = from_block + (to_block - from_block) // 2
+            left = await self._get_logs(
+                from_block=from_block, to_block=mid, address=address,
+                topics=topics, depth=depth + 1,
+            )
+            right = await self._get_logs(
+                from_block=mid + 1, to_block=to_block, address=address,
+                topics=topics, depth=depth + 1,
+            )
+            return left + right
+
+    async def _scan_token(
+        self, method: MethodConfig, from_block: int, to_block: int, head: int
+    ) -> list[IncomingTransfer]:
+        spec = method.spec
+        logs = await self._get_logs(
+            from_block=from_block,
+            to_block=to_block,
+            address=spec.token_contract or "",
+            topics=[_TRANSFER_TOPIC, None, _addr_topic(method.address)],
+        )
         contract = (spec.token_contract or "").lower()
         out: list[IncomingTransfer] = []
         for entry in logs or []:
@@ -139,15 +175,12 @@ class EvmClient:
         """
         head = await self._block_number()
         contract = token_contract.lower()
-        params = [
-            {
-                "fromBlock": hex(from_block),
-                "toBlock": hex(to_block),
-                "address": token_contract,
-                "topics": [_TRANSFER_TOPIC, _addr_topic(source_address), None],
-            }
-        ]
-        logs = await self._rpc("eth_getLogs", params)
+        logs = await self._get_logs(
+            from_block=from_block,
+            to_block=to_block,
+            address=token_contract,
+            topics=[_TRANSFER_TOPIC, _addr_topic(source_address), None],
+        )
         out: list[IncomingTransfer] = []
         for entry in logs or []:
             if str(entry.get("address", "")).lower() != contract:
