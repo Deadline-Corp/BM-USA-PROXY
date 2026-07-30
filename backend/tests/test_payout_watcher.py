@@ -129,6 +129,57 @@ async def test_ambiguous_payouts_are_not_confirmed(session) -> None:
     assert "ambiguous" in rows[0].meta["reason"]
 
 
+async def test_open_queue_includes_approved(session) -> None:
+    """An approved payout must stay in the queue — 'send' happens after approve."""
+    from app.api.admin.domain import list_payouts
+
+    requested = await _payout(
+        session, amount="10.00", address="TReqAddr1111111111111111111111", status="requested"
+    )
+    approved = await _payout(
+        session, amount="20.00", address="TAppAddr2222222222222222222222", status="approved"
+    )
+    paid = await _payout(
+        session, amount="30.00", address="TPaidAddr333333333333333333333", status="paid"
+    )
+
+    open_queue = await list_payouts(admin=None, session=session)  # type: ignore[arg-type]
+    ids = {row["id"] for row in open_queue["items"]}
+    assert str(requested.id) in ids
+    assert str(approved.id) in ids   # regression: used to be filtered out
+    assert str(paid.id) not in ids
+
+    # an explicit status still filters exactly
+    only_paid = await list_payouts(admin=None, session=session, status="paid")  # type: ignore[arg-type]
+    assert {row["id"] for row in only_paid["items"]} == {str(paid.id)}
+
+
+async def test_payout_instruction_prefills_everything(session) -> None:
+    """The operator must not retype an address or an amount — both come from the API."""
+    from app.api.admin.domain import payout_instruction
+    from app.services.payments.onchain.assets import USDT_BEP20
+
+    tron_payout = await _payout(session, amount="47.00")
+    inst = await payout_instruction(tron_payout.id, admin=None, session=session)  # type: ignore[arg-type]
+    assert inst["network"] == "trc20"
+    assert inst["to_address"] == DEST
+    assert inst["amount"] == "47.00"
+    assert inst["token_contract"] == USDT_TRC20
+    assert inst["wallet_uri"] is None          # Tron has no EIP-681 equivalent
+    assert inst["qr_payload"] == DEST          # …so the QR carries the address itself
+
+    evm = await _payout(session, amount="12.50", address="0x" + "a" * 40)
+    evm.network = "bep20"
+    await session.flush()
+    inst = await payout_instruction(evm.id, admin=None, session=session)  # type: ignore[arg-type]
+    # EIP-681 with the amount in base units (12.50 USDT-BEP20, 18 decimals)
+    assert inst["wallet_uri"] == (
+        f"ethereum:{USDT_BEP20}@56/transfer"
+        f"?address=0x{'a' * 40}&uint256={125 * 10**17}"
+    )
+    assert inst["qr_payload"] == inst["wallet_uri"]
+
+
 class FakeOutgoingClient:
     chain = "tron"
 

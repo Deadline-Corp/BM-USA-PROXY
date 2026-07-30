@@ -11,7 +11,21 @@ export function useReferralLedger(params: ListParams) {
 }
 
 export function usePayouts(status?: string) {
-  return useQuery({ queryKey: ["payouts", status], queryFn: () => referralsApi.payouts(status) });
+  return useQuery({
+    queryKey: ["payouts", status],
+    queryFn: () => referralsApi.payouts(status),
+    // the watcher closes a payout on its own once it sees the transfer on-chain — poll so
+    // the row flips to 'paid' without the operator reloading the page
+    refetchInterval: 15_000,
+  });
+}
+
+export function usePayoutInstruction(id: string | null) {
+  return useQuery({
+    queryKey: ["payouts", "instruction", id],
+    queryFn: () => referralsApi.payoutInstruction(id as string),
+    enabled: id !== null,
+  });
 }
 
 export function useApprovePayout() {

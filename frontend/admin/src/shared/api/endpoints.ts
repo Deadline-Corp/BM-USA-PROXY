@@ -27,6 +27,7 @@ import type {
   Order,
   Paginated,
   Payout,
+  PayoutInstruction,
   PoolSummary,
   Post,
   PostAttribution,
@@ -200,6 +201,10 @@ export const referralsApi = {
   payouts: (status?: string) =>
     apiClient
       .get<Paginated<Payout>>("/payouts", { params: { status } })
+      .then((r) => r.data),
+  payoutInstruction: (id: string) =>
+    apiClient
+      .get<PayoutInstruction>(`/payouts/${id}/instruction`)
       .then((r) => r.data),
   approvePayout: (id: string) =>
     apiClient.post<Payout>(`/payouts/${id}/approve`).then((r) => r.data),

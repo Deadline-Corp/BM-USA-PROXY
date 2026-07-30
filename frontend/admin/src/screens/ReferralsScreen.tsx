@@ -29,6 +29,7 @@ import { apiErrorMessage } from "@/shared/api/client";
 import { strings } from "@/shared/strings";
 import type { Payout, ReferralLedgerEntry, ReferralSettings } from "@/shared/api/types";
 import { IconClients, IconMail, IconReferrals, IconWallet } from "@/shared/components/icons";
+import { PayoutInstructionModal } from "@/screens/referrals/PayoutInstructionModal";
 
 export function ReferralsScreen() {
   const toast = useToast();
@@ -36,7 +37,9 @@ export function ReferralsScreen() {
   const { limit, offset, setOffset } = usePagination();
   const ledgerParams = useMemo(() => ({ limit, offset }), [limit, offset]);
   const ledgerQuery = useReferralLedger(ledgerParams);
-  const payoutsQuery = usePayouts("pending");
+  // no status → the API returns everything still open (requested + approved). Passing
+  // "pending" here filtered on a status that doesn't exist, so the queue was always empty.
+  const payoutsQuery = usePayouts();
   const settingsQuery = useReferralSettings();
   const updateSettingsMutation = useUpdateReferralSettings();
 
@@ -46,6 +49,7 @@ export function ReferralsScreen() {
 
   const [rejectTarget, setRejectTarget] = useState<Payout | null>(null);
   const [markPaidTarget, setMarkPaidTarget] = useState<Payout | null>(null);
+  const [sendTarget, setSendTarget] = useState<string | null>(null);
   const [txHash, setTxHash] = useState("");
 
   const [settingsDraft, setSettingsDraft] = useState<Partial<ReferralSettings> | null>(null);
@@ -206,6 +210,9 @@ export function ReferralsScreen() {
                     <Button variant="quiet" size="sm" onClick={() => setRejectTarget(p)}>
                       {strings.referrals.reject}
                     </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setSendTarget(p.id)}>
+                      {strings.referrals.send}
+                    </Button>
                     <Button variant="ghost" size="sm" onClick={() => setMarkPaidTarget(p)}>
                       {strings.referrals.markPaid}
                     </Button>
@@ -267,6 +274,8 @@ export function ReferralsScreen() {
           placeholder="0x…"
         />
       </Modal>
+
+      <PayoutInstructionModal payoutId={sendTarget} onClose={() => setSendTarget(null)} />
     </div>
   );
 }

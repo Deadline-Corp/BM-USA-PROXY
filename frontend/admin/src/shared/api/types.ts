@@ -328,6 +328,26 @@ export interface Payout {
   amount_usd: number;
   status: string;
   requested_at: string;
+  network: string;
+  wallet_address: string;
+  tx_hash: string | null;
+}
+
+/** Everything needed to send a payout by hand without retyping anything. */
+export interface PayoutInstruction {
+  payout_id: string;
+  status: string;
+  asset: string;
+  network: string;
+  network_label: string;
+  to_address: string;
+  amount: string;
+  token_contract: string | null;
+  /** EIP-681 link that opens an EVM wallet prefilled; null on Tron (no such standard). */
+  wallet_uri: string | null;
+  qr_payload: string;
+  auto_confirm: boolean;
+  hint: string;
 }
 
 export interface ReferralSettings {

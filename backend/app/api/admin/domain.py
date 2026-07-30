@@ -1614,16 +1614,76 @@ def _payout_view(p: Payout, *, referrer_display: str) -> dict[str, Any]:
         "amount_usd": float(p.amount_usd),
         "status": p.status,
         "requested_at": p.requested_at.isoformat(),
+        "network": p.network,
+        "wallet_address": p.wallet_address,
+        "tx_hash": p.tx_hash,
+    }
+
+
+@router.get("/payouts/{payout_id}/instruction")
+async def payout_instruction(
+    payout_id: int, admin: CurrentAdmin, session: DbSession
+) -> dict[str, Any]:
+    """Everything needed to send this payout by hand, with nothing to retype.
+
+    The operator sends from our payout wallet; the watcher then spots that transfer
+    on-chain and closes the payout itself with the real txid.
+    """
+    from app.services.payments.onchain.assets import find_spec
+    from app.services.payouts import get_rail
+
+    payout = await _get_payout(session, payout_id)
+    rail = get_rail(payout.network)
+    spec = find_spec(rail.asset, rail.network)
+    amount = Decimal(str(payout.amount_usd))  # USDT — 1:1 with USD
+
+    # EIP-681 opens MetaMask/Trust with the token, recipient and amount prefilled.
+    # Tron wallets have no comparable standard, so we hand back the plain address there
+    # and the UI shows a QR of it — the operator still never retypes anything.
+    wallet_uri: str | None = None
+    if spec is not None and rail.chain in ("ethereum", "bsc") and spec.token_contract:
+        chain_id = 1 if rail.chain == "ethereum" else 56
+        base_units = int(amount * (Decimal(10) ** spec.decimals))
+        wallet_uri = (
+            f"ethereum:{spec.token_contract}@{chain_id}/transfer"
+            f"?address={payout.wallet_address}&uint256={base_units}"
+        )
+
+    return {
+        "payout_id": str(payout.id),
+        "status": payout.status,
+        "asset": rail.asset,
+        "network": rail.network,
+        "network_label": rail.label,
+        "to_address": payout.wallet_address,
+        "amount": str(amount),
+        "token_contract": spec.token_contract if spec else None,
+        "wallet_uri": wallet_uri,
+        # QR payload: a wallet URI where one exists, otherwise the bare address
+        "qr_payload": wallet_uri or payout.wallet_address,
+        "auto_confirm": True,
+        "hint": (
+            "Отправьте точную сумму на этот адрес с платёжного кошелька. "
+            "Статус выплаты обновится сам, когда транзакция появится в блокчейне."
+        ),
     }
 
 
 @router.get("/payouts")
 async def list_payouts(
-    admin: CurrentAdmin, session: DbSession, status: str = "requested"
+    admin: CurrentAdmin, session: DbSession, status: str | None = None
 ) -> dict[str, Any]:
+    """Open payouts by default — everything still awaiting action.
+
+    Previously this defaulted to 'requested' only, which made an approved payout vanish
+    from the queue before anyone could send it. 'Send' happens after approve, so both
+    states have to stay visible.
+    """
     stmt = select(Payout).order_by(Payout.requested_at)
     if status:
         stmt = stmt.where(Payout.status == status)
+    else:
+        stmt = stmt.where(Payout.status.in_(("requested", "approved")))
     rows = (await session.execute(stmt)).scalars().all()
     user_display_map = await _user_display_map(session, [p.referrer_user_id for p in rows])
     items = [
