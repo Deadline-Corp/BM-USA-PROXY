@@ -29,7 +29,7 @@ class PayoutRail:
         addr = address.strip()
         if not self.address_re.fullmatch(addr):
             raise ValidationError(
-                f"адрес не похож на {self.label} — проверьте сеть и адрес"
+                f"address does not look like {self.label} — check the network and the address"
             )
         return addr
 
@@ -55,7 +55,7 @@ def get_rail(network: str) -> PayoutRail:
     rail = PAYOUT_RAILS.get(normalize_network(network))
     if rail is None:
         allowed = ", ".join(r.label for r in PAYOUT_RAILS.values())
-        raise ValidationError(f"выплата возможна только на: {allowed}")
+        raise ValidationError(f"payouts are supported only on: {allowed}")
     return rail
 
 

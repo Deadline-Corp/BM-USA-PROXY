@@ -157,7 +157,7 @@ async def request_payout(
     await session.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": user.id})
     available = await _sum(session, user.id, "available")
     if available <= 0:
-        raise ValidationError("нет доступных к выводу средств")
+        raise ValidationError("no funds available to withdraw")
     # Threshold is 0 by client decision, but stays configurable.
     min_payout = Decimal(str(await settings_svc.get(session, "referral_min_payout_usd", 0)))
     if min_payout > 0 and available < min_payout:

@@ -11,6 +11,13 @@ from app.services import settings as settings_svc
 from scripts.seed import seed_settings
 from sqlalchemy import select, update
 
+# Valid TRC-20 address — payout requests validate the address against the network, so a
+# placeholder like "w" is (correctly) rejected now.
+WALLET_TRC20 = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
+# These tests exercise ledger mechanics, not the commission rate — pin the rate explicitly
+# so a business change (20% → 23%) can't break them.
+TEST_PCT = 20
+
 
 async def _admin(session) -> int:
     a = AdminUser(email="op@test.local", password_hash="x", display_name="op", role="owner")
@@ -44,6 +51,7 @@ async def test_accrue_release_reverse_payout(session) -> None:
                        price_usd="10"))
     await session.flush()
     await settings_svc.set_value(session, "referral_min_payout_usd", 1)
+    await settings_svc.set_value(session, "referral_pct", TEST_PCT)
 
     referrer = await _mk(session, 1, "REF00001")
     referee = await _mk(session, 2, "REF00002", referrer_id=referrer.id)
@@ -68,7 +76,7 @@ async def test_accrue_release_reverse_payout(session) -> None:
 
     # payout the net $4
     payout = await referral.request_payout(
-        session, user=referrer, wallet_address="Twallet", network="TRC20"
+        session, user=referrer, wallet_address=WALLET_TRC20, network="TRC20"
     )
     assert float(payout.amount_usd) == 4.0
     assert (await referral.balances(session, referrer.id))["available"] == 0.0
@@ -83,6 +91,7 @@ async def test_reject_payout_returns_to_available(session) -> None:
     session.add(Tariff(code="daily", name="Daily", kind="auto", duration_minutes=1440,
                        price_usd="10"))
     await settings_svc.set_value(session, "referral_min_payout_usd", 1)
+    await settings_svc.set_value(session, "referral_pct", TEST_PCT)
     await session.flush()
     referrer = await _mk(session, 10, "REFA0001")
     referee = await _mk(session, 11, "REFA0002", referrer_id=referrer.id)
@@ -92,7 +101,7 @@ async def test_reject_payout_returns_to_available(session) -> None:
     await referral.release_holds(session)
 
     payout = await referral.request_payout(
-        session, user=referrer, wallet_address="w", network="TRC20"
+        session, user=referrer, wallet_address=WALLET_TRC20, network="TRC20"
     )
     assert (await referral.balances(session, referrer.id))["available"] == 0.0
     await referral.reject_payout(session, payout.id, reason="bad wallet", operator_id=await _admin(session))
@@ -102,6 +111,7 @@ async def test_reject_payout_returns_to_available(session) -> None:
 async def test_hold_not_counted_until_released(session) -> None:
     session.add(Tariff(code="daily", name="Daily", kind="auto", duration_minutes=1440,
                        price_usd="10"))
+    await settings_svc.set_value(session, "referral_pct", TEST_PCT)
     await session.flush()
     referrer = await _mk(session, 20, "REFB0001")
     referee = await _mk(session, 21, "REFB0002", referrer_id=referrer.id)

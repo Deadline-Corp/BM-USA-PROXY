@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from decimal import Decimal
 
-from app.models import AdminUser, Payout, ReferralLedger, User
+from app.models import AdminUser, Order, Payout, ReferralLedger, Tariff, User
 from app.models.onchain import OnchainDepositLedger
 from app.services.payments.onchain.assets import USDT_TRC20
 from app.services.payments.onchain.chain_client import IncomingTransfer
@@ -32,20 +33,35 @@ def _transfer(txid: str, amount: str, to_address: str = DEST) -> IncomingTransfe
 
 
 async def _payout(session, *, amount: str, address: str = DEST, status: str = "approved") -> Payout:
-    admin = AdminUser(email=f"op-{amount}-{address[:6]}@t.local", display_name="Op",
+    seq = abs(hash(amount + address))
+    admin = AdminUser(email=f"op-{seq % 10**8}@t.local", display_name="Op",
                       role="operator", password_hash="x")
-    user = User(tg_user_id=abs(hash(amount + address)) % 9_000_000 + 7000,
-                referral_code=f"PO{abs(hash(address)) % 100000:05d}")
-    session.add_all([admin, user])
+    referrer = User(tg_user_id=seq % 9_000_000 + 7_000_000, referral_code=f"PO{seq % 100000:05d}")
+    referee = User(tg_user_id=seq % 9_000_000 + 8_000_000, referral_code=f"PE{seq % 100000:05d}")
+    tariff = await session.scalar(select(Tariff).where(Tariff.code == "daily"))
+    if tariff is None:
+        tariff = Tariff(code="daily", name="Daily", kind="auto", duration_minutes=1440,
+                        price_usd="10")
+        session.add(tariff)
+    session.add_all([admin, referrer, referee])
     await session.flush()
-    payout = Payout(referrer_user_id=user.id, amount_usd=amount, wallet_address=address,
+
+    # a real paid order — referral_ledger.order_id is NOT NULL, and the backing sum is what
+    # mark_payout_paid checks before releasing a payout
+    order = Order(user_id=referee.id, tariff_id=tariff.id, tariff_code="daily",
+                  amount_usd=amount, status="completed", referrer_user_id=referrer.id,
+                  paid_at=datetime.now(UTC))
+    session.add(order)
+    await session.flush()
+
+    payout = Payout(referrer_user_id=referrer.id, amount_usd=amount, wallet_address=address,
                     network="trc20", status=status, operator_id=admin.id)
     session.add(payout)
     await session.flush()
-    # backing ledger row — mark_payout_paid refuses a payout its ledger doesn't back
-    session.add(ReferralLedger(referrer_user_id=user.id, referee_user_id=user.id, kind="accrual",
-                               base_amount_usd=amount, pct=23, amount_usd=amount,
-                               status="requested", payout_id=payout.id))
+    session.add(ReferralLedger(referrer_user_id=referrer.id, referee_user_id=referee.id,
+                               order_id=order.id, kind="accrual", base_amount_usd=amount,
+                               pct=23, amount_usd=amount, status="requested",
+                               payout_id=payout.id))
     await session.flush()
     return payout
 
