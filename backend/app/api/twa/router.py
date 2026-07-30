@@ -15,6 +15,7 @@ from app.models import FaqItem, Invoice, ReferralLedger, Request
 from app.services import accesses as accesses_svc
 from app.services import catalog as catalog_svc
 from app.services import orders as orders_svc
+from app.services import payouts as payouts_svc
 from app.services import settings as settings_svc
 from app.services import users as users_svc
 from app.services.notifications import enqueue
@@ -229,7 +230,9 @@ async def referral(user: CurrentUser, session: DbSession) -> dict[str, Any]:
         "code": user.referral_code,
         "signups": int(signups or 0),
         "balances": balances,
-        "min_payout_usd": float(await settings_svc.get(session, "referral_min_payout_usd", 20)),
+        "min_payout_usd": float(await settings_svc.get(session, "referral_min_payout_usd", 0)),
+        # the only rails we pay out on — the client picks from these, never free-types a network
+        "payout_rails": payouts_svc.rails_for_client(),
     }
 
 

@@ -129,6 +129,38 @@ async def watch_onchain_deposits(ctx: dict) -> dict[str, int] | None:
     return finalized
 
 
+async def watch_payout_transfers(ctx: dict) -> dict[str, int] | None:
+    """Confirm referral payouts by spotting our own outgoing USDT transfers on-chain.
+
+    Independent of PAYMENT_PROVIDER: payouts are confirmed from the payout wallets
+    configured in ONCHAIN_PAYOUT_SOURCES, so this runs whenever those are set.
+    """
+    from app.services.payments.onchain.clients import build_client
+    from app.services.payments.onchain.config import get_onchain_config
+    from app.services.payments.onchain.payout_watcher import run_payout_tick
+
+    config = get_onchain_config()
+    if not config.payout_sources:
+        await _beat(ctx, "watch_payout_transfers")
+        return None
+
+    confirmed: dict[str, int] = {}
+    for chain in sorted(config.payout_chains()):
+        client = build_client(chain, config)
+        if client is None or not hasattr(client, "scan_outgoing"):
+            continue
+        try:
+            async with SessionFactory() as s:
+                confirmed[chain] = await run_payout_tick(s, client, config)  # type: ignore[arg-type]
+                await s.commit()
+        except Exception:
+            log.exception("payout.tick_failed", chain=chain)
+        finally:
+            await client.aclose()
+    await _beat(ctx, "watch_payout_transfers")
+    return confirmed
+
+
 async def daily_reconciliation(ctx: dict) -> dict[str, Any]:
     """Settle yesterday: cross-check paid orders vs the on-chain ledger, alert on drift."""
     from datetime import UTC, datetime, timedelta

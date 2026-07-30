@@ -39,6 +39,8 @@ class WorkerSettings:
         cron(jobs.invoice_expirer, second=30),
         cron(jobs.reconcile_invoices, minute=_FIVE_MIN, second=15),
         cron(jobs.watch_onchain_deposits, second={0, 15, 30, 45}, run_at_startup=True),
+        # payout confirmation — a sent payout should flip to 'paid' within ~a minute
+        cron(jobs.watch_payout_transfers, second={10, 40}, run_at_startup=True),
         cron(jobs.release_referral_holds, minute=0, second=45),
         cron(jobs.daily_reconciliation, hour={0}, minute={20}, run_at_startup=False),
         cron(jobs.sync_connections, minute=_FIVE_MIN, second=45),

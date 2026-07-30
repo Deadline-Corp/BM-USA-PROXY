@@ -85,10 +85,31 @@ class RpcConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class PayoutSource:
+    """A wallet WE send referral payouts from — watched to auto-confirm those payouts.
+
+    Public address only: the watcher never holds a key, it just recognises our own
+    outgoing transfer on-chain and attaches the real txid to the payout record.
+    """
+
+    network: str   # trc20 | erc20 | bep20
+    chain: str     # tron | ethereum | bsc
+    address: str
+    asset: str = "USDT"
+
+
+@dataclass(frozen=True, slots=True)
 class OnchainConfig:
     methods: dict[tuple[str, str], MethodConfig]
     rpc: RpcConfig
     network: str = "mainnet"  # "mainnet" | "testnet" — selects default RPC endpoints
+    payout_sources: tuple[PayoutSource, ...] = ()
+
+    def payout_sources_for_chain(self, chain: str) -> list[PayoutSource]:
+        return [s for s in self.payout_sources if s.chain == chain]
+
+    def payout_chains(self) -> set[str]:
+        return {s.chain for s in self.payout_sources}
 
     def method(self, asset: str, network: str) -> MethodConfig | None:
         return self.methods.get((asset.upper(), network.lower()))
@@ -184,14 +205,49 @@ def _parse_rpc(rpc_json: str | None) -> RpcConfig:
     return RpcConfig(endpoints=endpoints, api_keys=api_keys)
 
 
+def _parse_payout_sources(sources_json: str | None) -> tuple[PayoutSource, ...]:
+    """``ONCHAIN_PAYOUT_SOURCES`` — the wallets we send referral payouts from::
+
+        [{"network": "trc20", "address": "T..."}, {"network": "erc20", "address": "0x..."}]
+    """
+    if not sources_json or not sources_json.strip():
+        return ()
+    try:
+        raw = json.loads(sources_json)
+    except json.JSONDecodeError as exc:  # pragma: no cover - defensive
+        raise OnchainConfigError(f"ONCHAIN_PAYOUT_SOURCES is not valid JSON: {exc}") from exc
+    if not isinstance(raw, list):
+        raise OnchainConfigError("ONCHAIN_PAYOUT_SOURCES must be a JSON array")
+
+    from app.services.payouts import PAYOUT_RAILS, normalize_network
+
+    out: list[PayoutSource] = []
+    for entry in raw:
+        network = normalize_network(str(entry.get("network", "")))
+        rail = PAYOUT_RAILS.get(network)
+        if rail is None:
+            raise OnchainConfigError(
+                f"unsupported payout network in ONCHAIN_PAYOUT_SOURCES: {network!r}"
+            )
+        address = str(entry.get("address", "")).strip()
+        if not address:
+            raise OnchainConfigError(f"payout source {network} is missing an address")
+        out.append(PayoutSource(network=rail.network, chain=rail.chain, address=address))
+    return tuple(out)
+
+
 def load_config(
-    methods_json: str | None, rpc_json: str | None, network: str = "mainnet"
+    methods_json: str | None,
+    rpc_json: str | None,
+    network: str = "mainnet",
+    payout_sources_json: str | None = None,
 ) -> OnchainConfig:
-    """Build an :class:`OnchainConfig` from the two raw JSON strings (pure, testable)."""
+    """Build an :class:`OnchainConfig` from the raw JSON strings (pure, testable)."""
     return OnchainConfig(
         methods=_parse_methods(methods_json),
         rpc=_parse_rpc(rpc_json),
         network="testnet" if str(network).lower() == "testnet" else "mainnet",
+        payout_sources=_parse_payout_sources(payout_sources_json),
     )
 
 
@@ -200,7 +256,12 @@ def get_onchain_config() -> OnchainConfig:
     """Cached config built from application settings."""
     from app.core.config import settings
 
-    return load_config(settings.onchain_methods, settings.onchain_rpc, settings.onchain_network)
+    return load_config(
+        settings.onchain_methods,
+        settings.onchain_rpc,
+        settings.onchain_network,
+        settings.onchain_payout_sources,
+    )
 
 
 def reset_config_cache() -> None:

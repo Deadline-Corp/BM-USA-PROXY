@@ -61,17 +61,23 @@ class OnchainDepositLedger(Base):
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     invoice_id: Mapped[int | None] = mapped_column(ForeignKey("invoices.id"))
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    # 'in' = customer deposit, 'out' = referral payout we sent (confirmed on-chain)
+    direction: Mapped[str] = mapped_column(Text, nullable=False, server_default="in")
+    payout_id: Mapped[int | None] = mapped_column(ForeignKey("payouts.id"))
     meta: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
 
     __table_args__ = (
         CheckConstraint(
             "status IN ('" + "','".join(LEDGER_STATUSES) + "')", name="status_valid"
         ),
+        CheckConstraint("direction IN ('in','out')", name="direction_valid"),
         Index("ix_ledger_tx", "txid", "log_index"),
         Index("ix_ledger_invoice", "invoice_id"),
         Index("ix_ledger_status", "status"),
         Index("ix_ledger_to_address", "to_address"),
         Index("ix_ledger_user", "user_id"),
+        Index("ix_ledger_payout", "payout_id"),
+        Index("ix_ledger_direction", "direction"),
         Index("ix_ledger_created", text("created_at DESC")),
     )
 

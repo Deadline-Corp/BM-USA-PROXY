@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     onchain_methods: str | None = None  # array of enabled rails + receiving addresses
     onchain_rpc: str | None = None      # object of per-chain RPC endpoints + api keys
     onchain_network: str = "mainnet"    # "mainnet" | "testnet" — selects default RPC endpoints
+    # wallets we SEND referral payouts from — watched to auto-confirm those payouts
+    # (public addresses only): [{"network":"trc20","address":"T..."}]
+    onchain_payout_sources: str | None = None
 
     # Feature flags
     feature_real_payments: bool = False

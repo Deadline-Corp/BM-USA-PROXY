@@ -128,6 +128,53 @@ class EvmClient:
             )
         return out
 
+    async def scan_outgoing(
+        self, *, from_block: int, to_block: int, source_address: str, token_contract: str,
+        decimals: int = 6, asset: str = "USDT", network: str = "erc20",
+    ) -> list[IncomingTransfer]:
+        """Token transfers sent FROM our payout wallet (used to auto-confirm payouts).
+
+        Same Transfer-event filter as the deposit scan, but matching on the *from* topic.
+        The dataclass is reused as-is — ``to_address`` is the recipient, ``from_address`` us.
+        """
+        head = await self._block_number()
+        contract = token_contract.lower()
+        params = [
+            {
+                "fromBlock": hex(from_block),
+                "toBlock": hex(to_block),
+                "address": token_contract,
+                "topics": [_TRANSFER_TOPIC, _addr_topic(source_address), None],
+            }
+        ]
+        logs = await self._rpc("eth_getLogs", params)
+        out: list[IncomingTransfer] = []
+        for entry in logs or []:
+            if str(entry.get("address", "")).lower() != contract:
+                continue
+            topics = entry.get("topics") or []
+            if not topics or str(topics[0]).lower() != _TRANSFER_TOPIC or len(topics) < 3:
+                continue
+            amount = Decimal(_to_int(entry.get("data"))) / (Decimal(10) ** decimals)
+            if amount <= 0:
+                continue
+            block_number = _to_int(entry.get("blockNumber"))
+            out.append(
+                IncomingTransfer(
+                    chain=self.chain,
+                    asset=asset,
+                    network=network,
+                    txid=str(entry.get("transactionHash")),
+                    to_address=_topic_to_address(topics[2]),
+                    amount=amount,
+                    log_index=_to_int(entry.get("logIndex")),
+                    from_address=source_address,
+                    block_number=block_number,
+                    confirmations=max(1, head - block_number + 1) if block_number else 1,
+                )
+            )
+        return out
+
     async def _scan_native(
         self, method: MethodConfig, from_block: int, to_block: int, head: int
     ) -> list[IncomingTransfer]:

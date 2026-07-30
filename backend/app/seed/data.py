@@ -69,9 +69,10 @@ FAQ: list[tuple[str, str, str, int]] = [
 
 def default_settings(tos_version: int = 1) -> dict[str, object]:
     return {
-        "referral_pct": 20,
+        # client decision 2026-07-30: 23% commission, cash payouts only, no payout threshold
+        "referral_pct": 23,
         "referral_hold_days": 14,
-        "referral_min_payout_usd": 20,
+        "referral_min_payout_usd": 0,
         "invoice_ttl_minutes": 60,
         "rotation_cooldown_sec": 60,
         "pool_low_watermark": 10,

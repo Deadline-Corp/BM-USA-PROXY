@@ -123,6 +123,64 @@ class TronClient:
             params["fingerprint"] = fingerprint
         return out
 
+    async def scan_outgoing(
+        self, *, from_block: int, to_block: int, source_address: str, token_contract: str,
+        decimals: int = 6, asset: str = "USDT", network: str = "trc20",
+    ) -> list[IncomingTransfer]:
+        """TRC-20 transfers sent FROM our payout wallet (used to auto-confirm payouts).
+
+        Same endpoint as the deposit scan with only_from instead of only_to; the returned
+        dataclass is reused as-is — ``to_address`` is the recipient, ``from_address`` is us.
+        """
+        _, now_ts = await self._now_block()
+        url = f"{self._base}/v1/accounts/{source_address}/transactions/trc20"
+        params: dict = {
+            "only_from": "true",
+            "only_confirmed": "true",
+            "contract_address": token_contract,
+            "min_timestamp": from_block,
+            "max_timestamp": to_block,
+            "limit": self._page_limit,
+            "order_by": "block_timestamp,asc",
+        }
+        out: list[IncomingTransfer] = []
+        for _ in range(self._max_pages):
+            data = await self._http.get(url, params=params, headers=self._headers())
+            for item in (data or {}).get("data", []):
+                if item.get("type") not in (None, "Transfer"):
+                    continue
+                contract = (item.get("token_info") or {}).get("address")
+                if contract and contract != token_contract:
+                    continue
+                recipient = item.get("to")
+                if not recipient:
+                    continue
+                try:
+                    amount = Decimal(str(item["value"])) / (Decimal(10) ** decimals)
+                except (KeyError, ArithmeticError):
+                    continue
+                if amount <= 0:
+                    continue
+                block_ts = int(item.get("block_timestamp", now_ts))
+                out.append(
+                    IncomingTransfer(
+                        chain=self.chain,
+                        asset=asset,
+                        network=network,
+                        txid=str(item["transaction_id"]),
+                        to_address=str(recipient),
+                        amount=amount,
+                        from_address=source_address,
+                        block_time=datetime.fromtimestamp(block_ts / 1000, tz=UTC),
+                        confirmations=max(1, (now_ts - block_ts) // _TRON_BLOCK_MS),
+                    )
+                )
+            fingerprint = ((data or {}).get("meta") or {}).get("fingerprint")
+            if not fingerprint:
+                break
+            params["fingerprint"] = fingerprint
+        return out
+
     async def _scan_trx(
         self, method: MethodConfig, min_ts: int, max_ts: int, now_number: int
     ) -> list[IncomingTransfer]:

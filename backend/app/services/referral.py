@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import Conflict, NotFound, ValidationError
 from app.models import Order, Payout, ReferralLedger, User
+from app.services import payouts as payouts_svc
 from app.services import settings as settings_svc
 from app.services.notifications import enqueue
 
@@ -149,17 +150,23 @@ async def balances(session: AsyncSession, user_id: int) -> dict[str, float]:
 async def request_payout(
     session: AsyncSession, *, user: User, wallet_address: str, network: str
 ) -> Payout:
+    # Reject a wrong-network / malformed address BEFORE taking the lock — an irreversible
+    # transfer to a mistyped address is the most expensive failure in this flow.
+    canonical_network, canonical_address = payouts_svc.validate_target(network, wallet_address)
     # Serialize concurrent payout requests for this user → no phantom double-payout (TOCTOU).
     await session.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": user.id})
     available = await _sum(session, user.id, "available")
-    min_payout = Decimal(str(await settings_svc.get(session, "referral_min_payout_usd", 20)))
-    if available < min_payout:
+    if available <= 0:
+        raise ValidationError("нет доступных к выводу средств")
+    # Threshold is 0 by client decision, but stays configurable.
+    min_payout = Decimal(str(await settings_svc.get(session, "referral_min_payout_usd", 0)))
+    if min_payout > 0 and available < min_payout:
         raise ValidationError(f"minimum payout is ${min_payout}")
     payout = Payout(
         referrer_user_id=user.id,
         amount_usd=_q(available),
-        wallet_address=wallet_address,
-        network=network,
+        wallet_address=canonical_address,
+        network=canonical_network,
         status="requested",
     )
     session.add(payout)
@@ -189,8 +196,10 @@ async def approve_payout(session: AsyncSession, payout_id: int, *, operator_id: 
 
 
 async def mark_payout_paid(
-    session: AsyncSession, payout_id: int, *, tx_hash: str, operator_id: int
+    session: AsyncSession, payout_id: int, *, tx_hash: str, operator_id: int | None
 ) -> Payout:
+    """Close a payout as paid. ``operator_id`` is None when the on-chain watcher confirmed
+    it automatically — we don't invent a human actor for a machine observation."""
     payout = await _get_payout(session, payout_id)
     if payout.status not in ("requested", "approved"):
         raise Conflict("payout not payable")
@@ -204,7 +213,8 @@ async def mark_payout_paid(
         raise Conflict("payout amount does not match its backing ledger (possible duplicate)")
     payout.status = "paid"
     payout.tx_hash = tx_hash
-    payout.operator_id = operator_id
+    if operator_id is not None:  # keep the approving operator when auto-confirming
+        payout.operator_id = operator_id
     payout.processed_at = _utcnow()
     await session.execute(
         update(ReferralLedger)
