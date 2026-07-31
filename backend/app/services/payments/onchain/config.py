@@ -96,6 +96,10 @@ class PayoutSource:
     chain: str     # tron | ethereum | bsc
     address: str
     asset: str = "USDT"
+    # Testnet override, same idea as the per-rail override in ONCHAIN_METHODS: the USDT
+    # contract differs per network, and the payout scan filters by it.
+    token_contract: str | None = None
+    decimals: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +111,28 @@ class OnchainConfig:
 
     def payout_sources_for_chain(self, chain: str) -> list[PayoutSource]:
         return [s for s in self.payout_sources if s.chain == chain]
+
+    def payout_spec(self, source: PayoutSource) -> AssetSpec | None:
+        """Resolve the token spec the payout scan must filter by.
+
+        Overrides win in the order most-specific-first: the payout source's own
+        ``token_contract``, then the same rail's override in ``ONCHAIN_METHODS`` (so a
+        testnet contract only has to be written once when we both accept and pay out on
+        that rail), then the mainnet default. Without this the payout watcher scans for
+        the mainnet USDT contract on a test chain and silently confirms nothing.
+        """
+        spec = find_spec(source.asset, source.network)
+        if spec is None:  # pragma: no cover - _parse_payout_sources rejects these
+            return None
+        method = self.method(source.asset, source.network)
+        if method is not None:
+            spec = method.spec
+        overrides: dict[str, object] = {}
+        if source.token_contract:
+            overrides["token_contract"] = source.token_contract
+        if source.decimals is not None:
+            overrides["decimals"] = source.decimals
+        return replace(spec, **overrides) if overrides else spec  # type: ignore[arg-type]
 
     def payout_chains(self) -> set[str]:
         return {s.chain for s in self.payout_sources}
@@ -232,7 +258,18 @@ def _parse_payout_sources(sources_json: str | None) -> tuple[PayoutSource, ...]:
         address = str(entry.get("address", "")).strip()
         if not address:
             raise OnchainConfigError(f"payout source {network} is missing an address")
-        out.append(PayoutSource(network=rail.network, chain=rail.chain, address=address))
+        decimals = entry.get("decimals")
+        out.append(
+            PayoutSource(
+                network=rail.network,
+                chain=rail.chain,
+                address=address,
+                token_contract=(
+                    str(entry["token_contract"]) if entry.get("token_contract") else None
+                ),
+                decimals=int(decimals) if decimals is not None else None,
+            )
+        )
     return tuple(out)
 
 
@@ -266,6 +303,28 @@ def _reject_mainnet_contracts_on_testnet(
         )
 
 
+def _reject_mainnet_payout_contracts_on_testnet(config: OnchainConfig) -> None:
+    """Same guard for the payout side, which scans by contract too.
+
+    The payout watcher filters our outgoing transfers by the USDT contract. Left on the
+    mainnet address while running on testnet it matches nothing, so payouts sit in the
+    queue forever waiting for a confirmation that can never arrive.
+    """
+    for source in config.payout_sources:
+        spec = config.payout_spec(source)
+        mainnet = find_spec(source.asset, source.network)
+        if spec is None or mainnet is None:  # pragma: no cover - parser rejects these
+            continue
+        if spec.token_contract != mainnet.token_contract:
+            continue  # overridden, directly or via the matching ONCHAIN_METHODS rail
+        raise OnchainConfigError(
+            f"payout source {source.asset}/{source.network} uses the MAINNET "
+            f"token_contract {spec.token_contract} but ONCHAIN_NETWORK=testnet — payouts "
+            f"would never auto-confirm. Add 'token_contract' to this entry in "
+            f"ONCHAIN_PAYOUT_SOURCES (or to the same rail in ONCHAIN_METHODS)."
+        )
+
+
 def load_config(
     methods_json: str | None,
     rpc_json: str | None,
@@ -277,12 +336,15 @@ def load_config(
     resolved_network = "testnet" if str(network).lower() == "testnet" else "mainnet"
     if resolved_network == "testnet":
         _reject_mainnet_contracts_on_testnet(methods)
-    return OnchainConfig(
+    config = OnchainConfig(
         methods=methods,
         rpc=_parse_rpc(rpc_json),
         network=resolved_network,
         payout_sources=_parse_payout_sources(payout_sources_json),
     )
+    if resolved_network == "testnet":
+        _reject_mainnet_payout_contracts_on_testnet(config)
+    return config
 
 
 @lru_cache(maxsize=1)

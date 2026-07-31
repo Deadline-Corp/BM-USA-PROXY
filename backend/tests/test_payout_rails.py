@@ -15,6 +15,47 @@ def test_only_three_rails_are_offered() -> None:
     assert {r["asset"] for r in rails_for_client()} == {"USDT"}
 
 
+def test_payout_scan_uses_the_testnet_contract_not_the_mainnet_one() -> None:
+    """The payout scan filters by token contract — on testnet it must use the override.
+
+    Regression: payout_spec used the bare asset registry, so on testnet the watcher
+    scanned for the MAINNET USDT contract, matched nothing, and payouts sat in the queue
+    forever waiting for a confirmation that could never arrive.
+    """
+    import json
+
+    from app.services.payments.onchain.config import load_config
+
+    nile_usdt = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf"  # verified on Nile 2026-07-31
+    cfg = load_config(
+        json.dumps(
+            [{"asset": "USDT", "network": "trc20", "address": TRON_OK,
+              "token_contract": nile_usdt, "decimals": 6}]
+        ),
+        "{}",
+        network="testnet",
+        # no token_contract here on purpose: it must be inherited from the matching rail
+        payout_sources_json=json.dumps([{"network": "trc20", "address": TRON_OK}]),
+    )
+    (source,) = cfg.payout_sources
+    spec = cfg.payout_spec(source)
+    assert spec is not None
+    assert spec.token_contract == nile_usdt, "payout scan would look for the wrong token"
+
+
+def test_testnet_payout_source_without_any_contract_is_rejected() -> None:
+    """Paying out on a rail we do not also accept leaves nothing to inherit — fail loudly."""
+    import json
+
+    from app.services.payments.onchain.config import OnchainConfigError, load_config
+
+    with pytest.raises(OnchainConfigError, match="would never auto-confirm"):
+        load_config(
+            None, "{}", network="testnet",
+            payout_sources_json=json.dumps([{"network": "bep20", "address": EVM_OK}]),
+        )
+
+
 def test_normalize_accepts_loose_forms() -> None:
     for raw in ("TRC20", "trc-20", "USDT-TRC20", " usdt_trc20 "):
         assert normalize_network(raw) == "trc20"

@@ -25,7 +25,6 @@ from app.core.logging import log
 from app.models import Payout
 from app.models.onchain import ChainCursor, OnchainDepositLedger
 from app.services import referral
-from app.services.payments.onchain.assets import AssetSpec, find_spec
 from app.services.payments.onchain.chain_client import IncomingTransfer
 from app.services.payments.onchain.config import OnchainConfig, PayoutSource
 from app.services.payouts import PAYOUT_RAILS
@@ -192,7 +191,9 @@ async def run_payout_tick(
     confirmed = 0
     for source in sources:
         rail = PAYOUT_RAILS[source.network]
-        spec = _rail_spec(rail.asset, source.network)
+        # Must go through the config, not the bare asset registry: on testnet the USDT
+        # contract is overridden, and scanning for the mainnet one matches nothing.
+        spec = config.payout_spec(source)
         if spec is None or not spec.token_contract:
             continue
         transfers = await client.scan_outgoing(
@@ -215,7 +216,3 @@ async def run_payout_tick(
     cursor.last_scanned_block = head
     cursor.updated_at = _utcnow()
     return confirmed
-
-
-def _rail_spec(asset: str, network: str) -> AssetSpec | None:
-    return find_spec(asset, network)
