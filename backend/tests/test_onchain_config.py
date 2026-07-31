@@ -25,13 +25,57 @@ def test_testnet_contract_override_and_network() -> None:
     assert m.spec.token_contract == "TTestnetUSDTxxxxxxxxxxxxxxxxxxxxxx"
 
 
+def test_testnet_rejects_unoverridden_mainnet_contract() -> None:
+    """A token rail left on its mainnet contract while ONCHAIN_NETWORK=testnet must fail.
+
+    That contract does not exist on the test chain, so the watcher would scan forever and
+    find nothing — indistinguishable from "no one has paid yet". Loud beats silent.
+    """
+    methods = json.dumps([{"asset": "USDT", "network": "trc20", "address": "TX"}])
+    load_config(methods, "{}", network="mainnet")  # fine on mainnet
+    with pytest.raises(OnchainConfigError, match="MAINNET token_contract"):
+        load_config(methods, "{}", network="testnet")
+
+
+def test_testnet_allows_native_rails_without_override() -> None:
+    """Native coins have no contract, so there is nothing to override — must not fail."""
+    cfg = load_config(
+        json.dumps(
+            [
+                {"asset": "BTC", "network": "native", "address": "tb1qxyz"},
+                {"asset": "ETH", "network": "native", "address": "0xabc"},
+                {"asset": "SOL", "network": "native", "address": "So1x"},
+            ]
+        ),
+        "{}",
+        network="testnet",
+    )
+    assert len(cfg.enabled_methods()) == 3
+
+
+def test_testnet_rejects_unoverridden_spl_mint() -> None:
+    """Same guard on the Solana side, where the field is token_mint rather than a contract."""
+    with pytest.raises(OnchainConfigError, match="MAINNET token_mint"):
+        load_config(
+            json.dumps([{"asset": "USDC", "network": "spl", "address": "So1x"}]),
+            "{}",
+            network="testnet",
+        )
+
+
 def test_factory_uses_testnet_defaults() -> None:
     """ONCHAIN_NETWORK must pick a different default endpoint, and neither may be empty."""
     from app.services.payments.onchain.clients.factory import _default_endpoint
 
-    methods = json.dumps([{"asset": "USDC", "network": "erc20", "address": "0xabc"}])
-    assert build_client("ethereum", load_config(methods, "{}", network="mainnet")) is not None
-    assert build_client("ethereum", load_config(methods, "{}", network="testnet")) is not None
+    # Verified on-chain 2026-07-31: symbol()="USDC", decimals()=6 on Sepolia.
+    sepolia_usdc = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"
+    mainnet_methods = json.dumps([{"asset": "USDC", "network": "erc20", "address": "0xabc"}])
+    testnet_methods = json.dumps(
+        [{"asset": "USDC", "network": "erc20", "address": "0xabc",
+          "token_contract": sepolia_usdc, "decimals": 6}]
+    )
+    assert build_client("ethereum", load_config(mainnet_methods, "{}", network="mainnet")) is not None
+    assert build_client("ethereum", load_config(testnet_methods, "{}", network="testnet")) is not None
     mainnet_url = _default_endpoint("ethereum", "mainnet")
     testnet_url = _default_endpoint("ethereum", "testnet")
     assert mainnet_url and testnet_url and mainnet_url != testnet_url

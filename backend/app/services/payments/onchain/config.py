@@ -236,6 +236,36 @@ def _parse_payout_sources(sources_json: str | None) -> tuple[PayoutSource, ...]:
     return tuple(out)
 
 
+def _reject_mainnet_contracts_on_testnet(
+    methods: dict[tuple[str, str], MethodConfig],
+) -> None:
+    """Fail loudly when a token rail runs on testnet with its mainnet contract.
+
+    Token contracts differ per network: the mainnet USDT contract simply does not exist
+    on Nile/Sepolia/BSC-testnet. Left unnoticed, the watcher scans happily and finds
+    nothing forever — a silent zero-deposit failure that looks identical to "nobody has
+    paid yet". A rail must therefore carry an explicit ``token_contract`` / ``token_mint``
+    override on testnet. Native coins (BTC/ETH/SOL/TRX/LTC) need none.
+    """
+    for (asset, network), method in methods.items():
+        spec = method.spec
+        if spec.is_native:
+            continue
+        mainnet = find_spec(asset, network)
+        if mainnet is None:  # pragma: no cover - _parse_methods already rejected these
+            continue
+        field_name = "token_mint" if spec.token_mint else "token_contract"
+        configured = spec.token_mint or spec.token_contract
+        if configured != (mainnet.token_mint or mainnet.token_contract):
+            continue  # overridden — trust the operator's testnet address
+        raise OnchainConfigError(
+            f"rail {asset}/{network} uses the MAINNET {field_name} {configured} but "
+            f"ONCHAIN_NETWORK=testnet — that contract does not exist on the test chain, "
+            f"so the watcher would silently never see a payment. Set '{field_name}' "
+            f"on this rail in ONCHAIN_METHODS to its testnet address."
+        )
+
+
 def load_config(
     methods_json: str | None,
     rpc_json: str | None,
@@ -243,10 +273,14 @@ def load_config(
     payout_sources_json: str | None = None,
 ) -> OnchainConfig:
     """Build an :class:`OnchainConfig` from the raw JSON strings (pure, testable)."""
+    methods = _parse_methods(methods_json)
+    resolved_network = "testnet" if str(network).lower() == "testnet" else "mainnet"
+    if resolved_network == "testnet":
+        _reject_mainnet_contracts_on_testnet(methods)
     return OnchainConfig(
-        methods=_parse_methods(methods_json),
+        methods=methods,
         rpc=_parse_rpc(rpc_json),
-        network="testnet" if str(network).lower() == "testnet" else "mainnet",
+        network=resolved_network,
         payout_sources=_parse_payout_sources(payout_sources_json),
     )
 
