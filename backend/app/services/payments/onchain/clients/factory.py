@@ -9,12 +9,18 @@ from __future__ import annotations
 from app.services.payments.onchain.chain_client import ChainClient
 from app.services.payments.onchain.config import OnchainConfig
 
+# Keyless fallbacks so a rail is never silently skipped. PRODUCTION SHOULD SET ONCHAIN_RPC
+# to a keyed provider — these public endpoints have no SLA and rate-limit under load; they
+# exist so a missing config degrades to "slower" instead of "this chain is not watched".
+# Verified 2026-07-31: address-filtered eth_getLogs returns real USDT transfers on both EVM
+# endpoints (wider ranges are handled by the splitting in EvmClient._get_logs).
 _DEFAULT_ENDPOINTS: dict[str, str] = {
     "tron": "https://api.trongrid.io",
+    "ethereum": "https://ethereum-rpc.publicnode.com",
+    "bsc": "https://bsc-rpc.publicnode.com",
     "bitcoin": "https://mempool.space/api",
     "litecoin": "https://litecoinspace.org/api",
     "solana": "https://api.mainnet-beta.solana.com",
-    # ethereum/bsc mainnet have no reliable keyless public RPC → require ONCHAIN_RPC.
 }
 
 # Public testnet defaults (override any via ONCHAIN_RPC). Tron=Nile, EVM=Sepolia/BSC-testnet,
@@ -22,7 +28,11 @@ _DEFAULT_ENDPOINTS: dict[str, str] = {
 _TESTNET_ENDPOINTS: dict[str, str] = {
     "tron": "https://nile.trongrid.io",
     "ethereum": "https://ethereum-sepolia-rpc.publicnode.com",
-    "bsc": "https://data-seed-prebsc-1-s1.binance.org:8545",
+    # NOT data-seed-prebsc: measured 2026-07-31, it refuses eth_getLogs outright
+    # ("limit exceeded") even for a 5-block span, so the watcher could never scan.
+    # publicnode accepts our address-filtered queries (~50 blocks; wider ranges are handled
+    # by the range splitting in EvmClient._get_logs).
+    "bsc": "https://bsc-testnet-rpc.publicnode.com",
     "solana": "https://api.devnet.solana.com",
     "bitcoin": "https://mempool.space/testnet4/api",
     "litecoin": "https://litecoinspace.org/testnet/api",

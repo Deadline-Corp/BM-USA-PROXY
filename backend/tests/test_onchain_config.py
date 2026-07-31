@@ -26,10 +26,16 @@ def test_testnet_contract_override_and_network() -> None:
 
 
 def test_factory_uses_testnet_defaults() -> None:
-    # EVM has no keyless mainnet default (→ None) but a public testnet default (→ built).
+    """ONCHAIN_NETWORK must pick a different default endpoint, and neither may be empty."""
+    from app.services.payments.onchain.clients.factory import _default_endpoint
+
     methods = json.dumps([{"asset": "USDC", "network": "erc20", "address": "0xabc"}])
-    assert build_client("ethereum", load_config(methods, "{}", network="mainnet")) is None
+    assert build_client("ethereum", load_config(methods, "{}", network="mainnet")) is not None
     assert build_client("ethereum", load_config(methods, "{}", network="testnet")) is not None
+    mainnet_url = _default_endpoint("ethereum", "mainnet")
+    testnet_url = _default_endpoint("ethereum", "testnet")
+    assert mainnet_url and testnet_url and mainnet_url != testnet_url
+    assert "sepolia" in (testnet_url or "")
 
 
 def test_parse_methods_and_rpc() -> None:

@@ -197,7 +197,9 @@ def test_factory_builds_tron_and_skips_others() -> None:
     )
     client = build_client("tron", cfg)
     assert client is not None and client.chain == "tron"
-    assert build_client("ethereum", cfg) is None
+    # a chain we have no engine for is skipped; supported chains always build (keyless fallback)
+    assert build_client("cardano", cfg) is None
+    assert build_client("ethereum", cfg) is not None
     assert chain_max_scan("tron") == 15 * 60 * 1000
     assert chain_max_scan("cardano") == 500  # unsupported chain → default window
 

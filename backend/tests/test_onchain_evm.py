@@ -196,9 +196,11 @@ def test_factory_builds_evm_chains() -> None:
     assert eth is not None and eth.chain == "ethereum"
     bsc = build_client("bsc", _evm_config("bsc", "USDT", "bep20"))
     assert bsc is not None and bsc.chain == "bsc"
-    # EVM needs a provider URL — no endpoint → not built
+    # With no ONCHAIN_RPC the rail must still be watched via the keyless fallback — silently
+    # skipping the chain would mean customer deposits are never detected.
     no_ep = load_config(json.dumps([{"asset": "USDC", "network": "erc20", "address": ADDR}]), "{}")
-    assert build_client("ethereum", no_ep) is None
+    fallback = build_client("ethereum", no_ep)
+    assert fallback is not None and fallback.chain == "ethereum"
     assert chain_max_scan("ethereum") == 100
     assert chain_max_scan("bsc") == 200
 
