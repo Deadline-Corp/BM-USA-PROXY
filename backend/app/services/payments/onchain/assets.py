@@ -46,7 +46,11 @@ class AssetSpec:
 
 
 # Mainnet token contracts / SPL mints — PUBLIC on-chain addresses (not secrets).
-# VERIFY each against a block explorer before enabling its rail in production.
+# VERIFIED 2026-08-04 by asking each contract itself (symbol()/decimals() via eth_call,
+# triggerconstantcontract on Tron, getTokenSupply on Solana): all 7 match the symbol and
+# decimals declared below, 0 mismatches. Re-check if any address here is ever edited — a
+# wrong contract means either "no payment ever arrives" or "a worthless lookalike token
+# is accepted as payment".
 USDT_TRC20 = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
 USDT_ERC20 = "0xdAC17F958D2ee523a2206206994597C13D831ec7"
 USDT_BEP20 = "0x55d398326f99059fF775485246999027B3197955"
