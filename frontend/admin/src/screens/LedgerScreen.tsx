@@ -6,7 +6,7 @@ import { DataTable } from "@/shared/components/DataTable";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { Num } from "@/shared/components/Num";
 import { Select } from "@/shared/components/form/Select";
-import { formatCryptoAmount, formatDateTime } from "@/shared/lib/format";
+import { formatChain, formatCryptoAmount, formatDateTime, formatNetwork } from "@/shared/lib/format";
 import { useDepositLedger, useLedgerSummary } from "@/shared/hooks/useLedger";
 import { usePagination } from "@/shared/hooks/usePagination";
 import { strings } from "@/shared/strings";
@@ -44,8 +44,10 @@ export function LedgerScreen() {
         accessorKey: "chain",
         cell: ({ row }) => (
           <span className="text-[.82rem]">
-            <span className="capitalize text-text">{row.original.chain}</span>
-            <span className="text-text-3"> · {row.original.asset} {row.original.network}</span>
+            <span className="text-text">{formatChain(row.original.chain)}</span>
+            <span className="text-text-3">
+              {" · "}{row.original.asset} {formatNetwork(row.original.network)}
+            </span>
           </span>
         ),
       },
@@ -138,7 +140,7 @@ export function LedgerScreen() {
         >
           <option value="">{strings.ledger.filterAllChains}</option>
           {CHAINS.map((c) => (
-            <option key={c} value={c}>{c}</option>
+            <option key={c} value={c}>{formatChain(c)}</option>
           ))}
         </Select>
       </div>

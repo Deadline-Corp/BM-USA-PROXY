@@ -16,6 +16,42 @@ export function formatCryptoAmount(value: string | null | undefined): string {
   return trimmed === "" || trimmed === "-" ? "0" : trimmed;
 }
 
+/**
+ * Proper display names for chains and rails. A blanket CSS `capitalize` would
+ * render "Bsc" and "Trc20" — these are acronyms, not words, so they need a map.
+ * Unknown values fall back to first-letter-uppercase rather than disappearing.
+ */
+const CHAIN_LABELS: Record<string, string> = {
+  tron: "Tron",
+  ethereum: "Ethereum",
+  bsc: "BSC",
+  solana: "Solana",
+  bitcoin: "Bitcoin",
+  litecoin: "Litecoin",
+};
+
+const NETWORK_LABELS: Record<string, string> = {
+  trc20: "TRC-20",
+  erc20: "ERC-20",
+  bep20: "BEP-20",
+  spl: "SPL",
+  native: "native",
+};
+
+function titleCase(value: string): string {
+  return value ? value[0].toUpperCase() + value.slice(1) : value;
+}
+
+export function formatChain(chain: string | null | undefined): string {
+  if (!chain) return "—";
+  return CHAIN_LABELS[chain.toLowerCase()] ?? titleCase(chain);
+}
+
+export function formatNetwork(network: string | null | undefined): string {
+  if (!network) return "—";
+  return NETWORK_LABELS[network.toLowerCase()] ?? network.toUpperCase();
+}
+
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
