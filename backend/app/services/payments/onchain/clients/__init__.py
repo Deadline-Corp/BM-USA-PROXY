@@ -6,6 +6,10 @@ constructed on demand by :func:`build_client` from the on-chain RPC config.
 
 from __future__ import annotations
 
-from app.services.payments.onchain.clients.factory import build_client, chain_max_scan
+from app.services.payments.onchain.clients.factory import (
+    build_client,
+    chain_max_scan,
+    chain_rescan_overlap,
+)
 
-__all__ = ["build_client", "chain_max_scan"]
+__all__ = ["build_client", "chain_max_scan", "chain_rescan_overlap"]

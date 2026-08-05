@@ -31,6 +31,7 @@ from app.services.payments import processing
 from app.services.payments.base import PaymentEventDTO
 from app.services.payments.onchain.amounts import classify
 from app.services.payments.onchain.chain_client import ChainClient, IncomingTransfer
+from app.services.payments.onchain.clients import chain_rescan_overlap
 from app.services.payments.onchain.config import OnchainConfig, get_onchain_config
 from app.services.payments.onchain.ledger import LedgerWriter
 from app.services.payments.onchain.matcher import PaymentMatcher
@@ -385,7 +386,11 @@ async def run_chain_tick(
 
     head = await client.get_block_height()
     cursor = await _get_cursor(session, client.chain, head)
-    from_block = cursor.last_scanned_block + 1
+    # Start behind the cursor, not at it: a transfer the API had not indexed yet when its
+    # window was scanned would otherwise sit in a span nothing ever looks at again.
+    # Re-processing is a no-op once a deposit reaches a terminal ledger status.
+    overlap = chain_rescan_overlap(client.chain)
+    from_block = max(0, cursor.last_scanned_block + 1 - overlap)
 
     transfers: list[IncomingTransfer] = []
     to_block = cursor.last_scanned_block

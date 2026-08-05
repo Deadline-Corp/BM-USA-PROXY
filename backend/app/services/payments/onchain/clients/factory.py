@@ -87,3 +87,26 @@ def build_client(chain: str, config: OnchainConfig) -> ChainClient | None:
 def chain_max_scan(chain: str) -> int:
     """Per-tick scan-window cap for a chain (cursor units)."""
     return _MAX_SCAN.get(chain, 500)
+
+
+# How far back each tick re-scans behind the cursor, in the chain's cursor units.
+#
+# A cursor that only ever moves forward assumes the API had already indexed a transfer by
+# the time its window was scanned. When that assumption breaks — indexer lag, a node a
+# second behind, a provider that briefly 500s — the transfer falls in a span that is never
+# looked at again and the payment is lost silently. Re-scanning a trailing window costs a
+# little duplicate work and is safe: process_transfer short-circuits on deposits that
+# already reached a terminal ledger status.
+_RESCAN_OVERLAP: dict[str, int] = {
+    "tron": 5 * 60 * 1000,  # 5 min of ms-cursor — well past Tron's ~57s solidity lag
+    "ethereum": 10,         # blocks
+    "bsc": 20,
+    "bitcoin": 3,
+    "litecoin": 3,
+    "solana": 150,          # slots (~1 min)
+}
+
+
+def chain_rescan_overlap(chain: str) -> int:
+    """How far behind the cursor to start each scan (cursor units)."""
+    return _RESCAN_OVERLAP.get(chain, 0)

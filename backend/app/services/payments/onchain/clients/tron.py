@@ -2,9 +2,16 @@
 
 Cursor semantics for Tron are **milliseconds** (block timestamp), not block numbers:
 ``get_block_height`` returns the latest block's timestamp and ``scan`` queries the
-account-transactions endpoints by ``min_timestamp``/``max_timestamp``. Confirmation depth
-is still computed from block numbers. Only ``only_to`` + ``only_confirmed`` results are
-requested, so the query itself guarantees the transfer is to our address and finalized.
+account-transactions endpoints by ``min_timestamp``/``max_timestamp``.
+
+⚠️ We deliberately do NOT pass ``only_confirmed=true``, and it must not be reintroduced.
+That filter returns only *solidified* transactions, which on Tron lag the chain tip by
+~57s (19 blocks x 3s). The watcher's window ends at the tip, so it only ever covers
+transactions a few seconds old — none of which are solidified yet. The cursor then moves
+past them and no later window ever covers that span again, so **every** Tron payment was
+missed, permanently. Finality is our job anyway: ``process_transfer`` holds a deposit in
+``confirming`` until it reaches ``method.confirmations``, and ``revalidate_finalized``
+handles a reorg after the fact.
 
 Requires a TronGrid endpoint and (recommended) a ``TRON-PRO-API-KEY`` for rate limits.
 """
@@ -78,7 +85,6 @@ class TronClient:
         url = f"{self._base}/v1/accounts/{method.address}/transactions/trc20"
         params: dict = {
             "only_to": "true",
-            "only_confirmed": "true",
             "contract_address": spec.token_contract,
             "min_timestamp": min_ts,
             "max_timestamp": max_ts,
@@ -136,7 +142,6 @@ class TronClient:
         url = f"{self._base}/v1/accounts/{source_address}/transactions/trc20"
         params: dict = {
             "only_from": "true",
-            "only_confirmed": "true",
             "contract_address": token_contract,
             "min_timestamp": from_block,
             "max_timestamp": to_block,
@@ -187,7 +192,6 @@ class TronClient:
         url = f"{self._base}/v1/accounts/{method.address}/transactions"
         params: dict = {
             "only_to": "true",
-            "only_confirmed": "true",
             "min_timestamp": min_ts,
             "max_timestamp": max_ts,
             "limit": self._page_limit,
