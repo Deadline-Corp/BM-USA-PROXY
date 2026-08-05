@@ -1283,6 +1283,53 @@ async def list_deposit_ledger(
     return {"items": items, "total": total}
 
 
+class AttachDeposit(BaseModel):
+    order_public_id: str
+    note: str | None = None
+
+
+class WriteOffDeposit(BaseModel):
+    reason: str = Field(min_length=3, max_length=500)
+
+
+@router.post("/payments/ledger/{deposit_id}/attach")
+async def attach_deposit(
+    deposit_id: int, body: AttachDeposit, admin: CurrentAdmin, session: DbSession
+) -> dict[str, Any]:
+    """Credit a parked deposit to an order — the operator's way out of `unmatched`.
+
+    Money authority applies: attaching a deposit hands over a paid product, so it sits
+    under the same operator ceiling as refunds rather than being a free action.
+    """
+    from app.services.payments.onchain import manual_resolution
+
+    row = await session.get(OnchainDepositLedger, deposit_id)
+    if row is None:
+        raise NotFound("deposit not found")
+    await _require_money_authority(
+        session, admin, float(row.amount_usd or 0), "operator_refund_limit_usd"
+    )
+    return await manual_resolution.attach_to_order(
+        session,
+        deposit_id=deposit_id,
+        order_public_id=body.order_public_id,
+        operator_id=admin.id,
+        note=body.note,
+    )
+
+
+@router.post("/payments/ledger/{deposit_id}/write-off")
+async def write_off_deposit(
+    deposit_id: int, body: WriteOffDeposit, admin: CurrentAdmin, session: DbSession
+) -> dict[str, Any]:
+    """Close a parked deposit without crediting anyone. Appends, never edits."""
+    from app.services.payments.onchain import manual_resolution
+
+    return await manual_resolution.write_off(
+        session, deposit_id=deposit_id, operator_id=admin.id, reason=body.reason
+    )
+
+
 @router.get("/payments/ledger/summary")
 async def deposit_ledger_summary(admin: CurrentAdmin, session: DbSession) -> dict[str, Any]:
     """Counts by status + recent volume — the on-chain watcher observability panel."""

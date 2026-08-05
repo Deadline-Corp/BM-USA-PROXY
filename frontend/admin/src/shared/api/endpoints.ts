@@ -170,6 +170,12 @@ export const paymentsApi = {
       .then((r) => r.data),
   ledgerSummary: () =>
     apiClient.get<DepositLedgerSummary>("/payments/ledger/summary").then((r) => r.data),
+  /** Credit a parked deposit to an order — the way out of `unmatched`. */
+  attachDeposit: (depositId: number, body: { order_public_id: string; note?: string }) =>
+    apiClient.post(`/payments/ledger/${depositId}/attach`, body).then((r) => r.data),
+  /** Close a parked deposit without crediting anyone. Appends a row, never edits. */
+  writeOffDeposit: (depositId: number, body: { reason: string }) =>
+    apiClient.post(`/payments/ledger/${depositId}/write-off`, body).then((r) => r.data),
 };
 
 // ---------- Requests ----------

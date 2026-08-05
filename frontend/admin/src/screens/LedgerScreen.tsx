@@ -8,6 +8,7 @@ import { Num } from "@/shared/components/Num";
 import { Select } from "@/shared/components/form/Select";
 import { formatChain, formatCryptoAmount, formatDateTime, formatNetwork } from "@/shared/lib/format";
 import { useDepositLedger, useLedgerSummary } from "@/shared/hooks/useLedger";
+import { ResolveDepositModal } from "@/screens/payments/ResolveDepositModal";
 import { usePagination } from "@/shared/hooks/usePagination";
 import { strings } from "@/shared/strings";
 import type { DepositLedgerEntry } from "@/shared/api/types";
@@ -18,10 +19,14 @@ const STATUSES = [
 ];
 const CHAINS = ["tron", "ethereum", "bsc", "solana", "bitcoin", "litecoin"];
 
+/** Deposit states that are waiting for a human decision. */
+const RESOLVABLE = ["unmatched", "underpaid", "expired_deposit", "orphaned"];
+
 export function LedgerScreen() {
   const { limit, offset, setOffset } = usePagination();
   const [status, setStatus] = useState("");
   const [chain, setChain] = useState("");
+  const [resolving, setResolving] = useState<DepositLedgerEntry | null>(null);
 
   const params = useMemo(
     () => ({ limit, offset, ...(status ? { status } : {}), ...(chain ? { chain } : {}) }),
@@ -103,6 +108,22 @@ export function LedgerScreen() {
           </span>
         ),
       },
+      {
+        // Without this column the ledger reported stuck money and offered nothing to do
+        // about it — the operator could see the problem and not act on it.
+        header: strings.ledger.colAction,
+        id: "resolve",
+        cell: ({ row }) =>
+          RESOLVABLE.includes(row.original.status) ? (
+            <button
+              type="button"
+              className="rounded border border-warning/50 px-2 py-1 text-[.75rem] font-medium text-warning transition-colors hover:bg-warning/10"
+              onClick={() => setResolving(row.original)}
+            >
+              {strings.ledger.resolve}
+            </button>
+          ) : null,
+      },
     ],
     [],
   );
@@ -160,6 +181,8 @@ export function LedgerScreen() {
           emptyTitle={strings.ledger.empty}
         />
       </Panel>
+
+      <ResolveDepositModal deposit={resolving} onClose={() => setResolving(null)} />
     </div>
   );
 }
