@@ -95,6 +95,9 @@ export interface CreateOrderBody {
   tariff_code: string;
   location_id?: number;
   carrier?: Carrier | "any";
+  /** Rail to quote the invoice in; omitted falls back to the server's first rail. */
+  asset?: string;
+  network?: string;
 }
 
 export interface OrderStatusResponse {
@@ -117,6 +120,19 @@ export interface ActiveOrder {
 
 export interface ActiveOrdersResponse {
   orders: ActiveOrder[];
+}
+
+/** A rail the buyer may pay on. Order matches the server's configured order. */
+export interface PaymentMethod {
+  asset: string;
+  network: string;
+  chain: string;
+  label: string;
+  min_amount_usd: number;
+}
+
+export interface PaymentMethodsResponse {
+  methods: PaymentMethod[];
 }
 
 // ── /accesses ────────────────────────────────────────────────────────────

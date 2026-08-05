@@ -120,6 +120,8 @@ export const strings = {
     resellerFormBody: "Tell us about your volume and requirements",
     resellerFormSent: "Your request was sent. We'll reach out via Telegram.",
     coverageLabel: "Coverage",
+    payWithLabel: "Pay with",
+    payWithSheetTitle: "Pay with",
     citySheetTitle: "Choose city",
     carrierSheetTitle: "Choose carrier",
     citySelectorLabel: "City",

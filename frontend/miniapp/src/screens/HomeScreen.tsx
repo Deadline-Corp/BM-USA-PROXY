@@ -22,7 +22,7 @@ import { CountdownBadge } from "../shared/components/CountdownBadge";
 import { HeroCardSkeleton, TileGridSkeleton } from "../shared/components/Skeleton";
 import { ErrorState } from "../shared/components/ErrorState";
 import { EmptyState } from "../shared/components/EmptyState";
-import { formatUsd } from "../shared/lib/format";
+import { formatCryptoAmount, formatUsd } from "../shared/lib/format";
 import { useRequireTos } from "../shared/hooks/useRequireTos";
 
 export function HomeScreen() {
@@ -101,7 +101,7 @@ export function HomeScreen() {
                     </span>
                     <small className="mt-0.5 block truncate text-[11.5px] text-text-3">
                       {order.invoice?.crypto_amount
-                        ? `${order.invoice.crypto_amount} ${order.invoice.crypto_currency ?? ""}`
+                        ? `${formatCryptoAmount(order.invoice.crypto_amount)} ${order.invoice.crypto_currency ?? ""}`
                         : formatUsd(order.amount_usd)}
                       {" · "}
                       {order.tariff_code}

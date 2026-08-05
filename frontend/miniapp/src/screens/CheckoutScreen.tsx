@@ -21,7 +21,7 @@ import { Num } from "../shared/components/Num";
 import { CountdownBadge } from "../shared/components/CountdownBadge";
 import { ErrorState } from "../shared/components/ErrorState";
 import { useCopyToClipboard } from "../shared/hooks/useCopyToClipboard";
-import { formatUsd } from "../shared/lib/format";
+import { formatCryptoAmount, formatUsd } from "../shared/lib/format";
 import { readCachedInvoice } from "../shared/lib/invoiceCache";
 import type { OrderStatus } from "../shared/api/types";
 
@@ -82,16 +82,19 @@ function truncateMiddle(value: string, head = 8, tail = 4): string {
  */
 function PayAmountRow({ amount, currency }: { amount: string | null; currency: string | null }) {
   const { copied, copy } = useCopyToClipboard();
+  // Trailing zeros are dropped for both display and copy: "30.603405" is the same number
+  // as "30.603405000000", and a wall of zeros on a pay-exactly-this screen reads as noise.
+  const shown = formatCryptoAmount(amount);
   return (
     <span className="flex items-baseline gap-1.5">
-      <Num className="text-[20px] font-bold leading-none text-text">{amount ?? "—"}</Num>
+      <Num className="text-[20px] font-bold leading-none text-text">{shown}</Num>
       <span className="text-[13px] font-medium text-text-3">{currency ?? ""}</span>
       {amount ? (
         <button
           type="button"
           className="ml-0.5 flex h-[22px] w-[22px] shrink-0 items-center justify-center self-center rounded-[6px] border border-border-2 bg-transparent text-text-3 transition-colors duration-150 ease-out hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           aria-label="Copy exact amount"
-          onClick={() => copy(amount)}
+          onClick={() => copy(shown)}
         >
           {copied ? <Check size={12} /> : <Copy size={12} />}
         </button>

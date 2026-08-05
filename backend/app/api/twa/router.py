@@ -60,6 +60,49 @@ class CreateOrder(BaseModel):
     tariff_code: str
     location_id: int | None = None
     carrier: str | None = None
+    # Which rail to be quoted in. Omitted → the first configured rail, which is only ever
+    # right by accident once more than one is enabled.
+    asset: str | None = None
+    network: str | None = None
+
+
+_NETWORK_LABELS = {
+    "trc20": "TRC-20 (Tron)",
+    "erc20": "ERC-20 (Ethereum)",
+    "bep20": "BEP-20 (BNB Chain)",
+    "spl": "SPL (Solana)",
+}
+
+
+@router.get("/payment-methods")
+async def payment_methods() -> dict[str, Any]:
+    """Rails the buyer may pay on, in configured order.
+
+    Without this the mini app had no way to offer a choice, so every order was quoted in
+    whichever rail happened to be listed first.
+    """
+    from app.services.payments.onchain.config import get_onchain_config
+
+    try:
+        cfg = get_onchain_config()
+    except Exception:
+        return {"methods": []}
+    out = []
+    for method in cfg.enabled_methods():
+        spec = method.spec
+        network_label = _NETWORK_LABELS.get(spec.network, spec.network.upper())
+        out.append(
+            {
+                "asset": spec.asset,
+                "network": spec.network,
+                "chain": spec.chain,
+                "label": f"{spec.asset} · {network_label}"
+                if spec.network != "native"
+                else f"{spec.asset} ({spec.chain.capitalize()})",
+                "min_amount_usd": float(method.min_amount_usd),
+            }
+        )
+    return {"methods": out}
 
 
 def _invoice_qr(inv: Invoice) -> str | None:
@@ -115,6 +158,7 @@ async def create_order(body: CreateOrder, user: CurrentUser, session: DbSession)
     order, invoice = await orders_svc.create_order(
         session, user=user, tariff_code=body.tariff_code,
         location_id=body.location_id, carrier=body.carrier,
+        asset=body.asset, network=body.network,
     )
     return {
         "order": {"public_id": str(order.public_id), "status": order.status,

@@ -2,6 +2,22 @@ export function formatUsd(amount: number): string {
   return `$${amount.toFixed(2)}`;
 }
 
+/**
+ * Trim a quoted crypto amount for display without touching its value.
+ *
+ * The API sends the ledger's full NUMERIC(38,18) precision as a string, so a 6-decimal
+ * quote arrives as "30.603405000000". Those zeros are noise on a screen whose whole job is
+ * "send exactly this", and they invite the buyer to wonder whether they matter. String
+ * maths only — parseFloat would defeat the point of sending a string in the first place.
+ */
+export function formatCryptoAmount(value: string | null | undefined): string {
+  if (value === null || value === undefined || value === "") return "—";
+  if (!/^-?\d+(\.\d+)?$/.test(value)) return value; // unexpected shape — show as-is
+  if (!value.includes(".")) return value;
+  const trimmed = value.replace(/0+$/, "").replace(/\.$/, "");
+  return trimmed === "" || trimmed === "-" ? "0" : trimmed;
+}
+
 export function pad2(n: number): string {
   return n < 10 ? `0${n}` : `${n}`;
 }

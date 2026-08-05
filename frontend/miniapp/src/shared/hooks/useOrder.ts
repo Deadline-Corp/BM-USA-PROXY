@@ -5,6 +5,7 @@ import type {
   CreateOrderBody,
   CreateOrderResponse,
   OrderStatusResponse,
+  PaymentMethodsResponse,
 } from "../api/types";
 
 const TERMINAL_STATUSES = new Set(["completed", "expired", "manual_review", "cancelled"]);
@@ -26,6 +27,15 @@ export function useOrderStatus(orderId: string | undefined) {
       if (!data || TERMINAL_STATUSES.has(data.status)) return false;
       return 3000;
     },
+  });
+}
+
+/** Rails the buyer may pay on. Static per deployment, so cached for the session. */
+export function usePaymentMethods() {
+  return useQuery({
+    queryKey: ["payment-methods"],
+    queryFn: ({ signal }) => api.get<PaymentMethodsResponse>("/payment-methods", signal),
+    staleTime: Infinity,
   });
 }
 
