@@ -155,8 +155,9 @@ export const strings = {
     cancelledTitle: "Order cancelled",
     cancelledBody: "This order was cancelled.",
     iHavePaid: "I've sent the payment",
-    checkingPaymentBody:
-      "Got it — we're watching the blockchain for your payment. It usually shows up within a minute of the network confirming it, and your proxy is issued automatically. You can close this screen.",
+    iHavePaidWaiting: "Watching the blockchain…",
+    seenOnChainTitle: "Payment received",
+    seenOnChainBody: "Waiting for the network to confirm it — your proxy is issued automatically.",
     payInWallet: "Pay in wallet",
     simulatePayment: "Simulate payment (dev)",
     cancelAndGoBack: "Cancel & go back",

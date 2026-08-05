@@ -5,7 +5,6 @@ import {
   ShieldCheck,
   Clock,
   ArrowUpRight,
-  Bell,
   Loader2,
   CheckCircle2,
   XCircle,
@@ -176,6 +175,14 @@ const STATUS_META: Record<
   },
 };
 
+/** Deposit seen on-chain, not yet deep enough to release the proxy. */
+const CONFIRMING_META = {
+  icon: Loader2,
+  title: strings.checkout.seenOnChainTitle,
+  body: strings.checkout.seenOnChainBody,
+  tone: "accent" as const,
+};
+
 export function CheckoutScreen() {
   const { orderId } = useParams<{ orderId: string }>();
   const navigate = useNavigate();
@@ -209,9 +216,23 @@ export function CheckoutScreen() {
     return <ErrorState message={strings.errors.orderNotFound} onRetry={() => orderQuery.refetch()} />;
   }
 
-  const meta = STATUS_META[orderQuery.data.status];
-  const StatusIcon = meta.icon;
   const invoice = orderQuery.data.invoice ?? cachedInvoice;
+
+  // The order sits at awaiting_payment until the deposit is final, so the order status
+  // alone cannot tell "nothing has arrived" from "arrived, waiting on the chain". The
+  // invoice status can, and that middle state is the whole point of this screen: without
+  // it the buyer sends money and the screen says "waiting for payment" as if nothing
+  // happened.
+  const seenOnChain =
+    orderQuery.data.status === "awaiting_payment" &&
+    orderQuery.data.invoice_status === "confirming";
+  const meta = seenOnChain ? CONFIRMING_META : STATUS_META[orderQuery.data.status];
+  const StatusIcon = meta.icon;
+  const stillAwaiting = orderQuery.data.status === "awaiting_payment";
+  // The countdown belongs to "we are waiting for your money" and nothing else — leaving it
+  // running after the deposit lands suggests the payment could still time out. It cannot:
+  // a matched invoice is no longer expired by the sweeper.
+  const showCountdown = stillAwaiting && !seenOnChain && Boolean(invoice?.expires_at);
 
   return (
     <div className="flex flex-col">
@@ -228,9 +249,12 @@ export function CheckoutScreen() {
         </div>
       </div>
 
-      {/* ── status card ── */}
+      {/* ── status bar ──
+          Horizontal and compact rather than a tall centred hero: the whole payment flow
+          has to fit on one phone screen, and the countdown sits here — beside the state it
+          belongs to — instead of being repeated further down. ── */}
       <div
-        className={`flex flex-col items-center gap-3 rounded-lg border p-6 text-center ${
+        className={`flex items-center gap-3 rounded-lg border px-4 py-3.5 ${
           meta.tone === "success"
             ? "border-success/30 bg-success/[.05]"
             : meta.tone === "danger"
@@ -241,7 +265,7 @@ export function CheckoutScreen() {
         }`}
       >
         <span
-          className={`flex h-12 w-12 items-center justify-center rounded-full ${
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
             meta.tone === "success"
               ? "bg-success/10 text-success"
               : meta.tone === "danger"
@@ -251,14 +275,21 @@ export function CheckoutScreen() {
                   : "bg-accent/10 text-accent"
           }`}
         >
-          <StatusIcon size={22} className={meta.icon === Loader2 ? "animate-spin" : undefined} />
+          <StatusIcon size={18} className={meta.icon === Loader2 ? "animate-spin" : undefined} />
         </span>
-        <div>
-          <b className="block font-head text-[16px] font-semibold tracking-tight text-text">{meta.title}</b>
+        <div className="min-w-0 flex-1">
+          <b className="block font-head text-[14.5px] font-semibold leading-tight tracking-tight text-text">
+            {meta.title}
+          </b>
           {meta.body ? (
-            <p className="mt-1 max-w-[260px] text-[13px] leading-relaxed text-text-2">{meta.body}</p>
+            <p className="mt-0.5 text-[12px] leading-snug text-text-2">{meta.body}</p>
           ) : null}
         </div>
+        {showCountdown && invoice ? (
+          <Chip tone="warn">
+            <CountdownBadge expiresAt={invoice.expires_at} valueClassName="text-[15px] text-warning" />
+          </Chip>
+        ) : null}
       </div>
 
       {/* ── invoice details (only while awaiting payment, and only if we have a cached invoice) ── */}
@@ -279,77 +310,49 @@ export function CheckoutScreen() {
             </div>
 
             {invoice.pay_address ? <PayAddressRow address={invoice.pay_address} /> : null}
-
-            <div className="flex items-center justify-between gap-3 px-4 py-3">
-              <div className="flex items-center gap-2">
-                <span className="relative h-2.5 w-2.5">
-                  <span className="absolute -inset-1 animate-pulse2 rounded-full bg-warning/20" />
-                  <span className="absolute inset-[1.5px] rounded-full bg-warning" />
-                </span>
-                <span className="text-[12.5px] font-semibold text-text-2">{strings.checkout.waitingForPayment}</span>
-              </div>
-              <Chip tone="warn">
-                <CountdownBadge expiresAt={invoice.expires_at} valueClassName="text-[16px] text-warning" />
-              </Chip>
-            </div>
           </div>
 
-          <div className="mt-3 flex items-start gap-2.5 rounded border border-accent/[.22] bg-accent/[.06] px-3.5 py-3">
-            <Bell size={16} className="mt-0.5 shrink-0 text-accent" aria-hidden="true" />
-            <p className="text-[12.5px] leading-relaxed text-text-2">
-              <b className="text-text">{strings.checkout.autoDeliveredTitle}</b> — {strings.checkout.autoDeliveredBody}
-            </p>
-          </div>
-
-          {/* "I've paid" — an acknowledgement, not a trigger. Detection is automatic and
-              already running every 15s; this button exists so the buyer gets a definite
-              "we're on it" instead of staring at an unchanged screen, and so the wait is
-              framed as ours rather than theirs. */}
-          {claimedPaid ? (
-            <div className="mt-3 flex items-center gap-2.5 rounded border border-border bg-surface-2 px-3.5 py-3">
-              <Loader2 size={16} className="shrink-0 animate-spin text-accent" aria-hidden="true" />
-              <p className="text-[12.5px] leading-relaxed text-text-2">
-                {strings.checkout.checkingPaymentBody}
-              </p>
-            </div>
-          ) : null}
-
-          <div className="mt-3 flex flex-col gap-2">
-            {!claimedPaid ? (
+          {/* Actions disappear once the deposit is on-chain: "I've sent it" is answered by
+              the status bar above, and cancelling would orphan money already sent — the
+              order is still `awaiting_payment` at that point, so the endpoint would happily
+              take it. */}
+          {!seenOnChain ? (
+            <div className="mt-3 flex flex-col gap-2">
               <Button
                 variant="primary"
                 block
+                disabled={claimedPaid}
                 onClick={() => {
                   setClaimedPaid(true);
                   void orderQuery.refetch();
                 }}
               >
-                {strings.checkout.iHavePaid}
+                {claimedPaid ? strings.checkout.iHavePaidWaiting : strings.checkout.iHavePaid}
               </Button>
-            ) : null}
-            {invoice.payment_url ? (
-              <a href={invoice.payment_url} target="_blank" rel="noopener noreferrer">
-                <Button variant="primary" block>
-                  {strings.checkout.payInWallet}
-                  <ArrowUpRight size={15} aria-hidden="true" />
+              {invoice.payment_url ? (
+                <a href={invoice.payment_url} target="_blank" rel="noopener noreferrer">
+                  <Button variant="default" block>
+                    {strings.checkout.payInWallet}
+                    <ArrowUpRight size={15} aria-hidden="true" />
+                  </Button>
+                </a>
+              ) : null}
+              {import.meta.env.DEV ? (
+                <Button variant="ghost" block disabled={mockPay.isPending} onClick={() => mockPay.mutate()}>
+                  {strings.checkout.simulatePayment}
                 </Button>
-              </a>
-            ) : null}
-            {import.meta.env.DEV ? (
-              <Button variant="ghost" block disabled={mockPay.isPending} onClick={() => mockPay.mutate()}>
-                {strings.checkout.simulatePayment}
+              ) : null}
+              <Button
+                variant="ghost"
+                block
+                className="text-text-3"
+                disabled={cancelOrder.isPending}
+                onClick={() => cancelOrder.mutate()}
+              >
+                {strings.checkout.cancelAndGoBack}
               </Button>
-            ) : null}
-            <Button
-              variant="ghost"
-              block
-              className="text-text-3"
-              disabled={cancelOrder.isPending}
-              onClick={() => cancelOrder.mutate()}
-            >
-              {strings.checkout.cancelAndGoBack}
-            </Button>
-          </div>
+            </div>
+          ) : null}
         </>
       ) : null}
 
