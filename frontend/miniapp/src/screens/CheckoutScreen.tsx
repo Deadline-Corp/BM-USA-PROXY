@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import QRCode from "qrcode";
 import {
   ShieldCheck,
   Clock,
@@ -24,42 +25,79 @@ import { formatUsd } from "../shared/lib/format";
 import { readCachedInvoice } from "../shared/lib/invoiceCache";
 import type { OrderStatus } from "../shared/api/types";
 
-// QR-style placeholder — hand-rolled 9x9 grid matching the demo's hand-drawn
-// finder-pattern matrix (not a real QR code, purely decorative per spec).
-function QrPlaceholder() {
-  const pattern = [
-    ["ac", "ac", "ac", "ac", "", "ac", "ac", "ac", "ac"],
-    ["ac", "", "", "ac", "on", "ac", "", "", "ac"],
-    ["ac", "", "hi", "ac", "", "ac", "hi", "", "ac"],
-    ["ac", "ac", "ac", "ac", "hi", "ac", "ac", "ac", "ac"],
-    ["", "hi", "", "hi", "ac", "hi", "", "hi", ""],
-    ["ac", "ac", "ac", "ac", "on", "ac", "hi", "", "on"],
-    ["ac", "", "hi", "ac", "", "on", "ac", "hi", "ac"],
-    ["ac", "", "", "ac", "hi", "ac", "", "", "ac"],
-    ["ac", "ac", "ac", "ac", "", "ac", "ac", "ac", "ac"],
-  ];
-  const cellClass: Record<string, string> = {
-    ac: "bg-accent",
-    hi: "bg-text",
-    on: "bg-text-2",
-    "": "bg-border",
-  };
+/**
+ * Real, scannable payment QR.
+ *
+ * This used to be a hand-drawn 9x9 grid copied from the demo mock — it looked exactly
+ * like a QR but encoded nothing, so buyers scanned it, got nothing, and lost trust at the
+ * one screen where trust matters most. Renders the wallet deep link the backend built
+ * (EIP-681 / BIP-21 / Solana Pay), falling back to the bare address on chains with no
+ * standard. Nothing is drawn until we actually have a payload.
+ */
+function PaymentQr({ payload }: { payload: string | null }) {
+  const [src, setSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    if (!payload) {
+      setSrc(null);
+      return;
+    }
+    QRCode.toDataURL(payload, { margin: 1, width: 240, errorCorrectionLevel: "M" })
+      .then((url) => {
+        if (alive) setSrc(url);
+      })
+      .catch(() => {
+        if (alive) setSrc(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [payload]);
+
+  if (!src) {
+    // Deliberately blank rather than decorative: a fake QR is worse than none.
+    return <div className="h-[82px] w-[82px] shrink-0 rounded-[8px] border-[1.5px] border-border-2 bg-surface-2" />;
+  }
   return (
-    <div
-      className="grid h-[82px] w-[82px] shrink-0 grid-cols-9 grid-rows-9 gap-[1.5px] overflow-hidden rounded-[8px] border-[1.5px] border-border-2 bg-white p-1.5"
-      role="img"
-      aria-label="Payment QR code placeholder"
-    >
-      {pattern.flat().map((cell, i) => (
-        <div key={i} className={`rounded-[1px] ${cellClass[cell]}`} />
-      ))}
-    </div>
+    <img
+      src={src}
+      alt="Payment QR code"
+      className="h-[82px] w-[82px] shrink-0 rounded-[8px] border-[1.5px] border-border-2 bg-white p-1"
+    />
   );
 }
 
 function truncateMiddle(value: string, head = 8, tail = 4): string {
   if (value.length <= head + tail + 1) return value;
   return `${value.slice(0, head)}…${value.slice(-tail)}`;
+}
+
+/**
+ * The exact amount, with its own copy button.
+ *
+ * Rendered straight from the API string. Retyping this by hand is the single easiest way
+ * for a buyer to lose money here — one wrong digit and the deposit matches no invoice —
+ * so copying it must be one tap, exactly like the address.
+ */
+function PayAmountRow({ amount, currency }: { amount: string | null; currency: string | null }) {
+  const { copied, copy } = useCopyToClipboard();
+  return (
+    <span className="flex items-baseline gap-1.5">
+      <Num className="text-[20px] font-bold leading-none text-text">{amount ?? "—"}</Num>
+      <span className="text-[13px] font-medium text-text-3">{currency ?? ""}</span>
+      {amount ? (
+        <button
+          type="button"
+          className="ml-0.5 flex h-[22px] w-[22px] shrink-0 items-center justify-center self-center rounded-[6px] border border-border-2 bg-transparent text-text-3 transition-colors duration-150 ease-out hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          aria-label="Copy exact amount"
+          onClick={() => copy(amount)}
+        >
+          {copied ? <Check size={12} /> : <Copy size={12} />}
+        </button>
+      ) : null}
+    </span>
+  );
 }
 
 function PayAddressRow({ address }: { address: string }) {
@@ -145,6 +183,8 @@ export function CheckoutScreen() {
   // POST /orders response does. We cache that once at order-creation time
   // (see shared/lib/invoiceCache.ts) and read it back here.
   const [invoice] = useState(() => (orderId ? readCachedInvoice(orderId) : null));
+  // Buyer pressed "I've paid". Purely a UI acknowledgement — detection is automatic.
+  const [claimedPaid, setClaimedPaid] = useState(false);
 
   const status = orderQuery.data?.status;
   const isTerminal = status ? ["completed", "expired", "manual_review", "cancelled"].includes(status) : false;
@@ -220,18 +260,15 @@ export function CheckoutScreen() {
           <div className="mt-4 overflow-hidden rounded-lg border border-border bg-surface shadow-highlight">
             <div className="flex items-start justify-between gap-3 border-b border-border p-4">
               <div className="flex flex-col gap-1">
-                <span className="flex items-baseline gap-1">
-                  <Num className="text-[20px] font-bold leading-none text-text">
-                    {invoice.crypto_amount !== null ? invoice.crypto_amount.toFixed(6) : "—"}
-                  </Num>
-                  <span className="text-[13px] font-medium text-text-3">{invoice.crypto_currency ?? ""}</span>
-                </span>
+                {/* Rendered verbatim from the API string — never reformatted. The watcher
+                    matches this amount to the last digit. */}
+                <PayAmountRow amount={invoice.crypto_amount} currency={invoice.crypto_currency} />
                 <span className="text-xs text-text-3">
                   {strings.checkout.amountApprox} <Num>{formatUsd(invoice.amount_usd)}</Num> USD
                   {invoice.crypto_network ? ` · ${invoice.crypto_network}` : ""}
                 </span>
               </div>
-              <QrPlaceholder />
+              <PaymentQr payload={invoice.pay_uri} />
             </div>
 
             {invoice.pay_address ? <PayAddressRow address={invoice.pay_address} /> : null}
@@ -257,7 +294,32 @@ export function CheckoutScreen() {
             </p>
           </div>
 
+          {/* "I've paid" — an acknowledgement, not a trigger. Detection is automatic and
+              already running every 15s; this button exists so the buyer gets a definite
+              "we're on it" instead of staring at an unchanged screen, and so the wait is
+              framed as ours rather than theirs. */}
+          {claimedPaid ? (
+            <div className="mt-3 flex items-center gap-2.5 rounded border border-border bg-surface-2 px-3.5 py-3">
+              <Loader2 size={16} className="shrink-0 animate-spin text-accent" aria-hidden="true" />
+              <p className="text-[12.5px] leading-relaxed text-text-2">
+                {strings.checkout.checkingPaymentBody}
+              </p>
+            </div>
+          ) : null}
+
           <div className="mt-3 flex flex-col gap-2">
+            {!claimedPaid ? (
+              <Button
+                variant="primary"
+                block
+                onClick={() => {
+                  setClaimedPaid(true);
+                  void orderQuery.refetch();
+                }}
+              >
+                {strings.checkout.iHavePaid}
+              </Button>
+            ) : null}
             {invoice.payment_url ? (
               <a href={invoice.payment_url} target="_blank" rel="noopener noreferrer">
                 <Button variant="primary" block>

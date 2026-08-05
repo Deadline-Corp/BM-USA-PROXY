@@ -66,8 +66,16 @@ export interface Invoice {
   amount_usd: number;
   crypto_currency: string | null;
   crypto_network: string | null;
-  crypto_amount: number | null;
+  /**
+   * Exact quoted amount as a STRING. The watcher matches a payment by this value to the
+   * last digit, so it must never round-trip through a JS number: BTC/ETH/LTC are quoted
+   * to 8 decimals and used to lose their tail, leaving the buyer paying an amount that
+   * could never match.
+   */
+  crypto_amount: string | null;
   pay_address: string | null;
+  /** Wallet deep link for the QR (EIP-681 / BIP-21 / Solana Pay), or the bare address. */
+  pay_uri: string | null;
   payment_url: string | null;
   expires_at: string;
 }

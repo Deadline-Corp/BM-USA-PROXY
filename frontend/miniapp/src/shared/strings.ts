@@ -143,6 +143,9 @@ export const strings = {
     manualReviewBody: "Your payment needs manual review. Support has been notified — hang tight.",
     cancelledTitle: "Order cancelled",
     cancelledBody: "This order was cancelled.",
+    iHavePaid: "I've sent the payment",
+    checkingPaymentBody:
+      "Got it — we're watching the blockchain for your payment. It usually shows up within a minute of the network confirming it, and your proxy is issued automatically. You can close this screen.",
     payInWallet: "Pay in wallet",
     simulatePayment: "Simulate payment (dev)",
     cancelAndGoBack: "Cancel & go back",
