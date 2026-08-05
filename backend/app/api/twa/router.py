@@ -123,6 +123,44 @@ async def create_order(body: CreateOrder, user: CurrentUser, session: DbSession)
     }
 
 
+_ACTIVE_ORDER_STATUSES = ("awaiting_payment", "paid", "provisioning")
+
+
+@router.get("/orders")
+async def list_active_orders(user: CurrentUser, session: DbSession) -> dict[str, Any]:
+    """Orders still in flight, newest first.
+
+    Without this the buyer had no way back to an unpaid order: the payment details lived
+    only in the tab's sessionStorage, so closing the mini app lost the address, the exact
+    amount and any sense of what was happening to the money already sent.
+    """
+    orders = list(
+        await session.scalars(
+            select(orders_svc.Order)
+            .where(
+                orders_svc.Order.user_id == user.id,
+                orders_svc.Order.status.in_(_ACTIVE_ORDER_STATUSES),
+            )
+            .order_by(orders_svc.Order.id.desc())
+            .limit(20)
+        )
+    )
+    out = []
+    for order in orders:
+        inv = await session.scalar(select(Invoice).where(Invoice.order_id == order.id))
+        out.append(
+            {
+                "public_id": str(order.public_id),
+                "status": order.status,
+                "tariff_code": order.tariff_code,
+                "amount_usd": float(order.amount_usd),
+                "created_at": order.created_at.isoformat() if order.created_at else None,
+                "invoice": _invoice_view(inv),
+            }
+        )
+    return {"orders": out}
+
+
 @router.get("/orders/{public_id}")
 async def order_status(public_id: str, user: CurrentUser, session: DbSession) -> dict[str, Any]:
     order = await orders_svc.get_by_public_id(session, public_id, user_id=user.id)
@@ -137,6 +175,9 @@ async def order_status(public_id: str, user: CurrentUser, session: DbSession) ->
         "status": order.status,
         "invoice_status": inv.status if inv else None,
         "access_public_id": access_pid,
+        # Payment details, so the checkout screen survives a reload or a reopened mini app
+        # instead of depending on sessionStorage written at order-creation time.
+        "invoice": _invoice_view(inv),
     }
 
 

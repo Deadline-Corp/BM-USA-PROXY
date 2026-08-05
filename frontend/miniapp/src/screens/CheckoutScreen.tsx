@@ -182,7 +182,10 @@ export function CheckoutScreen() {
   // GET /orders/{id} does not return invoice payment details — only the
   // POST /orders response does. We cache that once at order-creation time
   // (see shared/lib/invoiceCache.ts) and read it back here.
-  const [invoice] = useState(() => (orderId ? readCachedInvoice(orderId) : null));
+  // The API is the source of truth; the sessionStorage copy is only a first-paint
+  // fallback. Relying on the cache alone meant a closed tab lost the address, the exact
+  // amount and any way back into a payment that was already sent.
+  const [cachedInvoice] = useState(() => (orderId ? readCachedInvoice(orderId) : null));
   // Buyer pressed "I've paid". Purely a UI acknowledgement — detection is automatic.
   const [claimedPaid, setClaimedPaid] = useState(false);
 
@@ -205,6 +208,7 @@ export function CheckoutScreen() {
 
   const meta = STATUS_META[orderQuery.data.status];
   const StatusIcon = meta.icon;
+  const invoice = orderQuery.data.invoice ?? cachedInvoice;
 
   return (
     <div className="flex flex-col">

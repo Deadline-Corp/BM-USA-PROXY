@@ -7,8 +7,10 @@ import {
   ChevronRight,
   Users,
   MapPin,
+  Clock,
 } from "lucide-react";
 import { useMe } from "../shared/hooks/useMe";
+import { useActiveOrders } from "../shared/hooks/useOrder";
 import { useAccesses } from "../shared/hooks/useAccesses";
 import { useCatalog } from "../shared/hooks/useCatalog";
 import { strings } from "../shared/strings";
@@ -29,6 +31,8 @@ export function HomeScreen() {
   const catalogQuery = useCatalog();
   const requireTos = useRequireTos();
 
+  const ordersQuery = useActiveOrders();
+  const activeOrders = ordersQuery.data?.orders ?? [];
   const activeAccess = accessesQuery.data?.active[0] ?? null;
   const dailyTariff = catalogQuery.data?.tariffs.find((t) => t.duration_minutes === 24 * 60);
   const monthlyTariff = catalogQuery.data?.tariffs.reduce<typeof catalogQuery.data.tariffs[number] | undefined>(
@@ -70,6 +74,51 @@ export function HomeScreen() {
           </div>
         ) : null}
       </div>
+
+      {/* ── orders still in flight ──
+          Sits above everything else on purpose: an unpaid order is the most urgent thing
+          on this screen. Before this section a closed checkout tab was unrecoverable —
+          the buyer could not see the address, the exact amount, or whether money already
+          sent had been noticed. ── */}
+      {activeOrders.length > 0 ? (
+        <>
+          <SectionLabel>{strings.home.activeOrdersLabel}</SectionLabel>
+          <div className="mb-[18px] flex flex-col gap-2">
+            {activeOrders.map((order) => {
+              const awaiting = order.status === "awaiting_payment";
+              return (
+                <Link
+                  key={order.public_id}
+                  to={`/checkout/${order.public_id}`}
+                  className="flex items-center gap-3 rounded-lg border border-warning/[.35] bg-warning/[.06] px-3.5 py-3 transition-colors duration-150 ease-out hover:border-warning focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                >
+                  <Clock size={17} className="shrink-0 text-warning" aria-hidden="true" />
+                  <div className="min-w-0 flex-1">
+                    <span className="block text-[13.5px] font-semibold text-text">
+                      {awaiting
+                        ? strings.home.orderAwaitingPayment
+                        : strings.home.orderInProgress}
+                    </span>
+                    <small className="mt-0.5 block truncate text-[11.5px] text-text-3">
+                      {order.invoice?.crypto_amount
+                        ? `${order.invoice.crypto_amount} ${order.invoice.crypto_currency ?? ""}`
+                        : formatUsd(order.amount_usd)}
+                      {" · "}
+                      {order.tariff_code}
+                    </small>
+                  </div>
+                  {awaiting && order.invoice ? (
+                    <Chip tone="warn">
+                      <CountdownBadge expiresAt={order.invoice.expires_at} />
+                    </Chip>
+                  ) : null}
+                  <ChevronRight size={16} className="shrink-0 text-text-3" aria-hidden="true" />
+                </Link>
+              );
+            })}
+          </div>
+        </>
+      ) : null}
 
       {/* ── hero: active access or empty CTA ── */}
       <SectionLabel>{strings.home.heroLabel}</SectionLabel>

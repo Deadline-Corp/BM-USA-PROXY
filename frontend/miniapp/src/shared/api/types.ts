@@ -101,6 +101,22 @@ export interface OrderStatusResponse {
   status: OrderStatus;
   invoice_status: InvoiceStatus | null;
   access_public_id: string | null;
+  /** Payment details, so checkout survives a reload or a reopened mini app. */
+  invoice: Invoice | null;
+}
+
+/** An order still in flight — shown on Home so an unpaid one is never lost. */
+export interface ActiveOrder {
+  public_id: string;
+  status: OrderStatus;
+  tariff_code: string;
+  amount_usd: number;
+  created_at: string | null;
+  invoice: Invoice | null;
+}
+
+export interface ActiveOrdersResponse {
+  orders: ActiveOrder[];
 }
 
 // ── /accesses ────────────────────────────────────────────────────────────

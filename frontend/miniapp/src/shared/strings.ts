@@ -62,6 +62,9 @@ export const strings = {
   },
 
   home: {
+    activeOrdersLabel: "Your orders",
+    orderAwaitingPayment: "Awaiting your payment",
+    orderInProgress: "Payment received — issuing access",
     heroLabel: "Active access",
     quickActionsLabel: "Quick actions",
     referLabel: "Refer & earn",

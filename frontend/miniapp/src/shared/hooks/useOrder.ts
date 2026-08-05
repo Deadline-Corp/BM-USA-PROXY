@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import type {
+  ActiveOrdersResponse,
   CreateOrderBody,
   CreateOrderResponse,
   OrderStatusResponse,
@@ -25,6 +26,18 @@ export function useOrderStatus(orderId: string | undefined) {
       if (!data || TERMINAL_STATUSES.has(data.status)) return false;
       return 3000;
     },
+  });
+}
+
+/**
+ * Orders still in flight. Polled while the app is open so a payment made from another
+ * device (or after the checkout tab was closed) shows up without a manual refresh.
+ */
+export function useActiveOrders() {
+  return useQuery({
+    queryKey: ["orders", "active"],
+    queryFn: ({ signal }) => api.get<ActiveOrdersResponse>("/orders", signal),
+    refetchInterval: 10_000,
   });
 }
 
