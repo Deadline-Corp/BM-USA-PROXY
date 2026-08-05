@@ -21,11 +21,22 @@ from app.services.payments.onchain.chain_client import IncomingTransfer
 
 _OPEN_STATUSES = ("pending", "confirming")
 
+# How far above the quote a deposit may still settle an invoice. Buyers do round up, so a
+# little slack is worth having — but only a little: every extra percent widens the window
+# in which one order's money can settle a different order's invoice.
+_OVERPAY_PCT = Decimal("0.02")  # 2%
+
+
+def _overpay_cap(expected: Decimal) -> Decimal:
+    return expected * _OVERPAY_PCT
+
 
 @dataclass(frozen=True, slots=True)
 class MatchResult:
     invoice: Invoice | None
-    reason: str  # exact | reference | nearest | no_open_invoice | ambiguous | unsupported
+    # exact | reference | nearest | no_open_invoice | ambiguous | unsupported
+    # | exact_match_on_closed_invoice
+    reason: str
 
 
 class PaymentMatcher:
@@ -70,11 +81,35 @@ class PaymentMatcher:
         if len(exact) > 1:
             return MatchResult(None, "ambiguous")
 
+        # A deposit whose amount is the exact quote of an invoice that is no longer open
+        # was plainly meant for THAT order. Falling through to the fuzzy pass below would
+        # spend it on somebody else's open invoice: seen in production 2026-08-05, where a
+        # payment for an invoice that had expired 17s earlier closed the next open one as
+        # an "overpayment" and the rightful payer got nothing. Park it for an operator.
+        stale_exact = await self.session.scalar(
+            select(Invoice).where(
+                Invoice.provider == "onchain",
+                Invoice.status.notin_(_OPEN_STATUSES),
+                Invoice.crypto_currency == transfer.asset,
+                Invoice.crypto_network == transfer.network,
+                Invoice.pay_address == transfer.to_address,
+                Invoice.crypto_amount == paid,
+            )
+        )
+        if stale_exact is not None:
+            return MatchResult(None, "exact_match_on_closed_invoice")
+
         # nearest open invoice the amount could satisfy (over/slight-under), unambiguous only
         scored: list[tuple[Decimal, Invoice]] = []
         for inv in invoices:
             expected = Decimal(str(inv.crypto_amount))
             tol = Decimal(str(inv.amount_tolerance or 0))
+            # Overpayment is bounded on purpose. `paid >= expected - tol` alone accepts an
+            # overpayment of ANY size, which defeats the unique-amount design: a large
+            # deposit would silently settle whichever small invoice happened to be open.
+            # Anything past the cap goes to manual review instead of the wrong order.
+            if paid > expected + _overpay_cap(expected):
+                continue
             if paid >= expected - tol:  # covers overpayment and within-tolerance underpayment
                 scored.append((abs(expected - paid), inv))
         if not scored:
