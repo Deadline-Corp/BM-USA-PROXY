@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { LayoutGrid, MapPin, Radio, Send, Briefcase, Users, MessageCircle, ChevronRight, Wallet } from "lucide-react";
+import { LayoutGrid, MapPin, Radio, Send, Briefcase, Users, MessageCircle, ChevronRight } from "lucide-react";
 import { useCatalog } from "../shared/hooks/useCatalog";
 import { useCreateOrder, usePaymentMethods } from "../shared/hooks/useOrder";
 import { useCreateRequest } from "../shared/hooks/useRequests";
@@ -20,7 +20,7 @@ import { EmptyState } from "../shared/components/EmptyState";
 import { ApiError } from "../shared/api/client";
 import { formatUsd } from "../shared/lib/format";
 import { cacheInvoice } from "../shared/lib/invoiceCache";
-import type { Carrier, Tariff } from "../shared/api/types";
+import type { Carrier, PaymentMethod, Tariff } from "../shared/api/types";
 
 const ANY = "any" as const;
 
@@ -37,14 +37,11 @@ export function CatalogScreen() {
   const [carrier, setCarrier] = useState<Carrier | typeof ANY>(ANY);
   const [citySheetOpen, setCitySheetOpen] = useState(false);
   const [carrierSheetOpen, setCarrierSheetOpen] = useState(false);
-  // Which coin the invoice is quoted in. Until this existed every order was quoted in
-  // whichever rail the server listed first, with no way for the buyer to change it.
+  // Coin choice is a blocking step between Buy and the invoice — see handleBuy.
   const methodsQuery = usePaymentMethods();
   const methods = methodsQuery.data?.methods ?? [];
-  const [payKey, setPayKey] = useState<string | null>(null);
   const [paySheetOpen, setPaySheetOpen] = useState(false);
-  const selectedMethod =
-    methods.find((m) => `${m.asset}/${m.network}` === payKey) ?? methods[0] ?? null;
+  const [payingFor, setPayingFor] = useState<Tariff | null>(null);
   const [resellerSheetOpen, setResellerSheetOpen] = useState(false);
   const [resellerMessage, setResellerMessage] = useState("");
   const [orderError, setOrderError] = useState<string | null>(null);
@@ -55,8 +52,28 @@ export function CatalogScreen() {
     [locationId, catalogQuery.data],
   );
 
-  async function handleBuy(tariff: Tariff) {
+  /**
+   * Buy is a two-step flow: pick the coin, then the invoice is created.
+   *
+   * The coin used to be an optional row at the top of the catalog, which is exactly the
+   * kind of control people skip — you press Buy and land on an invoice in a currency you
+   * never chose, with no way back. Making it a blocking step costs one tap and removes
+   * the whole failure mode. With a single rail enabled there is nothing to choose, so the
+   * step is skipped rather than shown as a list of one.
+   */
+  function handleBuy(tariff: Tariff) {
     if (!requireTos()) return;
+    setOrderError(null);
+    if (methods.length > 1) {
+      setPayingFor(tariff);
+      setPaySheetOpen(true);
+      return;
+    }
+    void placeOrder(tariff, methods[0] ?? null);
+  }
+
+  async function placeOrder(tariff: Tariff, method: PaymentMethod | null) {
+    setPaySheetOpen(false);
     setOrderError(null);
     setPendingTariff(tariff.code);
     try {
@@ -65,8 +82,8 @@ export function CatalogScreen() {
           tariff_code: tariff.code,
           location_id: locationId === ANY ? undefined : locationId,
           carrier: carrier === ANY ? undefined : carrier,
-          asset: selectedMethod?.asset,
-          network: selectedMethod?.network,
+          asset: method?.asset,
+          network: method?.network,
         }),
       );
       cacheInvoice(response.order.public_id, response.invoice);
@@ -81,6 +98,7 @@ export function CatalogScreen() {
       }
     } finally {
       setPendingTariff(null);
+      setPayingFor(null);
     }
   }
 
@@ -121,24 +139,6 @@ export function CatalogScreen() {
           <span className="text-xs text-text-3">{strings.app.tagline}</span>
         </div>
       </div>
-
-      {/* ── pay-with selector ──
-          Its own row, above city/carrier: those pick the product, this picks the money.
-          Hidden when only one rail is enabled — a choice of one is just clutter. ── */}
-      {methods.length > 1 ? (
-        <button
-          type="button"
-          className="mb-2 flex w-full items-center justify-between gap-2 rounded border border-border bg-surface px-3 py-2.5 text-left text-[13px] text-text transition-colors hover:border-border-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-          onClick={() => setPaySheetOpen(true)}
-        >
-          <span className="flex min-w-0 items-center gap-1.5">
-            <Wallet size={14} className="shrink-0 text-text-3" aria-hidden="true" />
-            <span className="shrink-0 text-text-3">{strings.catalog.payWithLabel}</span>
-            <span className="truncate font-medium">{selectedMethod?.label ?? "—"}</span>
-          </span>
-          <ChevronRight size={14} className="shrink-0 text-text-3" aria-hidden="true" />
-        </button>
-      ) : null}
 
       {/* ── city / carrier selectors ── */}
       <div className="mb-4 flex gap-2">
@@ -327,27 +327,33 @@ export function CatalogScreen() {
         </a>
       </div>
 
-      {/* ── pay-with sheet ── */}
+      {/* ── pay-with step (blocking, between Buy and the invoice) ── */}
       <Sheet
         open={paySheetOpen}
-        onClose={() => setPaySheetOpen(false)}
+        onClose={() => {
+          setPaySheetOpen(false);
+          setPayingFor(null);
+        }}
         title={strings.catalog.payWithSheetTitle}
       >
+        {payingFor ? (
+          <p className="mb-3 text-[12.5px] leading-relaxed text-text-2">
+            {payingFor.name} — <Num className="font-semibold text-text">{formatUsd(payingFor.price_usd)}</Num>
+            {". "}
+            {strings.catalog.payWithSheetHint}
+          </p>
+        ) : null}
         <div className="flex flex-col gap-1">
-          {methods.map((m) => {
-            const key = `${m.asset}/${m.network}`;
-            return (
-              <CityRow
-                key={key}
-                label={m.label}
-                selected={selectedMethod ? `${selectedMethod.asset}/${selectedMethod.network}` === key : false}
-                onSelect={() => {
-                  setPayKey(key);
-                  setPaySheetOpen(false);
-                }}
-              />
-            );
-          })}
+          {methods.map((m) => (
+            <CityRow
+              key={`${m.asset}/${m.network}`}
+              label={m.label}
+              selected={false}
+              onSelect={() => {
+                if (payingFor) void placeOrder(payingFor, m);
+              }}
+            />
+          ))}
         </div>
       </Sheet>
 
