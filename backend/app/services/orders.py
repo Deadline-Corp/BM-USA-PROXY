@@ -177,12 +177,10 @@ async def mark_paid(session: AsyncSession, *, order: Order, source: str) -> None
         return
     order.status = "paid"
     order.paid_at = _utcnow()
-    await enqueue(
-        session,
-        user_id=order.user_id,
-        template_code="payment_received",
-        payload={"order_public_id": str(order.public_id)},
-    )
+    # Deliberately silent. "Payment received — issuing your proxy now" was a message about
+    # an intermediate step the buyer is already watching on the checkout screen, and it
+    # landed seconds before `access_issued` said the same thing with something actionable
+    # attached. Two pings for one purchase is one too many.
     await referral.accrue(session, order=order)  # no-op if no referrer / admin origin
     if order.is_extension and order.extends_access_id:
         access = await session.get(Access, order.extends_access_id)

@@ -26,7 +26,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import log
 from app.models import Invoice, Order
 from app.models.onchain import ChainCursor, OnchainDepositLedger
-from app.services.notifications import enqueue
 from app.services.payments import processing
 from app.services.payments.base import PaymentEventDTO
 from app.services.payments.onchain.amounts import classify
@@ -244,19 +243,10 @@ async def process_transfer(
         confirmations=confs,
         amount_usd=amount_usd,
     )
-    # Tell the buyer we can see the money. Without this the screen sits on "waiting for
-    # payment" from send until finality, which reads as "nothing happened". Sent from the
-    # shallow branch only — a deposit that finalises on first sighting goes straight to
-    # payment_received, so this never doubles up. dedupe_key keeps the 15s tick from
-    # re-sending it on every pass.
-    if user_id is not None:
-        await enqueue(
-            session,
-            user_id=user_id,
-            template_code="payment_detected",
-            payload={"order_public_id": str(invoice.order_id)},
-            dedupe_key=f"payment_detected:{invoice.id}",
-        )
+    # No Telegram message here on purpose. The checkout screen already shows this state
+    # live ("Payment received — waiting for network confirmation"), so a chat message about
+    # it is a second notification for something the buyer is usually still looking at. The
+    # one message worth sending is `access_issued`, when there is finally something to do.
     return False
 
 
