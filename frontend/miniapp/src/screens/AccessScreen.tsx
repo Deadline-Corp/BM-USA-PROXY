@@ -17,7 +17,12 @@ const STATUS_TONE: Record<string, "success" | "warn" | "default" | "danger"> = {
   expiring: "warn",
   expired: "default",
   cancelled: "danger",
+  revoked: "danger",
+  failed: "danger",
 };
+
+/** Statuses where the access is over: no countdown, no actions. */
+const ENDED_STATUSES = ["revoked", "expired", "failed"];
 
 function statusLabel(status: AccessStatus): string {
   switch (status) {
@@ -31,6 +36,10 @@ function statusLabel(status: AccessStatus): string {
       return strings.access.statusExpired;
     case "cancelled":
       return strings.access.statusCancelled;
+    case "revoked":
+      return strings.access.statusRevoked;
+    case "failed":
+      return strings.access.statusFailed;
     default:
       return status;
   }
@@ -53,7 +62,10 @@ function AccessRow({ access }: { access: AccessSummary }) {
         <small className="text-[11.5px] text-text-3">{access.carrier ?? "—"}</small>
       </div>
       <div className="shrink-0 text-right">
-        {access.expires_at ? (
+        {/* An ended access keeps its expires_at, so the countdown has to be gated on the
+            status rather than on the timestamp — otherwise a revoked row ticks away as
+            though it were still live. */}
+        {access.expires_at && !ENDED_STATUSES.includes(access.status) ? (
           <CountdownBadge expiresAt={access.expires_at} valueClassName="text-[13px] font-medium" />
         ) : (
           <Chip tone={STATUS_TONE[access.status] ?? "default"}>{statusLabel(access.status)}</Chip>

@@ -173,6 +173,12 @@ export const strings = {
   access: {
     title: "My Access",
     activeLabel: "Active access",
+    endedLabel: "Access ended",
+    endedOnLabel: "Status",
+    endedRevoked: "Revoked by support — this proxy is no longer usable.",
+    endedExpired: "Expired — the paid period is over.",
+    endedFailed: "Provisioning failed — support has been notified.",
+    endedBuyNew: "Get a new proxy",
     historyLabel: "History",
     credentialsLabel: "Proxy credentials",
     combinedLabel: "host:port:login:pass",
@@ -219,6 +225,8 @@ export const strings = {
     statusProvisioning: "Provisioning",
     statusExpired: "Expired",
     statusCancelled: "Cancelled",
+    statusRevoked: "Revoked",
+    statusFailed: "Failed",
   },
 
   referral: {

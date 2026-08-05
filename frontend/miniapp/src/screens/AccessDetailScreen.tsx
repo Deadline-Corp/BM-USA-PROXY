@@ -174,6 +174,10 @@ export function AccessDetailScreen() {
   const totalMs =
     (catalogQuery.data?.tariffs.find((t) => t.code === access.tariff_code)?.duration_minutes ?? 0) * 60_000;
   const expiryPct = totalMs > 0 ? Math.max(0, Math.min(100, (remainingMs / totalMs) * 100)) : 100;
+  // Revoked/expired/failed access is over. Everything below keys off this: a countdown
+  // that keeps ticking under a "revoked" badge reads as "maybe it still works?", and the
+  // Rotate/Extend buttons offer actions on something that no longer exists.
+  const isEnded = ["revoked", "expired", "failed"].includes(access.status);
 
   return (
     <div className="flex flex-col">
@@ -195,7 +199,7 @@ export function AccessDetailScreen() {
       </div>
 
       {/* ── hero ── */}
-      <SectionLabel>{strings.access.activeLabel}</SectionLabel>
+      <SectionLabel>{isEnded ? strings.access.endedLabel : strings.access.activeLabel}</SectionLabel>
       <div className="rounded-xl border border-border bg-gradient-to-b from-accent/[.06] to-transparent to-70% bg-surface p-[17px] shadow">
         <div className="flex items-start justify-between gap-2.5">
           <div className="flex min-w-0 items-center gap-2.5">
@@ -233,43 +237,66 @@ export function AccessDetailScreen() {
           </button>
         </div>
 
-        <div className="mt-3.5">
-          <div className="mb-1.5 flex items-baseline justify-between text-xs text-text-3">
-            <span>{strings.common.expiresIn}</span>
-            <CountdownBadge expiresAt={access.expires_at} valueClassName="text-[13px]" />
+        {isEnded ? (
+          <div className="mt-3.5 rounded-lg border border-border-2 bg-surface-2 px-3 py-2.5">
+            <div className="text-[10px] uppercase tracking-wide text-text-3">
+              {strings.access.endedOnLabel}
+            </div>
+            <div className="text-[13px] font-medium text-text-2">
+              {access.status === "revoked"
+                ? strings.access.endedRevoked
+                : access.status === "failed"
+                  ? strings.access.endedFailed
+                  : strings.access.endedExpired}
+            </div>
           </div>
-          <div className="h-[3px] overflow-hidden rounded-full bg-surface-2">
-            <div
-              className="h-full rounded-full bg-warning transition-[width] duration-500 ease-out"
-              style={{ width: `${expiryPct}%` }}
-            />
+        ) : (
+          <div className="mt-3.5">
+            <div className="mb-1.5 flex items-baseline justify-between text-xs text-text-3">
+              <span>{strings.common.expiresIn}</span>
+              <CountdownBadge expiresAt={access.expires_at} valueClassName="text-[13px]" />
+            </div>
+            <div className="h-[3px] overflow-hidden rounded-full bg-surface-2">
+              <div
+                className="h-full rounded-full bg-warning transition-[width] duration-500 ease-out"
+                style={{ width: `${expiryPct}%` }}
+              />
+            </div>
           </div>
-        </div>
+        )}
 
-        <div className="mt-3.5 flex gap-2.5">
-          <Button
-            variant="primary"
-            block
-            disabled={rotateIp.isPending || rotating || rotateCooldownRemaining > 0}
-            onClick={() => setRotateConfirmOpen(true)}
-          >
-            <RefreshCw size={15} aria-hidden="true" />
-            {rotateCooldownRemaining > 0
-              ? `${strings.access.rotateCoolingPrefix} (${rotateCooldownRemaining}s)`
-              : strings.access.rotateIp}
+        {isEnded ? (
+          <Button variant="primary" block className="mt-3.5" onClick={() => navigate("/catalog")}>
+            {strings.access.endedBuyNew}
           </Button>
-          <Button variant="default" block onClick={() => setExtendSheetOpen(true)}>
-            <CalendarPlus size={15} aria-hidden="true" />
-            {strings.access.extend}
-          </Button>
-        </div>
+        ) : (
+          <>
+            <div className="mt-3.5 flex gap-2.5">
+              <Button
+                variant="primary"
+                block
+                disabled={rotateIp.isPending || rotating || rotateCooldownRemaining > 0}
+                onClick={() => setRotateConfirmOpen(true)}
+              >
+                <RefreshCw size={15} aria-hidden="true" />
+                {rotateCooldownRemaining > 0
+                  ? `${strings.access.rotateCoolingPrefix} (${rotateCooldownRemaining}s)`
+                  : strings.access.rotateIp}
+              </Button>
+              <Button variant="default" block onClick={() => setExtendSheetOpen(true)}>
+                <CalendarPlus size={15} aria-hidden="true" />
+                {strings.access.extend}
+              </Button>
+            </div>
 
-        {access.swap_left > 0 ? (
-          <Button variant="ghost" block className="mt-2" onClick={() => setSwapSheetOpen(true)}>
-            <ArrowLeftRight size={15} aria-hidden="true" />
-            {strings.access.swap} (<Num>{access.swap_left}</Num> {strings.access.swapLeft})
-          </Button>
-        ) : null}
+            {access.swap_left > 0 ? (
+              <Button variant="ghost" block className="mt-2" onClick={() => setSwapSheetOpen(true)}>
+                <ArrowLeftRight size={15} aria-hidden="true" />
+                {strings.access.swap} (<Num>{access.swap_left}</Num> {strings.access.swapLeft})
+              </Button>
+            ) : null}
+          </>
+        )}
 
         <p className={`mt-1.5 text-center text-[11px] leading-relaxed ${rotating ? "text-accent" : "text-text-3"}`}>
           {rotating ? strings.access.rotatingHint : strings.access.rotateNote}
