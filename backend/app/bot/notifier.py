@@ -17,6 +17,10 @@ from app.services.notifications import pending_batch
 
 DEFAULT_TEXTS: dict[str, str] = {
     "welcome": "Welcome to <b>BM USA Proxy</b>! Tap below to open the app.",
+    "payment_detected": (
+        "We can see your payment on-chain — waiting for network confirmation. "
+        "Your proxy will be issued automatically as soon as it lands."
+    ),
     "payment_received": "Payment received — issuing your proxy now.",
     "access_issued": "Your proxy is ready! Open the app to view your access.",
     "provisioning_delayed": "We're preparing your proxy — it'll be ready shortly.",

@@ -13,6 +13,9 @@ from app.models import NotificationOutbox
 # Template catalog (texts live in app_settings['notify_texts:<code>'], editable in admin).
 TEMPLATES = {
     "welcome",
+    # seen on-chain but not yet confirmed — closes the silent gap between "I sent it"
+    # and "payment received", which otherwise reads to the buyer as nothing happening
+    "payment_detected",
     "payment_received",
     "access_issued",
     "provisioning_delayed",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter
@@ -61,6 +62,33 @@ class CreateOrder(BaseModel):
     carrier: str | None = None
 
 
+def _invoice_qr(inv: Invoice) -> str | None:
+    """Wallet deep link (or bare address) to encode in the checkout QR."""
+    if not inv.pay_address or inv.crypto_amount is None:
+        return None
+    if not inv.crypto_currency or not inv.crypto_network:
+        return inv.pay_address
+    from app.services.payments.onchain.assets import find_spec
+    from app.services.payments.onchain.config import get_onchain_config
+    from app.services.payments.onchain.payment_uri import qr_payload
+
+    spec = find_spec(inv.crypto_currency, inv.crypto_network)
+    if spec is None:
+        return inv.pay_address
+    try:
+        cfg = get_onchain_config()
+        # a per-rail override (testnet contract) changes the token in the deep link
+        method = cfg.method(inv.crypto_currency, inv.crypto_network)
+        return qr_payload(
+            spec=method.spec if method else spec,
+            to_address=inv.pay_address,
+            amount=Decimal(str(inv.crypto_amount)),
+            network=cfg.network,
+        )
+    except Exception:  # config not loaded / malformed — the address alone still works
+        return inv.pay_address
+
+
 def _invoice_view(inv: Invoice | None) -> dict[str, Any] | None:
     if inv is None:
         return None
@@ -70,8 +98,12 @@ def _invoice_view(inv: Invoice | None) -> dict[str, Any] | None:
         "amount_usd": float(inv.amount_usd),
         "crypto_currency": inv.crypto_currency,
         "crypto_network": inv.crypto_network,
-        "crypto_amount": float(inv.crypto_amount) if inv.crypto_amount is not None else None,
+        # STRING, not float: the watcher matches on the exact quoted amount, and assets
+        # quoted to 8 decimals (BTC/ETH/LTC) lost their last digits through float +
+        # toFixed(6) on the client — the buyer then paid an amount that never matched.
+        "crypto_amount": str(inv.crypto_amount) if inv.crypto_amount is not None else None,
         "pay_address": inv.pay_address,
+        "pay_uri": _invoice_qr(inv),
         "payment_url": inv.payment_url,
         "expires_at": inv.expires_at.isoformat(),
     }

@@ -1638,15 +1638,24 @@ async def payout_instruction(
     amount = Decimal(str(payout.amount_usd))  # USDT — 1:1 with USD
 
     # EIP-681 opens MetaMask/Trust with the token, recipient and amount prefilled.
-    # Tron wallets have no comparable standard, so we hand back the plain address there
-    # and the UI shows a QR of it — the operator still never retypes anything.
+    # Tron wallets have no comparable standard, so the builder returns None there and the
+    # UI shows a QR of the bare address — the operator still never retypes anything.
+    # Shared builder so the chain id follows ONCHAIN_NETWORK: a hardcoded mainnet id would
+    # make a scanned QR open the wallet on mainnet while we run on testnet.
+    from app.services.payments.onchain.config import get_onchain_config
+    from app.services.payments.onchain.payment_uri import build_payment_uri
+
     wallet_uri: str | None = None
-    if spec is not None and rail.chain in ("ethereum", "bsc") and spec.token_contract:
-        chain_id = 1 if rail.chain == "ethereum" else 56
-        base_units = int(amount * (Decimal(10) ** spec.decimals))
-        wallet_uri = (
-            f"ethereum:{spec.token_contract}@{chain_id}/transfer"
-            f"?address={payout.wallet_address}&uint256={base_units}"
+    if spec is not None:
+        try:
+            onchain_network = get_onchain_config().network
+        except Exception:
+            onchain_network = "mainnet"
+        wallet_uri = build_payment_uri(
+            spec=spec,
+            to_address=payout.wallet_address,
+            amount=amount,
+            network=onchain_network,
         )
 
     return {
