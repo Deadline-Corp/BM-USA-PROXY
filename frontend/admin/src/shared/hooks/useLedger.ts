@@ -2,6 +2,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { paymentsApi } from "@/shared/api/endpoints";
 import type { ListParams } from "@/shared/api/types";
 
+/** Orders a parked deposit might belong to — so the operator picks instead of recalls. */
+export function useDepositCandidates(depositId: number | null) {
+  return useQuery({
+    queryKey: ["ledger", "candidates", depositId],
+    queryFn: () => paymentsApi.depositCandidates(depositId as number),
+    enabled: depositId !== null,
+  });
+}
+
 /** Resolve a deposit the watcher parked. Refreshes the ledger so the row moves on. */
 export function useResolveDeposit() {
   const qc = useQueryClient();

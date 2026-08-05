@@ -1292,6 +1292,59 @@ class WriteOffDeposit(BaseModel):
     reason: str = Field(min_length=3, max_length=500)
 
 
+@router.get("/payments/ledger/{deposit_id}/candidates")
+async def deposit_candidates(
+    deposit_id: int, admin: CurrentAdmin, session: DbSession
+) -> dict[str, Any]:
+    """Orders this parked deposit plausibly belongs to, closest amount first.
+
+    Asking the operator to type an order id they have no way of knowing turns a two-click
+    job into a hunt across screens — and a guessed id credits the wrong buyer. The rail and
+    the receiving address are already known from the deposit, so the shortlist is derived
+    rather than remembered.
+    """
+    row = await session.get(OnchainDepositLedger, deposit_id)
+    if row is None:
+        raise NotFound("deposit not found")
+
+    invoices = list(
+        await session.scalars(
+            select(Invoice)
+            .where(
+                Invoice.provider == "onchain",
+                Invoice.crypto_currency == row.asset,
+                Invoice.crypto_network == row.network,
+                Invoice.status.notin_(("paid",)),
+            )
+            .order_by(Invoice.id.desc())
+            .limit(200)
+        )
+    )
+    paid = Decimal(str(row.amount))
+    out: list[dict[str, Any]] = []
+    for inv in invoices:
+        order = await session.get(Order, inv.order_id)
+        if order is None or order.status not in ("awaiting_payment", "expired", "manual_review"):
+            continue
+        user = await session.get(User, order.user_id)
+        expected = Decimal(str(inv.crypto_amount)) if inv.crypto_amount is not None else None
+        out.append(
+            {
+                "order_public_id": str(order.public_id),
+                "order_status": order.status,
+                "invoice_status": inv.status,
+                "user": _user_display(user),
+                "amount_usd": float(order.amount_usd),
+                "crypto_amount": str(inv.crypto_amount) if expected is not None else None,
+                "difference": str(abs(expected - paid)) if expected is not None else None,
+                "created_at": order.created_at.isoformat() if order.created_at else None,
+            }
+        )
+    # Exact quote first, then near misses — the operator sees the obvious answer on top.
+    out.sort(key=lambda c: Decimal(c["difference"]) if c["difference"] is not None else Decimal(10**9))
+    return {"deposit_amount": str(paid), "asset": row.asset, "candidates": out[:10]}
+
+
 @router.post("/payments/ledger/{deposit_id}/attach")
 async def attach_deposit(
     deposit_id: int, body: AttachDeposit, admin: CurrentAdmin, session: DbSession

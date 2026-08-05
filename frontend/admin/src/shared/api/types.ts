@@ -251,6 +251,24 @@ export interface MarkPaidRequest {
 
 // ---------- On-chain deposit ledger (append-only) ----------
 
+export interface DepositCandidate {
+  order_public_id: string;
+  order_status: string;
+  invoice_status: string;
+  user: string;
+  amount_usd: number;
+  crypto_amount: string | null;
+  /** How far this order's quote is from what actually arrived. "0" = exact. */
+  difference: string | null;
+  created_at: string | null;
+}
+
+export interface DepositCandidates {
+  deposit_amount: string;
+  asset: string;
+  candidates: DepositCandidate[];
+}
+
 export interface DepositLedgerEntry {
   id: string;
   created_at: string;

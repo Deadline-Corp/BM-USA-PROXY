@@ -15,6 +15,7 @@ import type {
   Connection,
   ConnectionUpdate,
   DashboardSummary,
+  DepositCandidates,
   DepositLedgerEntry,
   DepositLedgerSummary,
   FaqItem,
@@ -170,6 +171,11 @@ export const paymentsApi = {
       .then((r) => r.data),
   ledgerSummary: () =>
     apiClient.get<DepositLedgerSummary>("/payments/ledger/summary").then((r) => r.data),
+  /** Orders this parked deposit plausibly belongs to, closest amount first. */
+  depositCandidates: (depositId: number) =>
+    apiClient
+      .get<DepositCandidates>(`/payments/ledger/${depositId}/candidates`)
+      .then((r) => r.data),
   /** Credit a parked deposit to an order — the way out of `unmatched`. */
   attachDeposit: (depositId: number, body: { order_public_id: string; note?: string }) =>
     apiClient.post(`/payments/ledger/${depositId}/attach`, body).then((r) => r.data),
