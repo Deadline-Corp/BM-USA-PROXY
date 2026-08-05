@@ -66,11 +66,21 @@ class CreateOrder(BaseModel):
     network: str | None = None
 
 
+# The buyer picks a chain first and a coin second, so those two need separate labels.
+_CHAIN_LABELS = {
+    "tron": "Tron",
+    "ethereum": "Ethereum",
+    "bsc": "BNB Chain (BSC)",
+    "solana": "Solana",
+    "bitcoin": "Bitcoin",
+    "litecoin": "Litecoin",
+}
+
 _NETWORK_LABELS = {
-    "trc20": "TRC-20 (Tron)",
-    "erc20": "ERC-20 (Ethereum)",
-    "bep20": "BEP-20 (BNB Chain)",
-    "spl": "SPL (Solana)",
+    "trc20": "TRC-20",
+    "erc20": "ERC-20",
+    "bep20": "BEP-20",
+    "spl": "SPL",
 }
 
 
@@ -90,15 +100,19 @@ async def payment_methods() -> dict[str, Any]:
     out = []
     for method in cfg.enabled_methods():
         spec = method.spec
-        network_label = _NETWORK_LABELS.get(spec.network, spec.network.upper())
+        chain_label = _CHAIN_LABELS.get(spec.chain, spec.chain.capitalize())
+        if spec.network == "native":
+            coin_label = f"{spec.asset} — native coin"
+        else:
+            coin_label = f"{spec.asset} — {_NETWORK_LABELS.get(spec.network, spec.network.upper())}"
         out.append(
             {
                 "asset": spec.asset,
                 "network": spec.network,
                 "chain": spec.chain,
-                "label": f"{spec.asset} · {network_label}"
-                if spec.network != "native"
-                else f"{spec.asset} ({spec.chain.capitalize()})",
+                "chain_label": chain_label,
+                "coin_label": coin_label,
+                "label": f"{coin_label} ({chain_label})",
                 "min_amount_usd": float(method.min_amount_usd),
             }
         )

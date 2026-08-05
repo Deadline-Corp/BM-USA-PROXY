@@ -127,6 +127,10 @@ export interface PaymentMethod {
   asset: string;
   network: string;
   chain: string;
+  /** "Tron", "BNB Chain (BSC)" — what the first dropdown shows. */
+  chain_label: string;
+  /** "USDT — TRC-20", "BTC — native coin" — what the second dropdown shows. */
+  coin_label: string;
   label: string;
   min_amount_usd: number;
 }

@@ -42,6 +42,21 @@ export function CatalogScreen() {
   const methods = methodsQuery.data?.methods ?? [];
   const [paySheetOpen, setPaySheetOpen] = useState(false);
   const [payingFor, setPayingFor] = useState<Tariff | null>(null);
+  const [payChain, setPayChain] = useState<string>("");
+  const [payCoin, setPayCoin] = useState<string>("");
+
+  // Chains in configured order, deduplicated — the first dropdown.
+  const payChains = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const m of methods) if (!seen.has(m.chain)) seen.set(m.chain, m.chain_label);
+    return [...seen].map(([chain, label]) => ({ chain, label }));
+  }, [methods]);
+  // Coins on the chosen chain — the second dropdown, empty until a chain is picked.
+  const payCoins = useMemo(
+    () => methods.filter((m) => m.chain === payChain),
+    [methods, payChain],
+  );
+  const chosenMethod = payCoins.find((m) => `${m.asset}/${m.network}` === payCoin) ?? null;
   const [resellerSheetOpen, setResellerSheetOpen] = useState(false);
   const [resellerMessage, setResellerMessage] = useState("");
   const [orderError, setOrderError] = useState<string | null>(null);
@@ -65,6 +80,10 @@ export function CatalogScreen() {
     if (!requireTos()) return;
     setOrderError(null);
     if (methods.length > 1) {
+      // Start clean: a selection left over from a previous, abandoned purchase is exactly
+      // the sort of thing that quietly sends the next order down the wrong rail.
+      setPayChain(methods.length && payChains.length === 1 ? payChains[0].chain : "");
+      setPayCoin("");
       setPayingFor(tariff);
       setPaySheetOpen(true);
       return;
@@ -343,18 +362,55 @@ export function CatalogScreen() {
             {strings.catalog.payWithSheetHint}
           </p>
         ) : null}
-        <div className="flex flex-col gap-1">
-          {methods.map((m) => (
-            <CityRow
-              key={`${m.asset}/${m.network}`}
-              label={m.label}
-              selected={false}
-              onSelect={() => {
-                if (payingFor) void placeOrder(payingFor, m);
-              }}
-            />
+        {/* Network first, coin second. The coin list stays disabled until a network is
+            chosen — with a dozen rails a flat list showing "USDT" four times over tells
+            the buyer nothing about which one they would actually be sending to. */}
+        <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
+          {strings.catalog.payNetworkLabel}
+        </label>
+        <select
+          className="mb-3 w-full rounded border border-border bg-surface px-3 py-2.5 text-[13.5px] text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          value={payChain}
+          onChange={(e) => {
+            setPayChain(e.target.value);
+            setPayCoin(""); // a new network invalidates whatever coin was picked
+          }}
+        >
+          <option value="">{strings.catalog.payNetworkPlaceholder}</option>
+          {payChains.map((c) => (
+            <option key={c.chain} value={c.chain}>{c.label}</option>
           ))}
-        </div>
+        </select>
+
+        <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
+          {strings.catalog.payCoinLabel}
+        </label>
+        <select
+          className="mb-4 w-full rounded border border-border bg-surface px-3 py-2.5 text-[13.5px] text-text disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-text-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          value={payCoin}
+          disabled={!payChain}
+          onChange={(e) => setPayCoin(e.target.value)}
+        >
+          <option value="">
+            {payChain ? strings.catalog.payCoinPlaceholder : strings.catalog.payCoinDisabled}
+          </option>
+          {payCoins.map((m) => (
+            <option key={`${m.asset}/${m.network}`} value={`${m.asset}/${m.network}`}>
+              {m.coin_label}
+            </option>
+          ))}
+        </select>
+
+        <Button
+          variant="primary"
+          block
+          disabled={!chosenMethod || pendingTariff !== null}
+          onClick={() => {
+            if (payingFor && chosenMethod) void placeOrder(payingFor, chosenMethod);
+          }}
+        >
+          {strings.catalog.payContinue}
+        </Button>
       </Sheet>
 
       {/* ── city sheet ── */}
