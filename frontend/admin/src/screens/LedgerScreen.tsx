@@ -27,10 +27,20 @@ export function LedgerScreen() {
   const [status, setStatus] = useState("");
   const [chain, setChain] = useState("");
   const [resolving, setResolving] = useState<DepositLedgerEntry | null>(null);
+  // Default to each deposit's current state. The full journal is still one click away, but
+  // filtering "Unmatched" over every historical row shows deposits that were resolved long
+  // ago — the operator reads that as "still broken".
+  const [currentOnly, setCurrentOnly] = useState(true);
 
   const params = useMemo(
-    () => ({ limit, offset, ...(status ? { status } : {}), ...(chain ? { chain } : {}) }),
-    [limit, offset, status, chain],
+    () => ({
+      limit,
+      offset,
+      current_only: currentOnly,
+      ...(status ? { status } : {}),
+      ...(chain ? { chain } : {}),
+    }),
+    [limit, offset, status, chain, currentOnly],
   );
   const query = useDepositLedger(params);
   const summary = useLedgerSummary();
@@ -143,6 +153,16 @@ export function LedgerScreen() {
           tone={summary.data && summary.data.unmatched_total > 0 ? "warning" : "neutral"}
         />
         <div className="flex-1" />
+        <Select
+          value={currentOnly ? "current" : "all"}
+          onChange={(e) => {
+            setCurrentOnly(e.target.value === "current");
+            setOffset(0);
+          }}
+        >
+          <option value="current">{strings.ledger.viewCurrent}</option>
+          <option value="all">{strings.ledger.viewHistory}</option>
+        </Select>
         <Select
           value={status}
           onChange={(e) => {

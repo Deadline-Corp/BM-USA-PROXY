@@ -16,7 +16,7 @@ from typing import Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import ColumnElement, func, or_, select, text
+from sqlalchemy import ColumnElement, Select, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentAdmin, DbSession, Owner
@@ -1224,6 +1224,25 @@ async def manual_review_orders(admin: CurrentAdmin, session: DbSession) -> dict[
 
 
 # ── on-chain deposit ledger (observability + audit; append-only, doc 15) ──
+# Deposit states still waiting for a human decision — the operator's actual queue.
+# Kept next to the ledger helpers so the badge, the filter and the Resolve button in the
+# admin cannot drift apart.
+_RESOLVABLE_LEDGER_STATUSES = ("unmatched", "underpaid", "expired_deposit", "orphaned")
+
+
+def _latest_ledger_ids() -> Select[tuple[int]]:
+    """Ids of the newest row per on-chain transfer — each deposit's current state.
+
+    Keyed on max(id) rather than the `v_deposit_current` view: that view breaks ties on
+    `created_at`, and a manual resolution writes `matched` + `paid` in the same instant, so
+    it can pick either one. Ids are monotonic and never ambiguous.
+    """
+    return (
+        select(func.max(OnchainDepositLedger.id))
+        .group_by(OnchainDepositLedger.txid, OnchainDepositLedger.log_index)
+    )
+
+
 def _ledger_view(
     row: OnchainDepositLedger, *, user_display: str | None, is_current: bool = True
 ) -> dict[str, Any]:
@@ -1260,13 +1279,22 @@ async def list_deposit_ledger(
     chain: str | None = None,
     invoice_id: int | None = None,
     txid: str | None = None,
+    current_only: bool = True,
     limit: int = 50,
     offset: int = 0,
 ) -> dict[str, Any]:
-    """Append-only on-chain deposit ledger — every observed transfer + status change."""
+    """On-chain deposit ledger.
+
+    ``current_only`` (default) collapses each transfer to its newest row — what an
+    operator means by "show me the unmatched ones". Without it, filtering by a status
+    returns every row that ever held it, so a deposit resolved an hour ago still shows up
+    under Unmatched forever. Turn it off for the full append-only audit trail.
+    """
     stmt = select(OnchainDepositLedger)
     count_stmt = select(func.count()).select_from(OnchainDepositLedger)
     conds: list[ColumnElement[bool]] = []
+    if current_only:
+        conds.append(OnchainDepositLedger.id.in_(_latest_ledger_ids()))
     if status:
         conds.append(OnchainDepositLedger.status == status)
     if chain:
@@ -1432,11 +1460,18 @@ async def deposit_ledger_summary(admin: CurrentAdmin, session: DbSession) -> dic
     return {
         "by_status": {status: int(count) for status, count in by_status},
         "events_24h": events_24h,
+        # Deposits that are unmatched *right now*. Counting every row that ever said
+        # "unmatched" made this number permanent: the ledger is append-only, so resolving
+        # a deposit adds a row rather than changing the old one, and the badge sat at 2
+        # forever while the queue was actually empty.
         "unmatched_total": int(
             await session.scalar(
                 select(func.count())
                 .select_from(OnchainDepositLedger)
-                .where(OnchainDepositLedger.status == "unmatched")
+                .where(
+                    OnchainDepositLedger.status.in_(_RESOLVABLE_LEDGER_STATUSES),
+                    OnchainDepositLedger.id.in_(_latest_ledger_ids()),
+                )
             )
             or 0
         ),

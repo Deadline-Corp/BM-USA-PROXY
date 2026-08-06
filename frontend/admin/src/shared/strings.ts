@@ -200,6 +200,8 @@ export const strings = {
     unmatched: "Unmatched",
     filterAllStatuses: "All statuses",
     colAction: "",
+    viewCurrent: "Current state",
+    viewHistory: "Full history",
     resolve: "Resolve",
     resolveTitle: "Resolve deposit",
     attachLabel: "Credit it to an order",
