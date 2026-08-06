@@ -3,7 +3,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { PageHead } from "@/shared/components/PageHead";
 import { Panel } from "@/shared/components/Panel";
 import { DataTable } from "@/shared/components/DataTable";
-import { StatusBadge } from "@/shared/components/StatusBadge";
+import { StatusBadge, formatStatusLabel } from "@/shared/components/StatusBadge";
 import { Num } from "@/shared/components/Num";
 import { Select } from "@/shared/components/form/Select";
 import { formatChain, formatCryptoAmount, formatDateTime, formatNetwork } from "@/shared/lib/format";
@@ -149,7 +149,7 @@ export function LedgerScreen() {
         >
           <option value="">{strings.ledger.filterAllStatuses}</option>
           {STATUSES.map((s) => (
-            <option key={s} value={s}>{s}</option>
+            <option key={s} value={s}>{formatStatusLabel(s)}</option>
           ))}
         </Select>
         <Select

@@ -69,7 +69,14 @@ interface StatusBadgeProps {
   className?: string;
 }
 
-function humanize(status: string): string {
+/**
+ * Backend status string → what a person reads: "expired_deposit" → "Expired Deposit".
+ *
+ * Exported so filters and badges cannot drift apart: a dropdown offering "expired_deposit"
+ * next to a table showing "Expired Deposit" makes the operator wonder whether they are
+ * even the same thing. The stored value is untouched — this is display only.
+ */
+export function formatStatusLabel(status: string): string {
   return status
     .split("_")
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
@@ -78,7 +85,7 @@ function humanize(status: string): string {
 
 export function StatusBadge({ status, tone, label, className }: StatusBadgeProps) {
   const resolvedTone = tone ?? (status ? toneForStatus(status) : "neutral");
-  const resolvedLabel = label ?? (status ? humanize(status) : "");
+  const resolvedLabel = label ?? (status ? formatStatusLabel(status) : "");
   return (
     <span
       className={clsx(
