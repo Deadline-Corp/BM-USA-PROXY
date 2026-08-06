@@ -21,6 +21,7 @@ import { CountdownBadge } from "../shared/components/CountdownBadge";
 import { ErrorState } from "../shared/components/ErrorState";
 import { useCopyToClipboard } from "../shared/hooks/useCopyToClipboard";
 import { formatCryptoAmount, formatUsd } from "../shared/lib/format";
+import { isMobilePlatform, isWalletDeepLink } from "../shared/lib/platform";
 import { readCachedInvoice } from "../shared/lib/invoiceCache";
 import type { OrderStatus } from "../shared/api/types";
 
@@ -233,6 +234,7 @@ export function CheckoutScreen() {
   // running after the deposit lands suggests the payment could still time out. It cannot:
   // a matched invoice is no longer expired by the sweeper.
   const showCountdown = stillAwaiting && !seenOnChain && Boolean(invoice?.expires_at);
+  const showWalletLink = isMobilePlatform() && isWalletDeepLink(invoice?.pay_uri);
 
   return (
     <div className="flex flex-col">
@@ -306,7 +308,16 @@ export function CheckoutScreen() {
                   {invoice.crypto_network ? ` · ${invoice.crypto_network}` : ""}
                 </span>
               </div>
-              <PaymentQr payload={invoice.pay_uri} />
+              {/* Caption matters more than it looks: with Telegram open on a desktop the
+                  QR is the only comfortable way to pay, and nothing on screen said so. */}
+              <div className="flex shrink-0 flex-col items-center gap-1">
+                <PaymentQr payload={invoice.pay_uri} />
+                {invoice.pay_uri ? (
+                  <span className="max-w-[86px] text-center text-[10px] leading-tight text-text-3">
+                    {strings.checkout.qrHint}
+                  </span>
+                ) : null}
+              </div>
             </div>
 
             {invoice.pay_address ? <PayAddressRow address={invoice.pay_address} /> : null}
@@ -318,6 +329,18 @@ export function CheckoutScreen() {
               take it. */}
           {!seenOnChain ? (
             <div className="mt-3 flex flex-col gap-2">
+              {/* Mobile only, and only where the chain has a link standard. The OS scheme
+                  registry is what opens the wallet; on desktop nothing claims `ethereum:`
+                  and the tap would do nothing at all. Tron has no standard, so the backend
+                  hands back a bare address there and this stays hidden. */}
+              {showWalletLink && invoice.pay_uri ? (
+                <a href={invoice.pay_uri} rel="noopener noreferrer">
+                  <Button variant="primary" block>
+                    {strings.checkout.openInWallet}
+                    <ArrowUpRight size={15} aria-hidden="true" />
+                  </Button>
+                </a>
+              ) : null}
               <Button
                 variant="primary"
                 block

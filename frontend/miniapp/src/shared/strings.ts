@@ -154,6 +154,8 @@ export const strings = {
     manualReviewBody: "Your payment needs manual review. Support has been notified — hang tight.",
     cancelledTitle: "Order cancelled",
     cancelledBody: "This order was cancelled.",
+    qrHint: "Scan with your phone",
+    openInWallet: "Open in wallet",
     iHavePaid: "I've sent the payment",
     iHavePaidWaiting: "Watching the blockchain…",
     seenOnChainTitle: "Payment received",
