@@ -6,6 +6,7 @@ these wrappers wire it to the worker + schedule.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 from typing import Any
 
@@ -97,8 +98,8 @@ async def reconcile_invoices(ctx: dict) -> int:
 async def watch_onchain_deposits(ctx: dict) -> dict[str, int] | None:
     """Scan each configured chain for inbound deposits and finalize matched invoices.
 
-    Inert unless PAYMENT_PROVIDER=onchain. One fresh session per chain (isolation); a
-    failure on one chain is logged and never blocks the others.
+    Inert unless PAYMENT_PROVIDER=onchain. Chains are scanned concurrently, each with
+    its own session, so neither a failure nor a slow RPC on one holds up the rest.
     """
     if settings.payment_provider != "onchain":
         await _beat(ctx, "watch_onchain_deposits")
@@ -109,22 +110,31 @@ async def watch_onchain_deposits(ctx: dict) -> dict[str, int] | None:
     from app.services.payments.onchain.watcher import run_chain_tick
 
     config = get_onchain_config()
-    finalized: dict[str, int] = {}
-    for chain in sorted(config.chains_in_use()):
+
+    async def tick(chain: str) -> tuple[str, int] | None:
         client = build_client(chain, config)
         if client is None:
-            continue
+            return None
         try:
             async with SessionFactory() as s:
                 report = await run_chain_tick(
                     s, client, config=config, max_blocks=chain_max_scan(chain)
                 )
                 await s.commit()
-            finalized[chain] = report.finalized
+            return chain, report.finalized
         except Exception:
             log.exception("onchain.tick_failed", chain=chain)
+            return None
         finally:
             await client.aclose()
+
+    # Concurrently, not one after another. The chains are independent and each gets its
+    # own session, but a sequential loop let the slowest starve the rest: Ethereum's native
+    # scan fetches every block individually, so a tick can outlast the 15s cron interval —
+    # and Solana, sorted after it, would barely be scanned at all. A failure or a timeout
+    # on one chain must cost only that chain.
+    results = await asyncio.gather(*(tick(c) for c in sorted(config.chains_in_use())))
+    finalized: dict[str, int] = dict(r for r in results if r is not None)
     await _beat(ctx, "watch_onchain_deposits")
     return finalized
 
