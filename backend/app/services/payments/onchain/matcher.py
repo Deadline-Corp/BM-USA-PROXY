@@ -37,6 +37,10 @@ class MatchResult:
     # exact | reference | nearest | no_open_invoice | ambiguous | unsupported
     # | exact_match_on_closed_invoice
     reason: str
+    # The closed invoice this deposit exactly matches, when there is one. NOT a match —
+    # nothing is credited — but it says whose money this is, which turns an anonymous
+    # "unmatched" into "order #6 paid too late" for whoever has to sort it out.
+    closed_invoice: Invoice | None = None
 
 
 class PaymentMatcher:
@@ -67,12 +71,9 @@ class PaymentMatcher:
             if inv is not None:
                 return MatchResult(inv, "reference")
 
-        invoices = list(await self.session.scalars(self._base_query(transfer)))
-        if not invoices:
-            return MatchResult(None, "no_open_invoice")
-
         q = _quantum(spec.quote_decimals)
         paid = transfer.amount.quantize(q)
+        invoices = list(await self.session.scalars(self._base_query(transfer)))
 
         # exact amount match (the normal path — buyer pays the quoted amount verbatim)
         exact = [i for i in invoices if Decimal(str(i.crypto_amount)).quantize(q) == paid]
@@ -82,10 +83,15 @@ class PaymentMatcher:
             return MatchResult(None, "ambiguous")
 
         # A deposit whose amount is the exact quote of an invoice that is no longer open
-        # was plainly meant for THAT order. Falling through to the fuzzy pass below would
-        # spend it on somebody else's open invoice: seen in production 2026-08-05, where a
-        # payment for an invoice that had expired 17s earlier closed the next open one as
-        # an "overpayment" and the rightful payer got nothing. Park it for an operator.
+        # was plainly meant for THAT order. Two things depend on knowing that: the fuzzy
+        # pass below must not spend it on somebody else's open invoice (production,
+        # 2026-08-05 — a payment for an invoice that had expired 17s earlier closed the
+        # next open one as an "overpayment"), and a late payment should be recorded as
+        # such instead of as anonymous money.
+        #
+        # Checked BEFORE the "no open invoices at all" exit on purpose: when the buyer's
+        # invoice is the only one there is and it has expired, that list is empty — and an
+        # early return there is exactly the case this is meant to name.
         stale_exact = await self.session.scalar(
             select(Invoice).where(
                 Invoice.provider == "onchain",
@@ -97,7 +103,10 @@ class PaymentMatcher:
             )
         )
         if stale_exact is not None:
-            return MatchResult(None, "exact_match_on_closed_invoice")
+            return MatchResult(None, "exact_match_on_closed_invoice", closed_invoice=stale_exact)
+
+        if not invoices:
+            return MatchResult(None, "no_open_invoice")
 
         # nearest open invoice the amount could satisfy (over/slight-under), unambiguous only
         scored: list[tuple[Decimal, Invoice]] = []

@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from app.models import Invoice, Order, Tariff, User
+from app.models.onchain import OnchainDepositLedger
 from app.services.payments.onchain.chain_client import IncomingTransfer
 from app.services.payments.onchain.matcher import PaymentMatcher
 from scripts.seed import seed_locations, seed_settings, seed_tariffs
@@ -19,7 +20,7 @@ from sqlalchemy import select
 ADDR = "TWatchedAddr11111111111111111111111"
 
 
-async def _invoice(session, *, amount: Decimal, status: str, tag: str) -> Invoice:
+async def _invoice_for(session, *, amount: Decimal, status: str, tag: str) -> tuple[Order, Invoice]:
     tariff = await session.scalar(select(Tariff).where(Tariff.code == "daily"))
     user = User(tg_user_id=abs(hash(tag)) % 9_000_000 + 1000, referral_code=tag.upper()[:12])
     session.add(user)
@@ -39,7 +40,7 @@ async def _invoice(session, *, amount: Decimal, status: str, tag: str) -> Invoic
     )
     session.add(inv)
     await session.flush()
-    return inv
+    return order, inv
 
 
 def _transfer(amount: Decimal) -> IncomingTransfer:
@@ -66,8 +67,8 @@ async def test_payment_for_a_closed_invoice_is_not_spent_on_an_open_one(session)
     got nothing. An amount that exactly matches a closed invoice must be parked instead.
     """
     await _seed(session)
-    await _invoice(session, amount=Decimal("30.618099"), status="expired", tag="closed-one")
-    open_inv = await _invoice(session, amount=Decimal("30.597123"), status="pending", tag="open-one")
+    await _invoice_for(session, amount=Decimal("30.618099"), status="expired", tag="closed-one")
+    _, open_inv = await _invoice_for(session, amount=Decimal("30.597123"), status="pending", tag="open-one")
 
     result = await PaymentMatcher(session).match(_transfer(Decimal("30.618099")))
 
@@ -84,7 +85,7 @@ async def test_a_large_overpayment_does_not_settle_a_small_invoice(session) -> N
     is open at the time — the unique-amount design exists precisely to stop that.
     """
     await _seed(session)
-    small = await _invoice(session, amount=Decimal("30.597123"), status="pending", tag="small-one")
+    _, small = await _invoice_for(session, amount=Decimal("30.597123"), status="pending", tag="small-one")
 
     result = await PaymentMatcher(session).match(_transfer(Decimal("260.000000")))
 
@@ -96,7 +97,7 @@ async def test_a_large_overpayment_does_not_settle_a_small_invoice(session) -> N
 async def test_a_modest_round_up_still_settles_the_invoice(session) -> None:
     """Buyers do round up — the cap must not send every tidy payment to manual review."""
     await _seed(session)
-    inv = await _invoice(session, amount=Decimal("30.597123"), status="pending", tag="round-up")
+    _, inv = await _invoice_for(session, amount=Decimal("30.597123"), status="pending", tag="round-up")
 
     result = await PaymentMatcher(session).match(_transfer(Decimal("30.60")))
 
@@ -106,9 +107,43 @@ async def test_a_modest_round_up_still_settles_the_invoice(session) -> None:
 async def test_the_exact_amount_still_wins(session) -> None:
     """The normal path must be untouched by the new guards."""
     await _seed(session)
-    inv = await _invoice(session, amount=Decimal("30.597123"), status="pending", tag="exact-one")
+    _, inv = await _invoice_for(session, amount=Decimal("30.597123"), status="pending", tag="exact-one")
 
     result = await PaymentMatcher(session).match(_transfer(Decimal("30.597123")))
 
     assert result.reason == "exact"
     assert result.invoice is not None and result.invoice.id == inv.id
+
+
+async def test_a_late_payment_is_recorded_as_expired_rather_than_anonymous(session) -> None:
+    """`expired_deposit` was declared and never written — a late payment looked anonymous.
+
+    The amount is the exact quote of an invoice that timed out, so we know whose money it
+    is. Saying "unmatched" hid the single fact that resolves it fastest.
+    """
+    import json as _json
+
+    from app.services.payments.onchain import load_config
+    from app.services.payments.onchain.ledger import LedgerWriter
+    from app.services.payments.onchain.watcher import process_transfer
+
+    await _seed(session)
+    order, invoice = await _invoice_for(session, amount=Decimal("30.1234"), status="expired",
+                                        tag="late-one")
+    cfg = load_config(
+        _json.dumps([{"asset": "TRX", "network": "native", "address": ADDR}]), "{}"
+    )
+    ledger = LedgerWriter(session)
+    await process_transfer(
+        session, _transfer(Decimal("30.1234")),
+        config=cfg, ledger=ledger, matcher=PaymentMatcher(session),
+    )
+
+    rows = list(
+        await session.scalars(
+            select(OnchainDepositLedger).order_by(OnchainDepositLedger.id)
+        )
+    )
+    assert [r.status for r in rows] == ["detected", "expired_deposit"]
+    assert rows[-1].meta["invoice_id"] == invoice.id
+    assert rows[-1].user_id == order.user_id, "the operator should see whose payment this is"

@@ -189,14 +189,29 @@ async def process_transfer(
     confs = transfer.confirmations
 
     if invoice is None:
-        # first sighting → record it, then park as unmatched (no open invoice claims it)
+        # first sighting → record it, then park it (no open invoice claims it)
         if latest is None:
             await ledger.record_deposit(transfer, "detected", confirmations=confs)
+        # A deposit whose amount is the exact quote of an invoice that timed out is not
+        # anonymous money — we know the order, it simply arrived too late. Saying so beats
+        # a bare "unmatched", which reads as "no idea whose this is" and hides the one fact
+        # that resolves it fastest.
+        closed = result.closed_invoice
+        late = closed is not None and closed.status == "expired"
+        meta: dict = {"reason": result.reason}
+        user_id = None
+        if closed is not None:
+            meta["invoice_id"] = closed.id
+            user_id = await _order_user_id(session, closed.order_id)
         await ledger.record_deposit(
-            transfer, "unmatched", confirmations=confs, meta={"reason": result.reason}
+            transfer,
+            "expired_deposit" if late else "unmatched",
+            confirmations=confs,
+            user_id=user_id,
+            meta=meta,
         )
         log.warning(
-            "onchain.unmatched",
+            "onchain.expired_deposit" if late else "onchain.unmatched",
             chain=transfer.chain,
             txid=transfer.txid,
             amount=str(transfer.amount),
