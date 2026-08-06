@@ -1224,9 +1224,15 @@ async def manual_review_orders(admin: CurrentAdmin, session: DbSession) -> dict[
 
 
 # ── on-chain deposit ledger (observability + audit; append-only, doc 15) ──
-def _ledger_view(row: OnchainDepositLedger, *, user_display: str | None) -> dict[str, Any]:
+def _ledger_view(
+    row: OnchainDepositLedger, *, user_display: str | None, is_current: bool = True
+) -> dict[str, Any]:
     return {
         "id": str(row.id),
+        # Is this row the deposit's *current* state, or a historical snapshot? The ledger
+        # is append-only, so a row that once said "unmatched" says so forever — offering
+        # "Resolve" on it after the deposit was settled just produces a 409.
+        "is_current": is_current,
         "created_at": row.created_at.isoformat(),
         "status": row.status,
         "chain": row.chain,
@@ -1279,7 +1285,28 @@ async def list_deposit_ledger(
     total = int(await session.scalar(count_stmt) or 0)
     rows = (await session.execute(stmt.limit(limit).offset(offset))).scalars().all()
     user_display_map = await _user_display_map(session, [r.user_id for r in rows])
-    items = [_ledger_view(r, user_display=user_display_map.get(r.user_id)) for r in rows]
+    # Newest row per (txid, log_index) among the ones on this page's transactions — the
+    # deposit's current state. Anything older is history and must not offer actions.
+    current_ids: set[int] = set()
+    if rows:
+        latest = await session.execute(
+            select(
+                OnchainDepositLedger.txid,
+                OnchainDepositLedger.log_index,
+                func.max(OnchainDepositLedger.id),
+            )
+            .where(OnchainDepositLedger.txid.in_({r.txid for r in rows}))
+            .group_by(OnchainDepositLedger.txid, OnchainDepositLedger.log_index)
+        )
+        current_ids = {int(row_id) for _, _, row_id in latest}
+    items = [
+        _ledger_view(
+            r,
+            user_display=user_display_map.get(r.user_id),
+            is_current=r.id in current_ids,
+        )
+        for r in rows
+    ]
     return {"items": items, "total": total}
 
 

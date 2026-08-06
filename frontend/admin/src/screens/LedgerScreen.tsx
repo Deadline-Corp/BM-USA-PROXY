@@ -114,7 +114,10 @@ export function LedgerScreen() {
         header: strings.ledger.colAction,
         id: "resolve",
         cell: ({ row }) =>
-          RESOLVABLE.includes(row.original.status) ? (
+          // `is_current` matters as much as the status: an old "unmatched" row keeps that
+          // word forever, and offering Resolve on it after the deposit was settled only
+          // produces a 409 the operator cannot act on.
+          row.original.is_current && RESOLVABLE.includes(row.original.status) ? (
             <button
               type="button"
               className="rounded border border-warning/50 px-2 py-1 text-[.75rem] font-medium text-warning transition-colors hover:bg-warning/10"

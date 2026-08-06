@@ -271,6 +271,12 @@ export interface DepositCandidates {
 
 export interface DepositLedgerEntry {
   id: string;
+  /**
+   * Whether this row is the deposit's current state rather than a historical snapshot.
+   * The ledger is append-only: a row that once said "unmatched" says so forever, so
+   * actions must key off this and not off the row's own status.
+   */
+  is_current: boolean;
   created_at: string;
   status: string;
   chain: string;
