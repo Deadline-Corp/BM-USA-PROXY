@@ -1224,10 +1224,15 @@ async def manual_review_orders(admin: CurrentAdmin, session: DbSession) -> dict[
 
 
 # ── on-chain deposit ledger (observability + audit; append-only, doc 15) ──
-# Deposit states still waiting for a human decision — the operator's actual queue.
-# Kept next to the ledger helpers so the badge, the filter and the Resolve button in the
-# admin cannot drift apart.
-_RESOLVABLE_LEDGER_STATUSES = ("unmatched", "underpaid", "expired_deposit", "orphaned")
+# Deposits still waiting for a human decision — the operator's actual queue, and what the
+# "Unmatched" badge counts.
+#
+# `orphaned` is deliberately absent: it is what a write-off produces, so it means the
+# decision has been made. Counting it kept a resolved deposit in the queue forever, which
+# is the same "it never goes down" problem the badge already had for another reason.
+# Reversing a write-off is still possible (see manual_resolution._RESOLVABLE) — that is a
+# capability, not outstanding work.
+_NEEDS_DECISION_STATUSES = ("unmatched", "underpaid", "expired_deposit")
 
 
 def _latest_ledger_ids() -> Select[tuple[int]]:
@@ -1469,7 +1474,7 @@ async def deposit_ledger_summary(admin: CurrentAdmin, session: DbSession) -> dic
                 select(func.count())
                 .select_from(OnchainDepositLedger)
                 .where(
-                    OnchainDepositLedger.status.in_(_RESOLVABLE_LEDGER_STATUSES),
+                    OnchainDepositLedger.status.in_(_NEEDS_DECISION_STATUSES),
                     OnchainDepositLedger.id.in_(_latest_ledger_ids()),
                 )
             )

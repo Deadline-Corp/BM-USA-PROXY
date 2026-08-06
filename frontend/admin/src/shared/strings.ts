@@ -203,6 +203,7 @@ export const strings = {
     viewCurrent: "Current state",
     viewHistory: "Full history",
     resolve: "Resolve",
+    reopen: "Reopen",
     resolveTitle: "Resolve deposit",
     attachLabel: "Credit it to an order",
     attachPlaceholder: "…or paste an order public id",

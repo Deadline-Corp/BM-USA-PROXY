@@ -123,19 +123,30 @@ export function LedgerScreen() {
         // about it — the operator could see the problem and not act on it.
         header: strings.ledger.colAction,
         id: "resolve",
-        cell: ({ row }) =>
+        cell: ({ row }) => {
           // `is_current` matters as much as the status: an old "unmatched" row keeps that
           // word forever, and offering Resolve on it after the deposit was settled only
           // produces a 409 the operator cannot act on.
-          row.original.is_current && RESOLVABLE.includes(row.original.status) ? (
+          if (!row.original.is_current || !RESOLVABLE.includes(row.original.status)) return null;
+          // A written-off deposit is already decided. Reopening it stays possible — a
+          // write-off can be a mistake — but it is not outstanding work, so it must not
+          // wear the same "needs attention" styling as a genuinely stuck payment.
+          const decided = row.original.status === "orphaned";
+          return (
             <button
               type="button"
-              className="rounded border border-warning/50 px-2 py-1 text-[.75rem] font-medium text-warning transition-colors hover:bg-warning/10"
+              className={
+                "rounded border px-2 py-1 text-[.75rem] font-medium transition-colors " +
+                (decided
+                  ? "border-border text-text-3 hover:bg-surface-2"
+                  : "border-warning/50 text-warning hover:bg-warning/10")
+              }
               onClick={() => setResolving(row.original)}
             >
-              {strings.ledger.resolve}
+              {decided ? strings.ledger.reopen : strings.ledger.resolve}
             </button>
-          ) : null,
+          );
+        },
       },
     ],
     [],
