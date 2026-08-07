@@ -21,7 +21,7 @@ import { CountdownBadge } from "../shared/components/CountdownBadge";
 import { ErrorState } from "../shared/components/ErrorState";
 import { useCopyToClipboard } from "../shared/hooks/useCopyToClipboard";
 import { formatCryptoAmount, formatUsd } from "../shared/lib/format";
-import { isMobilePlatform, isWalletDeepLink } from "../shared/lib/platform";
+import { canOpenWalletLink, isWalletDeepLink } from "../shared/lib/platform";
 import { readCachedInvoice } from "../shared/lib/invoiceCache";
 import type { OrderStatus } from "../shared/api/types";
 
@@ -234,7 +234,7 @@ export function CheckoutScreen() {
   // running after the deposit lands suggests the payment could still time out. It cannot:
   // a matched invoice is no longer expired by the sweeper.
   const showCountdown = stillAwaiting && !seenOnChain && Boolean(invoice?.expires_at);
-  const showWalletLink = isMobilePlatform() && isWalletDeepLink(invoice?.pay_uri);
+  const showWalletLink = canOpenWalletLink() && isWalletDeepLink(invoice?.pay_uri);
 
   return (
     <div className="flex flex-col">
@@ -329,10 +329,13 @@ export function CheckoutScreen() {
               take it. */}
           {!seenOnChain ? (
             <div className="mt-3 flex flex-col gap-2">
-              {/* Mobile only, and only where the chain has a link standard. The OS scheme
-                  registry is what opens the wallet; on desktop nothing claims `ethereum:`
-                  and the tap would do nothing at all. Tron has no standard, so the backend
-                  hands back a bare address there and this stays hidden. */}
+              {/* Withheld inside the Telegram client, where this button used to kill the
+                  mini app outright: its Android WebView answers an `ethereum:` navigation
+                  with ERR_UNKNOWN_URL_SCHEME instead of handing the scheme to the OS, and
+                  the buyer loses the payment screen. Also hidden on desktop (nothing
+                  claims the scheme) and on Tron (no link standard — the backend returns a
+                  bare address). What remains everywhere is copy-address and copy-amount,
+                  which is what actually gets people paid. */}
               {showWalletLink && invoice.pay_uri ? (
                 <a href={invoice.pay_uri} rel="noopener noreferrer">
                   <Button variant="primary" block>
