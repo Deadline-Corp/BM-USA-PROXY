@@ -142,22 +142,62 @@ export function PackagesScreen() {
       {
         id: "actions",
         header: "",
-        cell: ({ row }) => (
-          <div className="flex items-center gap-1.5 justify-end" onClick={(e) => e.stopPropagation()}>
-            <Button variant="quiet" size="sm" onClick={() => openAction(row.original, "extend")}>
-              {strings.packages.extend}
-            </Button>
-            <Button variant="quiet" size="sm" onClick={() => openAction(row.original, "rotate")}>
-              <IconRotate className="w-3.5 h-3.5" />
-            </Button>
-            <Button variant="quiet" size="sm" onClick={() => openAction(row.original, "reissue")}>
-              {strings.packages.reissue}
-            </Button>
-            <Button variant="danger" size="sm" onClick={() => openAction(row.original, "revoke")}>
-              {strings.packages.revoke}
-            </Button>
-          </div>
-        ),
+        cell: ({ row }) => {
+          // An offered button is a claim that the action applies. On a revoked access
+          // none of these three did: revoking again wrote a second "revoked" event for a
+          // transition that never happened, extending moved the expiry of something still
+          // unusable and told the customer it had been extended, and rotating reached
+          // through to a connection that revocation had already freed — quite possibly
+          // sold to someone else by then, whose live IP would change under them.
+          // Each flag mirrors the matching guard in provisioning.lifecycle exactly, so a
+          // greyed-out button means precisely "the API would refuse this" — no more and
+          // no less. Guessing wider here quietly removes capability: revoking an expired
+          // access is worth keeping, since it forces the provisioner-side cleanup.
+          const status = row.original.status;
+          const live = status === "active" || status === "expiring";
+          const can = {
+            // `expired` is extendable on purpose — the backend resurrects it.
+            extend: !["revoked", "cancelled", "failed"].includes(status),
+            rotate: live,
+            // Reissue is the way *back* from revoked, so it stays available there.
+            reissue: true,
+            revoke: status !== "revoked",
+          };
+          return (
+            <div className="flex items-center gap-1.5 justify-end" onClick={(e) => e.stopPropagation()}>
+              <Button
+                variant="quiet"
+                size="sm"
+                disabled={!can.extend}
+                title={can.extend ? undefined : strings.packages.cannotExtend}
+                onClick={() => openAction(row.original, "extend")}
+              >
+                {strings.packages.extend}
+              </Button>
+              <Button
+                variant="quiet"
+                size="sm"
+                disabled={!can.rotate}
+                title={can.rotate ? strings.packages.rotateIp : strings.packages.cannotRotate}
+                onClick={() => openAction(row.original, "rotate")}
+              >
+                <IconRotate className="w-3.5 h-3.5" />
+              </Button>
+              <Button variant="quiet" size="sm" onClick={() => openAction(row.original, "reissue")}>
+                {strings.packages.reissue}
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={!can.revoke}
+                title={can.revoke ? undefined : strings.packages.cannotRevoke}
+                onClick={() => openAction(row.original, "revoke")}
+              >
+                {strings.packages.revoke}
+              </Button>
+            </div>
+          );
+        },
       },
     ],
     [],

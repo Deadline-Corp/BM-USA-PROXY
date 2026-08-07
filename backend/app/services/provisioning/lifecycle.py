@@ -74,6 +74,11 @@ async def provision_access(session: AsyncSession, *, order: Order) -> Access:
 async def revoke_access(
     session: AsyncSession, *, access: Access, reason: str, actor: str = "system"
 ) -> None:
+    # Revoking twice is not a harmless no-op: it appends a second `revoked` AccessEvent
+    # describing a transition that never happened, and the event log is what anyone
+    # reconstructing "what did we do to this customer" reads afterwards.
+    if access.status == "revoked":
+        raise Conflict("access is already revoked")
     if access.iproxy_access_id:
         conn = await session.get(Connection, access.connection_id)
         if conn is not None:
@@ -92,6 +97,12 @@ async def revoke_access(
 
 
 async def extend_access(session: AsyncSession, *, access: Access, minutes: int) -> None:
+    # `expired` is deliberately allowed — the branch below resurrects it. A revoked or
+    # failed access is different: nothing here flips it back, so extending only pushed
+    # out the expiry of something still unusable and told the customer, by notification,
+    # that their access had been extended. Reissue is the action that revives one.
+    if access.status in ("revoked", "cancelled", "failed"):
+        raise Conflict(f"a {access.status} access cannot be extended — reissue it instead")
     base = access.expires_at or _utcnow()
     if base < _utcnow():
         base = _utcnow()
@@ -109,6 +120,12 @@ async def extend_access(session: AsyncSession, *, access: Access, minutes: int) 
 
 
 async def rotate_ip(session: AsyncSession, *, access: Access, actor: str = "user") -> None:
+    # This rotates the *connection*, not the access — and revoking an access frees its
+    # connection to be sold to somebody else. Rotating through a dead access would then
+    # reach into a different customer's live proxy and change their IP under them. The
+    # buyer's own app has always checked this; the admin console did not.
+    if access.status not in ("active", "expiring"):
+        raise Conflict("only a live access can have its IP rotated")
     conn = await session.get(Connection, access.connection_id)
     if conn is None:
         raise ProvisioningError("connection missing")

@@ -145,6 +145,9 @@ export const strings = {
     rotateIpConfirm: "Rotate the IP for this access now?",
     reissue: "Reissue",
     reissueConnection: "New connection (optional)",
+    cannotRevoke: "Already revoked — nothing left to revoke",
+    cannotExtend: "This access is no longer usable — reissue it instead of extending it",
+    cannotRotate: "Only a live access has a connection to rotate",
   },
   requests: {
     title: "Requests",
