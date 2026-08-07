@@ -1248,8 +1248,24 @@ def _latest_ledger_ids() -> Select[tuple[int]]:
     )
 
 
+def _parse_day(value: str) -> datetime:
+    """A ``YYYY-MM-DD`` filter bound as midnight UTC.
+
+    Rejects garbage rather than ignoring it: a dropped date filter returns the unfiltered
+    list, and the operator reads that as the answer to the question they asked.
+    """
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=UTC)
+    except ValueError:
+        raise ValidationError(f"Invalid date '{value}', expected YYYY-MM-DD") from None
+
+
 def _ledger_view(
-    row: OnchainDepositLedger, *, user_display: str | None, is_current: bool = True
+    row: OnchainDepositLedger,
+    *,
+    user_display: str | None,
+    is_current: bool = True,
+    order_public_id: str | None = None,
 ) -> dict[str, Any]:
     return {
         "id": str(row.id),
@@ -1271,6 +1287,10 @@ def _ledger_view(
         "confirmations": row.confirmations,
         "block_number": row.block_number,
         "invoice_id": str(row.invoice_id) if row.invoice_id is not None else None,
+        # The identifier an operator can actually act on: the buyer sees it, the Orders
+        # screen finds it, and the resolve dialog takes it. `invoice_id` is an internal
+        # primary key with nowhere to look it up.
+        "order_public_id": order_public_id,
         "user": user_display,
         "user_id": str(row.user_id) if row.user_id is not None else None,
     }
@@ -1282,18 +1302,29 @@ async def list_deposit_ledger(
     session: DbSession,
     status: str | None = None,
     chain: str | None = None,
+    asset: str | None = None,
     invoice_id: int | None = None,
     txid: str | None = None,
+    q: str | None = None,
+    since: str | None = None,
+    before: str | None = None,
+    sort: str = "created_at",
+    order: str = "desc",
     current_only: bool = True,
     limit: int = 50,
     offset: int = 0,
 ) -> dict[str, Any]:
-    """On-chain deposit ledger.
+    """On-chain deposit ledger — filtered and sorted server-side.
 
     ``current_only`` (default) collapses each transfer to its newest row — what an
     operator means by "show me the unmatched ones". Without it, filtering by a status
     returns every row that ever held it, so a deposit resolved an hour ago still shows up
     under Unmatched forever. Turn it off for the full append-only audit trail.
+
+    Everything else exists for one job: after a year of transfers, answering "a customer
+    is asking about a payment from three months ago". Scrolling is not an answer, so the
+    lookups a person actually has to hand — a transaction hash, an address, a date range —
+    all filter here rather than in the browser over one page of rows.
     """
     stmt = select(OnchainDepositLedger)
     count_stmt = select(func.count()).select_from(OnchainDepositLedger)
@@ -1304,16 +1335,44 @@ async def list_deposit_ledger(
         conds.append(OnchainDepositLedger.status == status)
     if chain:
         conds.append(OnchainDepositLedger.chain == chain)
+    if asset:
+        conds.append(OnchainDepositLedger.asset == asset)
     if invoice_id:
         conds.append(OnchainDepositLedger.invoice_id == invoice_id)
     if txid:
         conds.append(OnchainDepositLedger.txid == txid)
+    if since:
+        conds.append(OnchainDepositLedger.created_at >= _parse_day(since))
+    if before:
+        # inclusive end-of-day: a person picking "to 5 Aug" means through the 5th
+        conds.append(OnchainDepositLedger.created_at < _parse_day(before) + timedelta(days=1))
+    if q:
+        # One box for the three things anyone actually pastes: a transaction hash, the
+        # address it came from, or the address it went to. Separate inputs per column
+        # would make the operator guess which one they are holding.
+        needle = f"%{q.strip()}%"
+        conds.append(
+            or_(
+                OnchainDepositLedger.txid.ilike(needle),
+                OnchainDepositLedger.from_address.ilike(needle),
+                OnchainDepositLedger.to_address.ilike(needle),
+            )
+        )
     for cond in conds:
         stmt = stmt.where(cond)
         count_stmt = count_stmt.where(cond)
-    stmt = stmt.order_by(
-        OnchainDepositLedger.created_at.desc(), OnchainDepositLedger.id.desc()
-    )
+
+    sort_col = {
+        "created_at": OnchainDepositLedger.created_at,
+        "amount": OnchainDepositLedger.amount,
+        "amount_usd": OnchainDepositLedger.amount_usd,
+        "status": OnchainDepositLedger.status,
+        "chain": OnchainDepositLedger.chain,
+    }.get(sort, OnchainDepositLedger.created_at)
+    direction = sort_col.asc() if order == "asc" else sort_col.desc()
+    # id as the tiebreaker: rows written in the same transaction share created_at exactly,
+    # and without it their order shifts between pages and rows get skipped or repeated.
+    stmt = stmt.order_by(direction, OnchainDepositLedger.id.desc())
     limit, offset = _page(limit, offset)
     total = int(await session.scalar(count_stmt) or 0)
     rows = (await session.execute(stmt.limit(limit).offset(offset))).scalars().all()
@@ -1332,11 +1391,24 @@ async def list_deposit_ledger(
             .group_by(OnchainDepositLedger.txid, OnchainDepositLedger.log_index)
         )
         current_ids = {int(row_id) for _, _, row_id in latest}
+    # invoice id -> the order's public id, in one query for the whole page. The ledger
+    # stores the invoice, but the invoice number means nothing to anyone: the buyer quotes
+    # an order id, the Orders screen searches by it, and the resolve dialog accepts it.
+    order_ids: dict[int, str] = {}
+    invoice_ids = {r.invoice_id for r in rows if r.invoice_id is not None}
+    if invoice_ids:
+        pairs = await session.execute(
+            select(Invoice.id, Order.public_id)
+            .join(Order, Order.id == Invoice.order_id)
+            .where(Invoice.id.in_(invoice_ids))
+        )
+        order_ids = {int(inv_id): str(pub) for inv_id, pub in pairs}
     items = [
         _ledger_view(
             r,
             user_display=user_display_map.get(r.user_id),
             is_current=r.id in current_ids,
+            order_public_id=order_ids.get(r.invoice_id) if r.invoice_id else None,
         )
         for r in rows
     ]

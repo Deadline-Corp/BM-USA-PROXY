@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest_asyncio
@@ -151,6 +151,95 @@ async def test_onchain_ledger_endpoints(engine, raw_client: AsyncClient) -> None
 
     del raw_client.headers["Authorization"]
     assert (await raw_client.get("/api/admin/payments/ledger")).status_code == 401
+
+
+async def test_ledger_filters_sorting_and_order_id(engine, raw_client: AsyncClient) -> None:
+    """The lookups an operator performs on a customer's three-month-old payment.
+
+    Scrolling is not a search, so each of these has to narrow on the server: by coin, by
+    the hash or address pasted from a support chat, by date range, and by amount. The
+    order id is checked too — it is the only identifier on this screen the customer can
+    quote back.
+    """
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from app.models import Invoice, Order, Tariff, User
+
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with maker() as s:
+        user = (await s.execute(select(User).limit(1))).scalars().first()
+        tariff = (await s.execute(select(Tariff).limit(1))).scalars().first()
+        assert user is not None and tariff is not None
+
+        order = Order(
+            user_id=user.id, tariff_id=tariff.id, tariff_code=tariff.code,
+            amount_usd=Decimal("30.00"), status="paid",
+        )
+        s.add(order)
+        await s.flush()
+        invoice = Invoice(
+            order_id=order.id, provider="onchain", provider_invoice_id="inv-ledger-1",
+            status="paid", amount_usd=Decimal("30.00"), crypto_currency="USDC",
+            crypto_network="spl", crypto_amount=Decimal("30.000123"), pay_address="SolTo",
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+        )
+        s.add(invoice)
+        await s.flush()
+
+        # Three rows spread across coins, dates, amounts and counterparties.
+        s.add(OnchainDepositLedger(
+            status="paid", chain="solana", asset="USDC", network="spl", txid="sig-aaa",
+            from_address="PayerAlpha", to_address="SolTo", amount=Decimal("30.000123"),
+            confirmations=1, invoice_id=invoice.id, user_id=user.id,
+            observed_at=datetime.now(UTC), created_at=datetime(2026, 3, 14, 12, 0, tzinfo=UTC),
+        ))
+        s.add(OnchainDepositLedger(
+            status="unmatched", chain="tron", asset="USDT", network="trc20", txid="hash-bbb",
+            from_address="PayerBeta", to_address="TronTo", amount=Decimal("5.5"),
+            confirmations=25, observed_at=datetime.now(UTC),
+            created_at=datetime(2026, 6, 1, 9, 0, tzinfo=UTC),
+        ))
+        s.add(OnchainDepositLedger(
+            status="paid", chain="solana", asset="SOL", network="native", txid="sig-ccc",
+            from_address="PayerGamma", to_address="SolTo", amount=Decimal("1.25"),
+            confirmations=1, observed_at=datetime.now(UTC),
+            created_at=datetime(2026, 6, 20, 9, 0, tzinfo=UTC),
+        ))
+        await s.commit()
+
+    token = await _login(raw_client)
+    raw_client.headers["Authorization"] = f"Bearer {token}"
+    base = "/api/admin/payments/ledger"
+
+    async def rows(**params):
+        return (await raw_client.get(base, params=params)).json()["items"]
+
+    # by coin — SOL and USDC are both on Solana, so the chain filter cannot do this
+    assert [r["txid"] for r in await rows(asset="USDC")] == ["sig-aaa"]
+
+    # free-text hits the hash and either address, which is what gets pasted from a chat
+    assert [r["txid"] for r in await rows(q="hash-bbb")] == ["hash-bbb"]
+    assert [r["txid"] for r in await rows(q="PayerGamma")] == ["sig-ccc"]
+    assert {r["txid"] for r in await rows(q="SolTo")} == {"sig-aaa", "sig-ccc"}
+
+    # date range, end-inclusive: "to 1 June" must include the 1st, not stop before it
+    march_only = await rows(since="2026-03-01", before="2026-03-31")
+    assert [r["txid"] for r in march_only] == ["sig-aaa"]
+    assert [r["txid"] for r in await rows(since="2026-06-01", before="2026-06-01")] == ["hash-bbb"]
+
+    # sorting runs over the whole set, not the page the browser happens to hold
+    assert [r["txid"] for r in await rows(sort="amount", order="asc")][0] == "sig-ccc"
+    assert [r["txid"] for r in await rows(sort="amount", order="desc")][0] == "sig-aaa"
+    assert [r["txid"] for r in await rows(sort="created_at", order="asc")][0] == "sig-aaa"
+
+    # the order id the buyer quotes, resolved through the invoice
+    matched = (await rows(q="sig-aaa"))[0]
+    assert matched["order_public_id"] == str(order.public_id)
+    assert (await rows(q="hash-bbb"))[0]["order_public_id"] is None
+
+    # a malformed date must not be dropped in silence — an unfiltered list reads as an answer
+    assert (await raw_client.get(base, params={"since": "14.03.2026"})).status_code == 422
 
 
 async def test_referral_commission_is_settable_from_admin(raw_client: AsyncClient) -> None:

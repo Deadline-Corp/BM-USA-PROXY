@@ -1,12 +1,17 @@
 import { flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
-import type { ColumnDef } from "@tanstack/react-table";
+import type { ColumnDef, OnChangeFn, SortingState } from "@tanstack/react-table";
 import type { ReactNode } from "react";
 import clsx from "clsx";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { ErrorState } from "@/shared/components/ErrorState";
 import { TableSkeleton } from "@/shared/components/Skeleton";
 import { Button } from "@/shared/components/Button";
-import { IconChevronLeft, IconChevronRight } from "@/shared/components/icons";
+import {
+  IconArrowDown,
+  IconArrowUp,
+  IconChevronLeft,
+  IconChevronRight,
+} from "@/shared/components/icons";
 
 interface DataTableProps<T> {
   columns: ColumnDef<T, any>[];
@@ -24,6 +29,27 @@ interface DataTableProps<T> {
   /** Rendered above the table — search box, select filters, etc. */
   toolbar?: ReactNode;
   getRowId?: (row: T) => string;
+  /**
+   * Current sort, for screens that sort server-side. Pass this together with
+   * `onSortingChange` to make headers clickable; columns then opt out individually with
+   * `enableSorting: false`. Omit both and the table behaves exactly as before.
+   *
+   * Sorting is never done in the browser here: the table only ever holds one page, so
+   * client-side sorting would reorder 50 rows and call it "sorted by amount".
+   */
+  sorting?: SortingState;
+  onSortingChange?: OnChangeFn<SortingState>;
+}
+
+/** The sort direction on a header, including "sortable but not sorted".
+ *
+ * The idle state is drawn rather than left blank: a header that only sprouts an arrow
+ * after you click it gives no hint that clicking does anything.
+ */
+function SortGlyph({ direction }: { direction: false | "asc" | "desc" }) {
+  if (direction === "asc") return <IconArrowUp className="w-3 h-3 text-accent" />;
+  if (direction === "desc") return <IconArrowDown className="w-3 h-3 text-accent" />;
+  return <IconArrowDown className="w-3 h-3 opacity-30" />;
 }
 
 /** Server-side paginated table wrapper around TanStack Table. Every list
@@ -44,12 +70,22 @@ export function DataTable<T>({
   emptyHint,
   toolbar,
   getRowId,
+  sorting,
+  onSortingChange,
 }: DataTableProps<T>) {
+  const sortable = onSortingChange !== undefined;
   const table = useReactTable({
     data,
     columns,
     getCoreRowModel: getCoreRowModel(),
     getRowId: getRowId as ((row: T) => string) | undefined,
+    manualSorting: true,
+    enableSorting: sortable,
+    // No third "unsorted" click: the server always applies some order, so removing the
+    // sort would silently snap back to the default while the header showed no direction.
+    enableSortingRemoval: false,
+    state: sorting ? { sorting } : {},
+    onSortingChange,
   });
 
   const page = Math.floor(offset / limit) + 1;
@@ -78,9 +114,18 @@ export function DataTable<T>({
                       key={header.id}
                       className="text-left text-[.7rem] uppercase tracking-[.08em] text-text-3 font-semibold px-[14px] py-2.5 border-b border-border whitespace-nowrap"
                     >
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(header.column.columnDef.header, header.getContext())}
+                      {header.isPlaceholder ? null : header.column.getCanSort() ? (
+                        <button
+                          type="button"
+                          onClick={header.column.getToggleSortingHandler()}
+                          className="inline-flex items-center gap-1 uppercase tracking-[.08em] font-semibold hover:text-text-2 transition-colors duration-150 ease-brand"
+                        >
+                          {flexRender(header.column.columnDef.header, header.getContext())}
+                          <SortGlyph direction={header.column.getIsSorted()} />
+                        </button>
+                      ) : (
+                        flexRender(header.column.columnDef.header, header.getContext())
+                      )}
                     </th>
                   ))}
                 </tr>

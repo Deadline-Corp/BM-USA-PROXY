@@ -291,6 +291,12 @@ export interface DepositLedgerEntry {
   confirmations: number;
   block_number: number | null;
   invoice_id: string | null;
+  /**
+   * The order the buyer sees, resolved from the invoice. This — not `invoice_id` — is
+   * what a customer quotes, what the Orders screen searches by, and what the resolve
+   * dialog accepts.
+   */
+  order_public_id: string | null;
   user: string | null;
   user_id: string | null;
 }
