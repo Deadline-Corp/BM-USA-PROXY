@@ -58,10 +58,12 @@ def create_app() -> FastAPI:
         return response
 
     from app.api.health import router as health_router
+    from app.api.pay import router as pay_router
     from app.api.twa.router import router as twa_router
     from app.api.webhooks import router as webhooks_router
 
     app.include_router(health_router)
+    app.include_router(pay_router)
     app.include_router(twa_router)
     app.include_router(webhooks_router)
 
@@ -86,13 +88,35 @@ def _mount_spas(app: FastAPI) -> None:
     from starlette.types import Scope
 
     class SPAStaticFiles(StaticFiles):
+        """Serve the SPA, and be explicit about what may be cached.
+
+        Starlette sends only an ETag and leaves the policy to the client's heuristics — and
+        a Telegram WebView's heuristics hold the entry document long enough that a deploy
+        does not reach the buyer at all. That failure is invisible from our side: the new
+        bundle is on the server, verified by hash, while the phone still runs the old one.
+
+        Vite fingerprints every asset filename, so assets are safe to keep forever and the
+        document naming them must be revalidated every time. `no-cache` means "ask first",
+        not "don't store" — the ETag turns that question into a free 304.
+        """
+
         async def get_response(self, path: str, scope: Scope) -> Response:
+            served = path
             try:
-                return await super().get_response(path, scope)
+                response = await super().get_response(path, scope)
             except StarletteHTTPException as exc:
-                if exc.status_code == 404:
-                    return await super().get_response("index.html", scope)
-                raise
+                if exc.status_code != 404:
+                    raise
+                served = "index.html"
+                response = await super().get_response("index.html", scope)
+            # Keyed on what was actually served, not what was asked for: a missing
+            # `assets/…` file falls back to the HTML, and marking that immutable would
+            # pin a stale document under an asset URL for a year.
+            if served.startswith("assets/"):
+                response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            else:
+                response.headers["Cache-Control"] = "no-cache"
+            return response
 
     for mount, name in (("/app", "miniapp"), ("/admin", "admin")):
         for root in (f"../frontend/{name}/dist", f"/static/{name}"):
