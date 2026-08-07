@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter
@@ -20,6 +19,7 @@ from app.services import payouts as payouts_svc
 from app.services import settings as settings_svc
 from app.services import users as users_svc
 from app.services.notifications import enqueue
+from app.services.payments.invoice_links import invoice_pay_uri, invoice_qr_payload
 from app.services.provisioning.lifecycle import rotate_ip, swap_access
 from app.services.ratelimit_helpers import order_guard  # thin wrapper, defined below
 
@@ -119,39 +119,17 @@ async def payment_methods() -> dict[str, Any]:
     return {"methods": out}
 
 
-def _invoice_qr(inv: Invoice) -> str | None:
-    """Wallet deep link (or bare address) to encode in the checkout QR."""
-    if not inv.pay_address or inv.crypto_amount is None:
-        return None
-    if not inv.crypto_currency or not inv.crypto_network:
-        return inv.pay_address
-    from app.services.payments.onchain.assets import find_spec
-    from app.services.payments.onchain.config import get_onchain_config
-    from app.services.payments.onchain.payment_uri import qr_payload
-
-    spec = find_spec(inv.crypto_currency, inv.crypto_network)
-    if spec is None:
-        return inv.pay_address
-    try:
-        cfg = get_onchain_config()
-        # a per-rail override (testnet contract) changes the token in the deep link
-        method = cfg.method(inv.crypto_currency, inv.crypto_network)
-        return qr_payload(
-            spec=method.spec if method else spec,
-            to_address=inv.pay_address,
-            amount=Decimal(str(inv.crypto_amount)),
-            network=cfg.network,
-            # Solana only. Carrying it lets the watcher recognise the invoice from the
-            # transaction itself instead of matching on the amount alone.
-            reference=inv.reference_pubkey,
-        )
-    except Exception:  # config not loaded / malformed — the address alone still works
-        return inv.pay_address
-
-
-def _invoice_view(inv: Invoice | None) -> dict[str, Any] | None:
+def _invoice_view(inv: Invoice | None, order_public_id: str | None = None) -> dict[str, Any] | None:
     if inv is None:
         return None
+    # Only offer the hand-off when there is a scheme to hand off to. On Tron the builder
+    # returns None and the button must stay hidden rather than open a page apologising.
+    wallet_uri = invoice_pay_uri(inv)
+    pay_open_url = (
+        f"{settings.public_base_url}/pay/{order_public_id}"
+        if wallet_uri and order_public_id
+        else None
+    )
     return {
         "provider": inv.provider,
         "status": inv.status,
@@ -163,7 +141,11 @@ def _invoice_view(inv: Invoice | None) -> dict[str, Any] | None:
         # toFixed(6) on the client — the buyer then paid an amount that never matched.
         "crypto_amount": str(inv.crypto_amount) if inv.crypto_amount is not None else None,
         "pay_address": inv.pay_address,
-        "pay_uri": _invoice_qr(inv),
+        "pay_uri": invoice_qr_payload(inv),
+        # An https URL that redirects into the wallet scheme. Inside Telegram the mini app
+        # cannot navigate to `ethereum:` itself — it opens this through the client instead,
+        # in a real browser, which is where the OS wallet chooser comes from.
+        "pay_open_url": pay_open_url,
         "payment_url": inv.payment_url,
         "expires_at": inv.expires_at.isoformat(),
     }
@@ -180,7 +162,7 @@ async def create_order(body: CreateOrder, user: CurrentUser, session: DbSession)
     return {
         "order": {"public_id": str(order.public_id), "status": order.status,
                   "amount_usd": float(order.amount_usd)},
-        "invoice": _invoice_view(invoice),
+        "invoice": _invoice_view(invoice, str(order.public_id)),
     }
 
 
@@ -216,7 +198,7 @@ async def list_active_orders(user: CurrentUser, session: DbSession) -> dict[str,
                 "tariff_code": order.tariff_code,
                 "amount_usd": float(order.amount_usd),
                 "created_at": order.created_at.isoformat() if order.created_at else None,
-                "invoice": _invoice_view(inv),
+                "invoice": _invoice_view(inv, str(order.public_id)),
             }
         )
     return {"orders": out}
@@ -238,7 +220,7 @@ async def order_status(public_id: str, user: CurrentUser, session: DbSession) ->
         "access_public_id": access_pid,
         # Payment details, so the checkout screen survives a reload or a reopened mini app
         # instead of depending on sessionStorage written at order-creation time.
-        "invoice": _invoice_view(inv),
+        "invoice": _invoice_view(inv, str(order.public_id)),
     }
 
 
@@ -321,7 +303,7 @@ async def extend(public_id: str, body: ExtendBody, user: CurrentUser, session: D
     return {
         "order": {"public_id": str(order.public_id), "status": order.status,
                   "amount_usd": float(order.amount_usd)},
-        "invoice": _invoice_view(invoice),
+        "invoice": _invoice_view(invoice, str(order.public_id)),
     }
 
 

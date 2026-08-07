@@ -76,6 +76,12 @@ export interface Invoice {
   pay_address: string | null;
   /** Wallet deep link for the QR (EIP-681 / BIP-21 / Solana Pay), or the bare address. */
   pay_uri: string | null;
+  /**
+   * An https URL that redirects into `pay_uri`. Null where the chain has no deep link at
+   * all. Inside Telegram this is the only usable target: the WebView cannot navigate to a
+   * wallet scheme, but the client can open this in a real browser, which can.
+   */
+  pay_open_url: string | null;
   payment_url: string | null;
   expires_at: string;
 }

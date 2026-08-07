@@ -139,3 +139,82 @@ async def test_trial_swap_keeps_expiry_and_decrements(client: AsyncClient) -> No
     assert after["expires_at"] == before["expires_at"]  # timer unchanged
     # second swap refused
     assert (await client.post(f"/api/twa/accesses/{pid}/swap", json={})).status_code == 403
+
+
+async def test_wallet_handoff_redirects_into_the_scheme(client: AsyncClient, engine) -> None:
+    """`/pay/{order}` is the only way a Telegram mini app can reach a wallet at all.
+
+    The client's WebView cannot navigate to `ethereum:` — it aborts the page with
+    ERR_UNKNOWN_URL_SCHEME and the buyer loses the checkout screen mid-payment. Telegram
+    will open an https URL in the real browser, and the real browser hands the scheme to
+    the OS, so the hand-off has to be a redirect and not a rendered page.
+    """
+    from datetime import UTC, datetime, timedelta
+    from decimal import Decimal
+
+    from app.models import Invoice, Order, Tariff, User
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with maker() as s:
+        user = (await s.execute(select(User).limit(1))).scalars().first()
+        tariff = (await s.execute(select(Tariff).where(Tariff.code == "daily"))).scalars().first()
+        order = Order(
+            user_id=user.id, tariff_id=tariff.id, tariff_code="daily",
+            amount_usd=Decimal("10.00"), status="awaiting_payment",
+        )
+        s.add(order)
+        await s.flush()
+        inv = Invoice(
+            order_id=order.id, provider="onchain", provider_invoice_id="inv-handoff",
+            status="pending", amount_usd=Decimal("10.00"), crypto_currency="ETH",
+            crypto_network="native", crypto_amount=Decimal("0.00527902"),
+            pay_address="0x26EC39DFf42f1D61A3F40D655178dBCA92A3E0b1",
+            chain="ethereum", expires_at=datetime.now(UTC) + timedelta(hours=1),
+        )
+        s.add(inv)
+        await s.commit()
+        public_id, invoice_id = str(order.public_id), inv.id
+
+    # Driven through the transport rather than the client: httpx insists on parsing a
+    # Location header as an absolute URL and rejects `ethereum:…`, which is exactly the
+    # header a browser needs here. The strictness is httpx's, not the browser's.
+    from httpx import Request
+
+    transport = ASGITransport(app=app)
+    resp = await transport.handle_async_request(Request("GET", f"http://t/pay/{public_id}"))
+    await resp.aread()
+    assert resp.status_code == 302
+    assert resp.headers["location"].startswith("ethereum:")
+
+    # A closed invoice must not send anyone money it can no longer settle.
+    async with maker() as s:
+        closed = await s.get(Invoice, invoice_id)
+        closed.status = "expired"
+        await s.commit()
+    r = await client.get(f"/pay/{public_id}", follow_redirects=False)
+    assert r.status_code == 200 and "Invoice is closed" in r.text
+
+    # Garbage and unknown ids get a page a human can read, not a JSON error body.
+    for bad in ("not-a-uuid", "00000000-0000-4000-8000-000000000000"):
+        r = await client.get(f"/pay/{bad}")
+        assert r.status_code == 404
+        assert r.headers["content-type"].startswith("text/html")
+
+
+async def test_invoice_view_offers_the_handoff_only_where_a_scheme_exists(
+    client: AsyncClient,
+) -> None:
+    """Tron has no URI standard, so there is nothing to hand off and no button to show."""
+    await _accept_terms(client)
+    r = await client.post("/api/twa/orders", json={"tariff_code": "daily"})
+    assert r.status_code in (200, 201), r.text
+    invoice = r.json()["invoice"]
+    if invoice is None:
+        return  # no on-chain provider configured in this environment
+    if invoice["pay_uri"] and ":" in invoice["pay_uri"]:
+        assert invoice["pay_open_url"], "a chain with a deep link must expose the hand-off"
+        assert invoice["pay_open_url"].endswith(f"/pay/{r.json()['order']['public_id']}")
+    else:
+        assert invoice["pay_open_url"] is None

@@ -161,10 +161,9 @@ async def test_ledger_filters_sorting_and_order_id(engine, raw_client: AsyncClie
     order id is checked too — it is the only identifier on this screen the customer can
     quote back.
     """
+    from app.models import Invoice, Order, Tariff, User
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import async_sessionmaker
-
-    from app.models import Invoice, Order, Tariff, User
 
     maker = async_sessionmaker(engine, expire_on_commit=False)
     async with maker() as s:
