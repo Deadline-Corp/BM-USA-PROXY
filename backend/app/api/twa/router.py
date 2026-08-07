@@ -141,6 +141,9 @@ def _invoice_qr(inv: Invoice) -> str | None:
             to_address=inv.pay_address,
             amount=Decimal(str(inv.crypto_amount)),
             network=cfg.network,
+            # Solana only. Carrying it lets the watcher recognise the invoice from the
+            # transaction itself instead of matching on the amount alone.
+            reference=inv.reference_pubkey,
         )
     except Exception:  # config not loaded / malformed — the address alone still works
         return inv.pay_address

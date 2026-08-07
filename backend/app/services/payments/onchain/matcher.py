@@ -61,15 +61,24 @@ class PaymentMatcher:
         if spec is None:
             return MatchResult(None, "unsupported")
 
-        # Solana Pay reference is the strongest signal — try it first.
-        if transfer.reference:
-            inv = await self.session.scalar(
-                self._base_query(transfer).where(
-                    Invoice.reference_pubkey == transfer.reference
+        # A Solana Pay reference is the strongest signal — try it first. It is issued per
+        # invoice and derived from the order id, so a transaction carrying one names its
+        # invoice outright rather than implying it from the amount. The amount is still
+        # classified downstream: this says *whose* payment it is, not that it is enough.
+        if transfer.reference_candidates:
+            referenced = list(
+                await self.session.scalars(
+                    self._base_query(transfer).where(
+                        Invoice.reference_pubkey.in_(transfer.reference_candidates)
+                    )
                 )
             )
-            if inv is not None:
-                return MatchResult(inv, "reference")
+            if len(referenced) == 1:
+                return MatchResult(referenced[0], "reference")
+            if len(referenced) > 1:
+                # One transaction naming two of our open invoices is not something we can
+                # split — park it rather than guess which order paid.
+                return MatchResult(None, "ambiguous")
 
         q = _quantum(spec.quote_decimals)
         paid = transfer.amount.quantize(q)

@@ -227,3 +227,26 @@ async def test_solana_client_drives_activation_through_watcher(session) -> None:
     assert invoice.status == "paid"
     assert invoice.matched_txid == "soldep"
     assert await _access_count(session, order.id) == 1
+
+
+def test_account_keys_include_lookup_table_addresses() -> None:
+    """A reference the client fails to see is invisible — matching just quietly falls back.
+
+    Versioned transactions resolve some accounts through a lookup table, and those land in
+    `meta.loadedAddresses` rather than in the static key list. Reading only the static list
+    would drop a reference with no error anywhere.
+    """
+    tx = {
+        "transaction": {"message": {"accountKeys": [{"pubkey": OWNER}, {"pubkey": ATA}]}},
+        "meta": {
+            "loadedAddresses": {"readonly": ["RefFromTable111"], "writable": ["WritableAcct1"]}
+        },
+    }
+    keys = SolanaClient._account_keys(tx)
+    assert keys == (OWNER, ATA, "RefFromTable111", "WritableAcct1")
+
+
+def test_account_keys_survive_a_transaction_with_no_metadata() -> None:
+    """Malformed or minimal RPC payloads must yield an empty tuple, not raise."""
+    assert SolanaClient._account_keys({}) == ()
+    assert SolanaClient._account_keys({"transaction": {"message": {}}, "meta": None}) == ()

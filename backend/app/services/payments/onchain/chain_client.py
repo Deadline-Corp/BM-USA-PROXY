@@ -32,7 +32,11 @@ class IncomingTransfer:
     block_number: int | None = None
     block_time: datetime | None = None
     confirmations: int = 0
-    reference: str | None = None  # Solana Pay reference pubkey, when applicable
+    # Every account key the transaction touched, on chains where a payment can carry an
+    # invoice reference (Solana Pay). A client cannot say *which* key is the reference —
+    # it has no view of our invoices — so it hands over all of them and the matcher looks
+    # for one it issued. Empty on chains with no such concept.
+    reference_candidates: tuple[str, ...] = ()
 
     @property
     def dedupe_key(self) -> tuple[str, int]:

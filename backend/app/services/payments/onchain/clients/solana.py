@@ -8,9 +8,13 @@ signature history (``getSignaturesForAddress``) and reads each transaction's bal
   pre/postTokenBalances for the configured mint.
 
 Only ``finalized`` commitment is queried, so a detected transfer is already irreversible
-(the Solana confirmations threshold is 0). Cursor = slot; matching is by amount (each
-open invoice has a unique expected amount). A Solana Pay reference is derived per invoice
-in P0 and remains available for future reference-based matching.
+(the Solana confirmations threshold is 0). Cursor = slot.
+
+Matching has two routes. Every account key the transaction touched is handed to the
+matcher as ``reference_candidates``: a buyer who paid through our Solana Pay link carries
+the invoice's reference pubkey among them, which names the invoice outright. A buyer who
+pasted the address by hand carries no reference, and the amount is the only routing key —
+which is why every open invoice still gets a unique expected amount.
 """
 
 from __future__ import annotations
@@ -143,7 +147,23 @@ class SolanaClient:
             amount=amount,
             block_number=slot,
             confirmations=confs,
+            reference_candidates=self._account_keys(tx),
         )
+
+    @staticmethod
+    def _account_keys(tx: dict) -> tuple[str, ...]:
+        """Every account the transaction touched — one of them may be an invoice reference.
+
+        Includes the addresses resolved from lookup tables, not just the static keys: a
+        versioned transaction can carry the reference there, and a reference we fail to
+        see is silently invisible (matching just falls back to the amount), so there is no
+        error to notice later.
+        """
+        message = (tx.get("transaction") or {}).get("message") or {}
+        keys = [k.get("pubkey") for k in message.get("accountKeys") or []]
+        loaded = (tx.get("meta") or {}).get("loadedAddresses") or {}
+        keys += list(loaded.get("readonly") or []) + list(loaded.get("writable") or [])
+        return tuple(str(k) for k in keys if k)
 
     @staticmethod
     def _spl_delta(meta: dict, keys: list, method: MethodConfig) -> Decimal | None:

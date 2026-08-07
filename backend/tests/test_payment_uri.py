@@ -80,3 +80,41 @@ def test_tron_has_no_standard_and_falls_back_to_the_address() -> None:
     assert build_payment_uri(spec=spec, to_address=ADDR_TRON, amount=Decimal("10")) is None
     # the QR still has to show something scannable
     assert qr_payload(spec=spec, to_address=ADDR_TRON, amount=Decimal("10")) == ADDR_TRON
+
+
+def test_solana_carries_the_invoice_reference() -> None:
+    """Without this parameter nothing else in the reference chain can work.
+
+    The wallet only attaches the reference pubkey to the transaction if the deep link asks
+    for it. Omit it and the watcher has nothing to recognise, so matching silently falls
+    back to the amount — which is exactly the ambiguity the reference exists to remove.
+    """
+    ref = "Ref1111111111111111111111111111111111111111"
+    spl = get_spec("USDC", "spl")
+    uri = build_payment_uri(
+        spec=spl, to_address=ADDR_SOL, amount=Decimal("25"), reference=ref
+    )
+    assert uri is not None and f"reference={ref}" in uri
+
+    native = build_payment_uri(
+        spec=get_spec("SOL", "native"), to_address=ADDR_SOL, amount=Decimal("1.5"), reference=ref
+    )
+    assert native == f"solana:{ADDR_SOL}?amount=1.5&reference={ref}"
+
+    # and it survives the QR wrapper the checkout screen actually calls
+    assert f"reference={ref}" in qr_payload(
+        spec=spl, to_address=ADDR_SOL, amount=Decimal("25"), reference=ref
+    )
+
+
+def test_non_solana_rails_ignore_the_reference() -> None:
+    """A reference is a Solana Pay concept. Appending it elsewhere would corrupt the URI."""
+    ref = "Ref1111111111111111111111111111111111111111"
+    evm = build_payment_uri(
+        spec=get_spec("USDC", "erc20"), to_address=ADDR_EVM, amount=Decimal("10"), reference=ref
+    )
+    btc = build_payment_uri(
+        spec=get_spec("BTC", "native"), to_address=ADDR_BTC, amount=Decimal("0.01"), reference=ref
+    )
+    assert evm is not None and "reference" not in evm
+    assert btc is not None and "reference" not in btc

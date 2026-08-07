@@ -38,8 +38,15 @@ def build_payment_uri(
     to_address: str,
     amount: Decimal,
     network: str = "mainnet",
+    reference: str | None = None,
 ) -> str | None:
-    """Wallet deep link for this rail, or ``None`` when the chain has no usable standard."""
+    """Wallet deep link for this rail, or ``None`` when the chain has no usable standard.
+
+    ``reference`` is the invoice's Solana Pay reference pubkey. Passing it is what makes
+    reference matching possible at all: the wallet attaches it to the transaction as a
+    read-only account, and the watcher can then identify the payer's invoice outright
+    instead of inferring it from the amount. Ignored on every non-Solana rail.
+    """
     testnet = str(network).lower() == "testnet"
 
     if spec.chain in _EVM_CHAIN_IDS:
@@ -60,6 +67,8 @@ def build_payment_uri(
         uri = f"solana:{to_address}?amount={_plain(amount)}"
         if spec.token_mint:
             uri += f"&spl-token={spec.token_mint}"
+        if reference:
+            uri += f"&reference={reference}"
         return uri
 
     return None  # tron and anything else — caller shows the bare address
@@ -71,9 +80,16 @@ def qr_payload(
     to_address: str,
     amount: Decimal,
     network: str = "mainnet",
+    reference: str | None = None,
 ) -> str:
     """What to encode in the QR: a wallet URI when one exists, else the bare address."""
     return (
-        build_payment_uri(spec=spec, to_address=to_address, amount=amount, network=network)
+        build_payment_uri(
+            spec=spec,
+            to_address=to_address,
+            amount=amount,
+            network=network,
+            reference=reference,
+        )
         or to_address
     )

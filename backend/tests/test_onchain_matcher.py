@@ -147,3 +147,88 @@ async def test_a_late_payment_is_recorded_as_expired_rather_than_anonymous(sessi
     assert [r.status for r in rows] == ["detected", "expired_deposit"]
     assert rows[-1].meta["invoice_id"] == invoice.id
     assert rows[-1].user_id == order.user_id, "the operator should see whose payment this is"
+
+
+REF = "Ref1111111111111111111111111111111111111111"
+
+
+def _sol_transfer(amount: Decimal, *, keys: tuple[str, ...]) -> IncomingTransfer:
+    return IncomingTransfer(
+        chain="solana", asset="SOL", network="native", txid=f"sig-{amount}",
+        to_address=ADDR, amount=amount, from_address="SoLsender",
+        block_time=datetime.now(UTC), confirmations=1, reference_candidates=keys,
+    )
+
+
+async def _sol_invoice(session, *, amount: Decimal, tag: str, reference: str | None):
+    """An open Solana invoice on the shared address, optionally carrying a reference."""
+    tariff = await session.scalar(select(Tariff).where(Tariff.code == "daily"))
+    user = User(tg_user_id=abs(hash(tag)) % 9_000_000 + 1000, referral_code=tag.upper()[:12])
+    session.add(user)
+    await session.flush()
+    order = Order(
+        user_id=user.id, tariff_id=tariff.id, tariff_code="daily", duration_minutes=1440,
+        amount_usd="10", status="awaiting_payment",
+    )
+    session.add(order)
+    await session.flush()
+    inv = Invoice(
+        order_id=order.id, provider="onchain", provider_invoice_id=tag, status="pending",
+        amount_usd="10", crypto_currency="SOL", crypto_network="native",
+        crypto_amount=amount, pay_address=ADDR, chain="solana",
+        amount_tolerance=Decimal("0"), locked_rate=Decimal("1"), reference_pubkey=reference,
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+    )
+    session.add(inv)
+    await session.flush()
+    return inv
+
+
+async def test_a_reference_identifies_the_invoice_when_the_amount_cannot(session) -> None:
+    """The point of the reference: it works where amount matching gives up.
+
+    Two open invoices, and a deposit whose amount matches neither. On amount alone this is
+    an unmatched deposit a human has to sort out. Carrying the reference, it lands on the
+    right order with no ambiguity at all.
+    """
+    await _seed(session)
+    await _sol_invoice(session, amount=Decimal("0.190000"), tag="sol-other", reference=None)
+    mine = await _sol_invoice(session, amount=Decimal("0.184300"), tag="sol-mine", reference=REF)
+
+    # amount deliberately matches neither invoice
+    transfer = _sol_transfer(Decimal("0.177000"), keys=(ADDR, "TokenProgram", REF))
+    result = await PaymentMatcher(session).match(transfer)
+
+    assert result.reason == "reference"
+    assert result.invoice is not None and result.invoice.id == mine.id
+
+
+async def test_reference_matching_ignores_the_unrelated_keys_in_a_transaction(session) -> None:
+    """Every account key is handed over, and all but ours must be inert."""
+    await _seed(session)
+    inv = await _sol_invoice(session, amount=Decimal("0.184300"), tag="sol-noise", reference=REF)
+
+    transfer = _sol_transfer(
+        Decimal("0.184300"),
+        keys=(ADDR, "11111111111111111111111111111111", "SoLsender", "SysvarRent111"),
+    )
+    result = await PaymentMatcher(session).match(transfer)
+
+    # no reference among the keys → falls through to the amount, which still works
+    assert result.reason == "exact"
+    assert result.invoice is not None and result.invoice.id == inv.id
+
+
+async def test_one_transaction_naming_two_invoices_is_parked(session) -> None:
+    """We cannot split a single transfer across two orders — guessing would rob one."""
+    await _seed(session)
+    other_ref = "Ref2222222222222222222222222222222222222222"
+    await _sol_invoice(session, amount=Decimal("0.184300"), tag="sol-a", reference=REF)
+    await _sol_invoice(session, amount=Decimal("0.190000"), tag="sol-b", reference=other_ref)
+
+    result = await PaymentMatcher(session).match(
+        _sol_transfer(Decimal("0.374300"), keys=(ADDR, REF, other_ref))
+    )
+
+    assert result.invoice is None
+    assert result.reason == "ambiguous"
