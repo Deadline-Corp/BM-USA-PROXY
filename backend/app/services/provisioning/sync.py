@@ -50,12 +50,25 @@ def _online_status(raw: dict[str, Any]) -> str:
     return val if val in ("online", "offline") else "unknown"
 
 
-async def _resolve_location(session: AsyncSession, city: str | None) -> int | None:
+async def _resolve_location(
+    session: AsyncSession, city: str | None, cache: dict[str, int | None] | None = None
+) -> int | None:
+    """City name → location id, upserting the row the first time a city is seen.
+
+    ``cache`` memoises the answer for one sync pass. Without it this costs two statements
+    per connection, and the pool is one row per phone: a launch-sized pool of ~2000 turns
+    every pass into ~4000 round-trips to resolve nine distinct cities. The cache is
+    per-pass on purpose — a long-lived one would go stale when an operator edits a city.
+    """
     if not city:
         return None
     name = city.strip()
+    if cache is not None and name in cache:
+        return cache[name]
     state = _CITY_STATE.get(name.lower())
     if not state:
+        if cache is not None:
+            cache[name] = None
         return None
     await session.execute(
         insert(Location)
@@ -65,7 +78,10 @@ async def _resolve_location(session: AsyncSession, city: str | None) -> int | No
     loc_id = await session.scalar(
         select(Location.id).where(Location.city == name, Location.state_code == state)
     )
-    return int(loc_id) if loc_id is not None else None
+    resolved = int(loc_id) if loc_id is not None else None
+    if cache is not None:
+        cache[name] = resolved
+    return resolved
 
 
 async def sync_pool(session: AsyncSession, client: IproxyClient | None = None) -> dict[str, Any]:
@@ -78,6 +94,7 @@ async def sync_pool(session: AsyncSession, client: IproxyClient | None = None) -
     }
     now = datetime.now(UTC)
     upserted = online = 0
+    location_cache: dict[str, int | None] = {}
     for c in conns:
         cid = str(c.get("id") or "")
         if not cid:
@@ -87,7 +104,7 @@ async def sync_pool(session: AsyncSession, client: IproxyClient | None = None) -
         device = app_data.get("device_info") or {}
         name = basic.get("name") or c.get("name") or ""
         carrier = _normalize_carrier(device.get("network_operator_mobile"))
-        loc_id = await _resolve_location(session, app_data.get("ip_city"))
+        loc_id = await _resolve_location(session, app_data.get("ip_city"), location_cache)
         status = _online_status(statuses.get(cid, {}))
         if status == "online":
             online += 1

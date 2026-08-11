@@ -43,7 +43,10 @@ class WorkerSettings:
         cron(jobs.watch_payout_transfers, second={10, 40}, run_at_startup=True),
         cron(jobs.release_referral_holds, minute=0, second=45),
         cron(jobs.daily_reconciliation, hour={0}, minute={20}, run_at_startup=False),
-        cron(jobs.sync_connections, minute=_FIVE_MIN, second=45),
+        # Every minute: the pool is what the catalogue sells from, so a phone going offline
+        # or a newly added one should not stay invisible for five. Costs two iproxy calls
+        # per pass whatever the pool size — both endpoints return the whole account.
+        cron(jobs.sync_connections, second=45),
         cron(jobs.publish_scheduled_posts, second=5),
         cron(jobs.process_broadcasts, second={5, 20, 35, 50}),
     ]
