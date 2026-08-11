@@ -22,16 +22,57 @@ export function pad2(n: number): string {
   return n < 10 ? `0${n}` : `${n}`;
 }
 
-/** Formats a duration in seconds as H:MM:SS (or MM:SS under an hour). */
+const MINUTE = 60;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+const WEEK = 7 * DAY;
+/** A month is 30 days here because that is what the Monthly tariff is: 43 200 minutes. */
+const MONTH = 30 * DAY;
+
+/** Largest unit first. Labels are English because the mini-app ships English only. */
+const UNITS: ReadonlyArray<{ label: string; size: number }> = [
+  { label: "mo", size: MONTH },
+  { label: "wk", size: WEEK },
+  { label: "d", size: DAY },
+  { label: "h", size: HOUR },
+  { label: "m", size: MINUTE },
+  { label: "s", size: 1 },
+];
+
+/**
+ * How much time is left, in units a person can act on.
+ *
+ * Under an hour this stays a stopwatch (`MM:SS`). That covers the payment window and the
+ * final hour of an access — the two moments where the seconds are the thing being watched,
+ * and where a ticking clock is the familiar shape.
+ *
+ * Above an hour it switches to named units, because the stopwatch stops meaning anything:
+ * a month of access read `719:55:31`, and nobody converts that to "about four weeks" while
+ * deciding whether to extend.
+ *
+ * Two units, never more. The third is always smaller than the error a person cares about —
+ * "4 wk 1 d 3 h 12 m 5 s" is not more informative than "4 wk 1 d", it is just harder to
+ * read at a glance. Zero-valued units are skipped, so 32 days reads "1 mo 2 d", not
+ * "1 mo 0 wk".
+ */
 export function formatDuration(totalSeconds: number): string {
   const clamped = Math.max(0, Math.floor(totalSeconds));
-  const hours = Math.floor(clamped / 3600);
-  const minutes = Math.floor((clamped % 3600) / 60);
-  const seconds = clamped % 60;
-  if (hours > 0) {
-    return `${hours}:${pad2(minutes)}:${pad2(seconds)}`;
+
+  if (clamped < HOUR) {
+    return `${Math.floor(clamped / MINUTE)}:${pad2(clamped % MINUTE)}`;
   }
-  return `${minutes}:${pad2(seconds)}`;
+
+  const parts: string[] = [];
+  let rest = clamped;
+  for (const { label, size } of UNITS) {
+    const value = Math.floor(rest / size);
+    if (value > 0) {
+      parts.push(`${value} ${label}`);
+      rest -= value * size;
+    }
+    if (parts.length === 2) break;
+  }
+  return parts.join(" ");
 }
 
 /** Milliseconds remaining until an ISO timestamp; negative once passed. */
