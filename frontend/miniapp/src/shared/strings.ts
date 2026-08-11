@@ -82,7 +82,9 @@ export const strings = {
     tileMyAccessSubNone: "No active package",
     tileTariffsTitle: "Tariffs",
     tileTariffsSub: "Daily, Weekly, Monthly · auto-issue",
-    referTitle: "Refer & earn 20%",
+    // No number here on purpose: this teaser has no access to the live rate, and a stale
+    // one is worse than none. The referral screen states the rate, and gets it from the API.
+    referTitle: "Refer & earn",
     referSubtitle: "Share your link",
     referAvailableNow: "available now",
     referInvite: "Invite",
@@ -234,8 +236,12 @@ export const strings = {
 
   referral: {
     title: "Referral cabinet",
-    programTitle: "Earn 20% on every package",
-    programBody: "Share your link — receive 20% of each purchase your referrals make, instantly credited.",
+    // {pct} is filled from the rate the ledger actually pays (GET /twa/referral). It is
+    // operator-editable and moved from 20 to 23, while this copy said 20 — the screen was
+    // advertising one deal and the ledger applying another.
+    programTitle: "Earn {pct}% on every package",
+    programBody:
+      "Share your link — receive {pct}% of each purchase your referrals make, instantly credited.",
     yourLink: "Your referral link",
     shareViaTelegram: "Share via Telegram",
     shareText: "Get USA mobile proxy access — SOCKS5/HTTP, real 5G devices.",

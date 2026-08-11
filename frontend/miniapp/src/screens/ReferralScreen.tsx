@@ -14,7 +14,19 @@ import type { PayoutRail } from "../shared/api/types";
 import { formatUsd } from "../shared/lib/format";
 import { ErrorState } from "../shared/components/ErrorState";
 
+// The bot accepts this prefix and the shorter `r_`. Changing it here without changing
+// app/bot/handlers/start.py is how every referral bound nobody until 2026-08-11; there is
+// a backend test pinning this exact string.
 const REFERRAL_BOT_LINK_BASE = "https://t.me/BM_USA_Proxy_bot?start=ref_";
+
+/** Commission copy states the rate the ledger actually applies, not a number typed once.
+ *
+ * The API sends it as a float, and JS prints 23.0 as "23" and 12.5 as "12.5" — both read
+ * correctly with no formatting of our own.
+ */
+function withPct(template: string, pct: number): string {
+  return template.replace("{pct}", String(pct));
+}
 
 function ReferralSkeleton() {
   return (
@@ -119,8 +131,12 @@ export function ReferralScreen() {
             <Users size={18} strokeWidth={1.5} aria-hidden="true" />
           </span>
           <div className="flex flex-col gap-0.5">
-            <b className="font-head text-[15px] font-semibold tracking-tight text-text">{strings.referral.programTitle}</b>
-            <small className="text-xs leading-relaxed text-text-2">{strings.referral.programBody}</small>
+            <b className="font-head text-[15px] font-semibold tracking-tight text-text">
+              {withPct(strings.referral.programTitle, r.pct)}
+            </b>
+            <small className="text-xs leading-relaxed text-text-2">
+              {withPct(strings.referral.programBody, r.pct)}
+            </small>
           </div>
         </div>
         <div className="grid grid-cols-3 gap-2">

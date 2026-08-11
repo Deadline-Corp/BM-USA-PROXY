@@ -285,7 +285,8 @@ export function CatalogScreen() {
       <div className="mt-2.5 flex items-center gap-2.5 rounded border border-accent/[.22] bg-accent/[.08] px-3.5 py-2.5 text-xs text-text-2">
         <Users size={15} className="shrink-0 text-accent" aria-hidden="true" />
         <span>
-          Refer a client &amp; earn <b className="text-accent">20%</b> of every payment, for life.
+          Refer a client &amp; earn a <b className="text-accent">commission</b> on every payment,
+          for life.
         </span>
       </div>
 

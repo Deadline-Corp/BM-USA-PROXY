@@ -229,6 +229,8 @@ export interface Referral {
   signups: number;
   balances: ReferralBalances;
   min_payout_usd: number;
+  /** Commission rate the ledger applies — operator-editable, so the copy reads it. */
+  pct: number;
   payout_rails: PayoutRail[];
 }
 

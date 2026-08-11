@@ -347,6 +347,10 @@ async def referral(user: CurrentUser, session: DbSession) -> dict[str, Any]:
         "signups": int(signups or 0),
         "balances": balances,
         "min_payout_usd": float(await settings_svc.get(session, "referral_min_payout_usd", 0)),
+        # The rate the app promises has to be the rate it pays. It is operator-editable
+        # (20 → 23 on 2026-07-30), and the mini-app used to hard-code "20%" in its copy —
+        # so the screen was quietly advertising a different deal than the ledger applied.
+        "pct": float(await settings_svc.get(session, "referral_pct", 20)),
         # the only rails we pay out on — the client picks from these, never free-types a network
         "payout_rails": payouts_svc.rails_for_client(),
     }
