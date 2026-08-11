@@ -41,7 +41,11 @@ class WorkerSettings:
         cron(jobs.watch_onchain_deposits, second={0, 15, 30, 45}, run_at_startup=True),
         # payout confirmation — a sent payout should flip to 'paid' within ~a minute
         cron(jobs.watch_payout_transfers, second={10, 40}, run_at_startup=True),
-        cron(jobs.release_referral_holds, minute=0, second=45),
+        # Every minute, not hourly. The hold is a business setting an operator can set to
+        # zero, and "no hold" has to mean the money is withdrawable now — not at the top of
+        # the next hour. One indexed UPDATE over rows whose hold has expired; at a 14-day
+        # hold the extra passes find nothing and cost nothing.
+        cron(jobs.release_referral_holds, second=45),
         cron(jobs.daily_reconciliation, hour={0}, minute={20}, run_at_startup=False),
         # Every minute: the pool is what the catalogue sells from, so a phone going offline
         # or a newly added one should not stay invisible for five. Costs two iproxy calls
