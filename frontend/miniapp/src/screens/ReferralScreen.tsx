@@ -139,14 +139,16 @@ export function ReferralScreen() {
             </small>
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-2">
+        {/* Two tiles, not three. The third was a literal `0` in the markup labelled
+            "clicks" — no such field exists in the API or anywhere in the backend, so it
+            read zero for everyone forever. A dead number next to real money makes the
+            real ones look doubtful too. A truthful click count is not available either:
+            the link goes to Telegram, and we only learn of a person when they press
+            START, which is the signup event already counted beside it. */}
+        <div className="grid grid-cols-2 gap-2">
           <div className="flex flex-col items-center gap-0.5 rounded border border-border bg-surface-2 px-2 pb-2 pt-2.5">
             <Num className="text-[18px] leading-none text-text">{r.signups}</Num>
             <span className="text-[10px] uppercase tracking-wide text-text-3">{strings.referral.signupsLabel}</span>
-          </div>
-          <div className="flex flex-col items-center gap-0.5 rounded border border-border bg-surface-2 px-2 pb-2 pt-2.5">
-            <Num className="text-[18px] leading-none text-text">0</Num>
-            <span className="text-[10px] uppercase tracking-wide text-text-3">{strings.referral.clicksLabel}</span>
           </div>
           <div className="flex flex-col items-center gap-0.5 rounded border border-border bg-surface-2 px-2 pb-2 pt-2.5">
             <Num className="text-[18px] leading-none text-accent">{formatUsd(r.balances.available + r.balances.hold)}</Num>

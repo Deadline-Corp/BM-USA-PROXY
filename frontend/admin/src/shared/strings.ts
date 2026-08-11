@@ -253,7 +253,8 @@ export const strings = {
     settings: "Referral settings",
     commissionPct: "Commission %",
     minPayoutUsd: "Minimum payout (USD)",
-    holdDays: "Hold before payout (days)",
+    // Short enough to sit on one line beside the other two fields at this column width.
+    holdDays: "Payout hold (days)",
     send: "Send",
     sendPayout: "Send payout",
     amountToSend: "Amount to send",
