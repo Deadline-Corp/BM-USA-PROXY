@@ -45,6 +45,67 @@ async def _paid_order(session, *, referee: User, referrer: User, amount: str) ->
     return o
 
 
+# The exact string the mini-app puts on the share button (ReferralScreen.tsx). Written out
+# rather than referenced so that changing it there without changing the bot fails here.
+MINIAPP_LINK = "https://t.me/BM_USA_Proxy_bot?start=ref_F11A1225"
+
+
+def test_the_link_the_miniapp_hands_out_is_one_the_bot_understands() -> None:
+    """Every referral shared before 2026-08-11 bound nobody, and nothing said so.
+
+    The mini-app builds `?start=ref_<code>`; the handler read only `r_<code>`. A payload
+    that does not match is not an error — /start just greeted the newcomer, skipped the
+    binding, and the ledger stayed empty. Zero of six users had a referrer. Pin both
+    spellings: links already sitting in people's chats have to keep working.
+    """
+    from app.bot.handlers.start import referral_code_from
+
+    payload = MINIAPP_LINK.split("?start=", 1)[1]
+    assert referral_code_from(payload) == "F11A1225"
+    assert referral_code_from("r_F11A1225") == "F11A1225"
+
+    # Post attribution is a different deep link and must not be read as a referral.
+    assert referral_code_from("p_ABC12345") is None
+    assert referral_code_from(None) is None
+    assert referral_code_from("") is None
+    assert referral_code_from("ref_") is None  # prefix with no code behind it
+
+
+async def test_binding_by_deep_link_then_accruing_on_a_paid_order(session) -> None:
+    """The path the customer actually walks: follow a link, buy, referrer gets a hold.
+
+    The unit above pins the prefix; this pins that the prefix is all that was missing —
+    bind through the same call /start makes, then let a paid order accrue.
+    """
+    from app.bot.handlers.start import referral_code_from
+
+    await seed_settings(session)
+    session.add(Tariff(code="daily", name="Daily", kind="auto", duration_minutes=1440,
+                       price_usd=Decimal("10.00"), is_active=True))
+    await session.flush()
+    await settings_svc.set_value(session, "referral_pct", TEST_PCT)
+
+    referrer = await _mk(session, tg=1001, code="F11A1225")
+    referee = await _mk(session, tg=1002, code="F5D2851D")
+
+    code = referral_code_from(MINIAPP_LINK.split("?start=", 1)[1])
+    assert code is not None
+    assert await referral.try_bind(session, referee=referee, code=code) is True
+    assert referee.referrer_user_id == referrer.id
+    assert referee.referral_bound_at is not None
+
+    order = await _paid_order(session, referee=referee, referrer=referrer, amount="10.00")
+    await referral.accrue(session, order=order)
+    await session.flush()
+
+    row = await session.scalar(
+        select(ReferralLedger).where(ReferralLedger.referee_user_id == referee.id)
+    )
+    assert row is not None, "a paid order from a bound referee must leave a ledger row"
+    assert float(row.amount_usd) == 2.00  # 20% of $10
+    assert row.status == "hold"
+
+
 async def test_accrue_release_reverse_payout(session) -> None:
     await seed_settings(session)  # needs tariffs? no — settings + we create daily tariff below
     session.add(Tariff(code="daily", name="Daily", kind="auto", duration_minutes=1440,

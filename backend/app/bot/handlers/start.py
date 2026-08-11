@@ -40,6 +40,26 @@ def _open_app_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+# The mini-app hands out `?start=ref_<code>` (frontend/miniapp ReferralScreen.tsx) while
+# this handler was written to the spec's shorter `r_`. Nothing ever errored: the payload
+# simply failed to match, so /start fell through, no referrer was bound, and the referral
+# ledger stayed empty for every user since launch. Both spellings are accepted now — a
+# deep link, once shared, lives in someone's chat history forever, so the ones already out
+# there have to keep working whichever prefix they carry. Longest prefix first.
+_REFERRAL_PREFIXES = ("ref_", "r_")
+_POST_PREFIX = "p_"
+
+
+def referral_code_from(payload: str | None) -> str | None:
+    """The referral code behind a /start payload, whichever accepted prefix it carries."""
+    if not payload:
+        return None
+    for prefix in _REFERRAL_PREFIXES:
+        if payload.startswith(prefix):
+            return payload[len(prefix) :] or None
+    return None
+
+
 def _identity(message: Message) -> dict[str, Any]:
     u = message.from_user
     return {
@@ -56,10 +76,13 @@ async def cmd_start(message: Message, command: CommandObject) -> None:
     payload = command.args
     async with SessionFactory() as session:
         user = await upsert_from_telegram(session, _identity(message))
-        if payload and payload.startswith("r_"):
-            await referral.try_bind(session, referee=user, code=payload[2:])
-        elif payload and payload.startswith("p_"):
-            await content.record_click(session, code=payload[2:], user=user)
+        code = referral_code_from(payload)
+        if code:
+            await referral.try_bind(session, referee=user, code=code)
+        elif payload and payload.startswith(_POST_PREFIX):
+            await content.record_click(
+                session, code=payload[len(_POST_PREFIX) :], user=user
+            )
         accepted = await is_tos_accepted(session, user)
         await session.commit()
 
