@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { useRef } from "react";
 import { IconChevronRight } from "@/shared/components/icons";
 
 function pillClass(active: boolean) {
@@ -70,6 +71,28 @@ interface DateFilterPillProps {
 /** The pill above, bound to a date instead of a list — one end of a range. */
 export function DateFilterPill({ label, value, onChange, anyLabel }: DateFilterPillProps) {
   const active = value !== "";
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * Open the calendar wherever the pill is clicked.
+   *
+   * The invisible `<input type="date">` covering the pill is enough for the select-based
+   * pills, but a date input is different: browsers open the calendar only from its own
+   * indicator icon, which here sits invisibly at the right edge. Clicking the label just
+   * focused the field and nothing appeared, so the pill read as broken everywhere except
+   * one small spot. `showPicker()` makes the whole pill behave like the others.
+   */
+  const openPicker = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    try {
+      el.showPicker();
+    } catch {
+      // Not supported, or the click did not count as user activation. Focus still lets
+      // the operator type the date — degraded, not dead.
+      el.focus();
+    }
+  };
 
   return (
     <div className={pillClass(active)}>
@@ -89,9 +112,11 @@ export function DateFilterPill({ label, value, onChange, anyLabel }: DateFilterP
         <IconChevronRight className="w-3 h-3 rotate-90 text-text-3" />
       )}
       <input
+        ref={inputRef}
         type="date"
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onClick={openPicker}
         aria-label={label}
         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
       />
