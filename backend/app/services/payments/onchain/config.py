@@ -303,6 +303,36 @@ def _reject_mainnet_contracts_on_testnet(
         )
 
 
+def _reject_weak_confirmations_on_mainnet(
+    methods: dict[tuple[str, str], MethodConfig],
+) -> None:
+    """Fail loudly when a rail waits for fewer confirmations than the chain needs.
+
+    The mirror image of the guard above, and it exists for the same reason: testnet
+    settings get copied into the mainnet config. On testnet we deliberately drop these
+    thresholds — BTC ran at 1 instead of 6 so a test payment took ten minutes rather than
+    an hour — and `ONCHAIN_METHODS` is one JSON blob that will be duplicated and have its
+    addresses swapped when the client's real wallets arrive. The confirmation counts are
+    the part nobody looks at while doing that.
+
+    Getting this wrong costs real money quietly: a deposit finalised at one confirmation
+    can still be reorged away, and by then the proxy is issued. Raising a threshold above
+    the default stays allowed — that is a deliberate, safe direction. Lowering it is a
+    decision that belongs in code review, not in an environment variable.
+    """
+    for (asset, network), method in methods.items():
+        floor = DEFAULT_CONFIRMATIONS.get(method.chain, 12)
+        if method.confirmations >= floor:
+            continue
+        raise OnchainConfigError(
+            f"rail {asset}/{network} is set to {method.confirmations} confirmation(s) but "
+            f"ONCHAIN_NETWORK=mainnet requires at least {floor} on {method.chain}. This is "
+            f"almost always a testnet value copied into the production config — a deposit "
+            f"finalised too early can be reorged away after the access is issued. Remove "
+            f"'confirmations' from this rail to take the {floor} default."
+        )
+
+
 def _reject_mainnet_payout_contracts_on_testnet(config: OnchainConfig) -> None:
     """Same guard for the payout side, which scans by contract too.
 
@@ -330,12 +360,24 @@ def load_config(
     rpc_json: str | None,
     network: str = "mainnet",
     payout_sources_json: str | None = None,
+    *,
+    strict: bool = False,
 ) -> OnchainConfig:
-    """Build an :class:`OnchainConfig` from the raw JSON strings (pure, testable)."""
+    """Build an :class:`OnchainConfig` from the raw JSON strings (pure, testable).
+
+    ``strict`` turns on the checks that only make sense for a configuration someone
+    deployed, as opposed to one a test assembled. Right now that is the mainnet
+    confirmation floor: unit tests deliberately drive rails at two or three confirmations
+    to exercise the confirming→paid transition without inventing long fake chains, and
+    holding them to a production threshold would test a different thing than they mean to.
+    ``get_onchain_config`` — the only path the running application takes — sets it.
+    """
     methods = _parse_methods(methods_json)
     resolved_network = "testnet" if str(network).lower() == "testnet" else "mainnet"
     if resolved_network == "testnet":
         _reject_mainnet_contracts_on_testnet(methods)
+    elif strict:
+        _reject_weak_confirmations_on_mainnet(methods)
     config = OnchainConfig(
         methods=methods,
         rpc=_parse_rpc(rpc_json),
@@ -357,6 +399,7 @@ def get_onchain_config() -> OnchainConfig:
         settings.onchain_rpc,
         settings.onchain_network,
         settings.onchain_payout_sources,
+        strict=True,
     )
 
 

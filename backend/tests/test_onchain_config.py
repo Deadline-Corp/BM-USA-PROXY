@@ -37,6 +37,43 @@ def test_testnet_rejects_unoverridden_mainnet_contract() -> None:
         load_config(methods, "{}", network="testnet")
 
 
+def test_mainnet_rejects_a_testnet_confirmation_threshold() -> None:
+    """The mirror of the guard above: a low confirmation count must not reach mainnet.
+
+    On testnet BTC runs at 1 confirmation so a test payment takes ten minutes instead of
+    an hour. ONCHAIN_METHODS is one JSON blob that gets duplicated and has its addresses
+    swapped for the real wallets — the confirmation counts are what nobody re-reads while
+    doing that, and a deposit finalised at one confirmation can be reorged away after the
+    proxy is already issued.
+
+    The check is ``strict``-gated so it applies to a deployed config and not to the unit
+    tests that drive rails at two or three confirmations on purpose; get_onchain_config
+    sets that flag, and it is the only path the running app takes.
+    """
+    weak = json.dumps([{"asset": "BTC", "network": "native", "address": "tb1x",
+                        "confirmations": 1}])
+    load_config(weak, "{}", network="testnet", strict=True)  # fine on a test chain
+    with pytest.raises(OnchainConfigError, match="requires at least 6"):
+        load_config(weak, "{}", network="mainnet", strict=True)
+
+    # Dropping the key is the fix the message asks for: the chain default applies.
+    plain = json.dumps([{"asset": "BTC", "network": "native", "address": "bc1x"}])
+    assert load_config(plain, "{}", network="mainnet", strict=True).require_method(
+        "BTC", "native"
+    ).confirmations == 6
+
+    # Waiting longer than the default is a safe direction and stays allowed.
+    careful = json.dumps([{"asset": "BTC", "network": "native", "address": "bc1x",
+                           "confirmations": 12}])
+    assert load_config(careful, "{}", network="mainnet", strict=True).require_method(
+        "BTC", "native"
+    ).confirmations == 12
+
+    # And the same weak config passes when a test builds it, which is the whole point of
+    # the flag — otherwise eleven on-chain test modules would have to fake long chains.
+    load_config(weak, "{}", network="mainnet")
+
+
 def test_testnet_allows_native_rails_without_override() -> None:
     """Native coins have no contract, so there is nothing to override — must not fail."""
     cfg = load_config(
