@@ -16,8 +16,20 @@ import { usePagination } from "@/shared/hooks/usePagination";
 import { strings } from "@/shared/strings";
 import type { DepositLedgerEntry } from "@/shared/api/types";
 
+/**
+ * Only states a deposit can actually be found in.
+ *
+ * Two used to be here and could never match anything, which is worse than a missing
+ * option: the operator picks one, gets an empty table, and cannot tell "no such deposits"
+ * from "this filter is broken".
+ *  - `confirmed` is written by no code path at all — it was only ever in this list.
+ *  - `detected` is written once per deposit, but the same tick immediately appends
+ *    `confirming` / `unmatched` / a final state, so it is never a deposit's current state.
+ *    In full-history view it matches every deposit exactly once, which narrows nothing.
+ * Both still exist in the journal; they just are not something to filter by.
+ */
 const STATUSES = [
-  "detected", "confirming", "confirmed", "matched", "paid", "underpaid",
+  "confirming", "matched", "paid", "underpaid",
   "overpaid", "unmatched", "expired_deposit", "orphaned", "reorg_rollback",
 ];
 const CHAINS = ["tron", "ethereum", "bsc", "solana", "bitcoin", "litecoin"];
@@ -26,11 +38,9 @@ const ASSETS = ["USDT", "USDC", "TRX", "ETH", "BNB", "SOL", "BTC", "LTC"];
 /** Deposit states that are waiting for a human decision. */
 const RESOLVABLE = ["unmatched", "underpaid", "expired_deposit", "orphaned"];
 
-/**
- * Below this, a substring search matches most of the table and costs a full scan for
- * nothing. Operators paste a hash or an address — both are far longer.
- */
-const MIN_SEARCH = 4;
+// No minimum length: short queries are the useful ones now. The server matches a coin or
+// a chain name by equality ("BTC", "tron") and only falls back to a substring scan over
+// hashes and addresses, which is what the old 4-character floor was protecting.
 
 export function LedgerScreen() {
   const { limit, offset, setOffset } = usePagination();
@@ -49,8 +59,7 @@ export function LedgerScreen() {
   // came in". Every other order is one click on a header away.
   const [sorting, setSorting] = useState<SortingState>([{ id: "created_at", desc: true }]);
 
-  const debouncedSearch = useDebouncedValue(search.trim());
-  const q = debouncedSearch.length >= MIN_SEARCH ? debouncedSearch : "";
+  const q = useDebouncedValue(search.trim());
 
   // Any narrowing sends you back to page 1. Staying on page 7 of the old result set lands
   // on an empty page, which reads as "there is nothing" rather than "you moved".
@@ -254,13 +263,6 @@ export function LedgerScreen() {
                   </button>
                 )}
               </div>
-              {/* Silence here would look like "no results" rather than "still typing". */}
-              {search.trim().length > 0 && search.trim().length < MIN_SEARCH && (
-                <span className="text-[.74rem] text-text-3 -mt-1">
-                  {strings.ledger.searchTooShort}
-                </span>
-              )}
-
               <div className="flex flex-wrap items-center gap-2">
                 <FilterPill
                   label={strings.ledger.filterView}

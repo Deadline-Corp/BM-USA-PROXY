@@ -222,6 +222,17 @@ async def test_ledger_filters_sorting_and_order_id(engine, raw_client: AsyncClie
     assert [r["txid"] for r in await rows(q="PayerGamma")] == ["sig-ccc"]
     assert {r["txid"] for r in await rows(q="SolTo")} == {"sig-aaa", "sig-ccc"}
 
+    # the same box also takes a coin or a chain name, matched by equality. This is what an
+    # operator types first, and before it existed such a query fell through to the substring
+    # branch, matched no hash or address, and returned the unfiltered table — which reads as
+    # an answer. Case is irrelevant; the frontend no longer withholds short queries either.
+    assert [r["txid"] for r in await rows(q="SOL")] == ["sig-ccc"]
+    assert [r["txid"] for r in await rows(q="usdc")] == ["sig-aaa"]
+    assert [r["txid"] for r in await rows(q="tron")] == ["hash-bbb"]
+    assert {r["txid"] for r in await rows(q="solana")} == {"sig-aaa", "sig-ccc"}
+    # a coin with no deposits yet must come back empty, never "everything"
+    assert await rows(q="BTC") == []
+
     # date range, end-inclusive: "to 1 June" must include the 1st, not stop before it
     march_only = await rows(since="2026-03-01", before="2026-03-31")
     assert [r["txid"] for r in march_only] == ["sig-aaa"]

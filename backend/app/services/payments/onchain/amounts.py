@@ -57,6 +57,17 @@ def classify(paid: Decimal, expected: Decimal, tolerance: Decimal) -> Classifica
     """Classify a received amount against the expected amount.
 
     ``tolerance`` is the absolute underpayment we still accept as fully paid.
+
+    On the ``"underpaid"`` branch being unreachable today, and staying anyway: the matcher
+    admits a candidate only when ``paid >= expected - tolerance`` (matcher.py), so anything
+    short beyond tolerance never reaches this function — it is parked as ``unmatched``
+    instead, and no production deposit has ever carried the ``underpaid`` status.
+
+    The branch is not dead weight, it is the backstop for that invariant. Whoever later
+    widens the matcher — accepting short payments for manual review, say — would otherwise
+    have this function silently call an underpayment ``"paid"`` and hand out the access.
+    Deleting a correct branch because today's only caller cannot reach it is exactly how
+    that bug gets built. Keep both: the pre-filter for behaviour, this for truth.
     """
     if paid > expected:
         return "overpaid"

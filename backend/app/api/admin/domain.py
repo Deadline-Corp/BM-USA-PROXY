@@ -1346,18 +1346,31 @@ async def list_deposit_ledger(
     if before:
         # inclusive end-of-day: a person picking "to 5 Aug" means through the 5th
         conds.append(OnchainDepositLedger.created_at < _parse_day(before) + timedelta(days=1))
-    if q:
-        # One box for the three things anyone actually pastes: a transaction hash, the
-        # address it came from, or the address it went to. Separate inputs per column
-        # would make the operator guess which one they are holding.
-        needle = f"%{q.strip()}%"
-        conds.append(
-            or_(
-                OnchainDepositLedger.txid.ilike(needle),
-                OnchainDepositLedger.from_address.ilike(needle),
-                OnchainDepositLedger.to_address.ilike(needle),
+    if q and q.strip():
+        from app.services.payments.onchain.assets import CHAINS, SPECS
+
+        needle_raw = q.strip()
+        # A coin or a chain name is matched by equality. Operators type "BTC" long before
+        # they paste a hash, and against the substring branch alone that query returned the
+        # whole table — an answer to a question nobody asked. Equality on these two short
+        # columns is also why this field no longer demands a minimum length: the length
+        # floor existed to keep one-character queries from scanning every hash.
+        if needle_raw.lower() in CHAINS:
+            conds.append(OnchainDepositLedger.chain == needle_raw.lower())
+        elif needle_raw.upper() in {spec.asset for spec in SPECS.values()}:
+            conds.append(OnchainDepositLedger.asset == needle_raw.upper())
+        else:
+            # Otherwise it is one of the three things anyone actually pastes: a transaction
+            # hash, the address it came from, or the address it went to. Separate inputs per
+            # column would make the operator guess which one they are holding.
+            needle = f"%{needle_raw}%"
+            conds.append(
+                or_(
+                    OnchainDepositLedger.txid.ilike(needle),
+                    OnchainDepositLedger.from_address.ilike(needle),
+                    OnchainDepositLedger.to_address.ilike(needle),
+                )
             )
-        )
     for cond in conds:
         stmt = stmt.where(cond)
         count_stmt = count_stmt.where(cond)
