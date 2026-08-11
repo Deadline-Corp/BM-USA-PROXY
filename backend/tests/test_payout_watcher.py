@@ -113,6 +113,24 @@ async def test_unknown_recipient_is_not_confirmed(session) -> None:
     assert "no open payout" in rows[0].meta["reason"]
 
 
+async def test_payout_nobody_approved_is_not_confirmed(session) -> None:
+    """A transfer must not close a payout that was never authorised.
+
+    Approve and Send are one button in the admin now, so anything sendable has been
+    approved by the time an operator can see the transfer instructions. If the watcher
+    also settled 'requested' payouts, that authorisation would be optional in practice:
+    the person holding the wallet could move the money and have the system file it as
+    paid with nobody's name against the decision.
+    """
+    payout = await _payout(session, amount="15.00", status="requested")
+    assert await process_outgoing(session, _transfer("0xout-unapproved", "15.00")) is False
+
+    await session.refresh(payout)
+    assert payout.status == "requested"  # untouched — still waiting on a human
+    rows = await _ledger_rows(session, "0xout-unapproved")
+    assert rows[0].status == "unmatched"  # recorded, not silently dropped
+
+
 async def test_ambiguous_payouts_are_not_confirmed(session) -> None:
     # two identical open payouts to the same address — a machine must not guess
     p1 = await _payout(session, amount="25.00")

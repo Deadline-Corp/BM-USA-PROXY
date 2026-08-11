@@ -36,7 +36,12 @@ _CURSOR_SUFFIX = ":payout"
 _TRON_BACKFILL_MS = 30 * 60 * 1000
 _EVM_BACKFILL_BLOCKS = 200
 
-_OPEN_PAYOUT_STATUSES = ("requested", "approved")
+# Approved only. A 'requested' payout is one nobody has authorised yet, and settling it
+# would mean an outgoing transfer that merely matches an address and an amount could close
+# a request on its own — the approval step would be decorative, skippable by the very
+# person holding the wallet. The admin's Send button approves and then shows the transfer
+# instructions, so by the time anyone can send, the payout is approved.
+_OPEN_PAYOUT_STATUSES = ("approved",)
 
 
 @runtime_checkable

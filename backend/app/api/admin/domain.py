@@ -133,12 +133,15 @@ async def _admin_display_map(
 
 
 # ── money authority (operators run the business; owner is the escalation tier) ──
-# Operators perform day-to-day money-out actions (refunds, referral payouts) up to a
-# configurable USD ceiling; anything above it requires an owner. This keeps the business
-# running without an owner in the loop, while bounding what one compromised or rogue
-# operator account can move. Every action is audit-logged regardless.
+# Operators perform refunds up to a configurable USD ceiling; above it an owner is
+# required. This keeps the business running without an owner in the loop while bounding
+# what one compromised operator account can move. Every action is audit-logged regardless.
+#
+# Referral payouts deliberately have NO ceiling: the client never asked for one, and the
+# gate would have been theatre anyway — the operator approving a payout is the same person
+# holding the wallet keys, so the money moves whether or not a button was pressed. What
+# does the real work there is that the watcher settles only an approved payout.
 _OPERATOR_LIMIT_DEFAULTS: dict[str, float] = {
-    "operator_payout_limit_usd": 200.0,
     "operator_refund_limit_usd": 200.0,
 }
 
@@ -1965,12 +1968,16 @@ async def _get_payout(session: DbSession, payout_id: int) -> Payout:
 async def approve_payout(
     payout_id: int, admin: CurrentAdmin, session: DbSession
 ) -> dict[str, Any]:
+    """Authorise a payout. The admin's Send button calls this, then shows the instructions.
+
+    No ceiling here: the client never asked for one, and operators run this business
+    without an owner in the loop. The step still earns its place — it is what the watcher
+    requires before it will settle anything, it tells the partner their payout is coming,
+    and it records who authorised it.
+    """
     payout = await _get_payout(session, payout_id)
     if payout.status != "requested":
         raise Conflict("payout is not in 'requested' state")
-    await _require_money_authority(
-        session, admin, float(payout.amount_usd), "operator_payout_limit_usd"
-    )
     payout.status = "approved"
     payout.operator_id = admin.id
     payout.processed_at = _utcnow()
@@ -2029,9 +2036,6 @@ async def mark_payout_paid(
     payout = await _get_payout(session, payout_id)
     if payout.status not in ("requested", "approved"):
         raise Conflict("payout must be requested or approved")
-    await _require_money_authority(
-        session, admin, float(payout.amount_usd), "operator_payout_limit_usd"
-    )
     payout.status = "paid"
     payout.operator_id = admin.id
     payout.tx_hash = body.tx_hash
@@ -2540,8 +2544,8 @@ _SETTINGS_WHITELIST: frozenset[str] = frozenset(
         "rotation_cooldown_sec",
         "pool_low_watermark",
         "attribution",
-        # ceilings for what an operator may move without an owner (see _require_money_authority)
-        "operator_payout_limit_usd",
+        # ceiling for what an operator may refund without an owner (_require_money_authority).
+        # There is no payout equivalent on purpose — see the note there.
         "operator_refund_limit_usd",
     }
 )

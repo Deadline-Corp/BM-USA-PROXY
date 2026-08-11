@@ -55,13 +55,22 @@ export function ReferralsScreen() {
   const [settingsDraft, setSettingsDraft] = useState<Partial<ReferralSettings> | null>(null);
   const settings = settingsDraft ?? settingsQuery.data;
 
-  async function handleApprove(id: string) {
-    try {
-      await approveMutation.mutateAsync(id);
-      toast.success("Payout approved");
-    } catch (err) {
-      toast.error(apiErrorMessage(err));
+  /** Authorise the payout (if it still needs it), then show the transfer instructions.
+   *
+   * Approving and sending were two buttons for one decision — nobody approves a payout
+   * they are not about to send. Merged, so the authorisation cannot be skipped by going
+   * straight for the instructions; the watcher settles only approved payouts.
+   */
+  async function handleSend(p: Payout) {
+    if (p.status === "requested") {
+      try {
+        await approveMutation.mutateAsync(p.id);
+      } catch (err) {
+        toast.error(apiErrorMessage(err));
+        return; // no instructions for a payout we failed to authorise
+      }
     }
+    setSendTarget(p.id);
   }
 
   async function handleReject(reason?: string) {
@@ -213,14 +222,19 @@ export function ReferralsScreen() {
                     <Button variant="quiet" size="sm" onClick={() => setRejectTarget(p)}>
                       {strings.referrals.reject}
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={() => setSendTarget(p.id)}>
-                      {strings.referrals.send}
-                    </Button>
                     <Button variant="ghost" size="sm" onClick={() => setMarkPaidTarget(p)}>
                       {strings.referrals.markPaid}
                     </Button>
-                    <Button variant="primary" size="sm" onClick={() => handleApprove(p.id)} isLoading={approveMutation.isPending}>
-                      {strings.referrals.approve}
+                    {/* One button, not Approve-then-Send. Approving and then sending were
+                        always the same decision; splitting them only invited skipping the
+                        first, and the watcher settles nothing that is not approved. */}
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => handleSend(p)}
+                      isLoading={approveMutation.isPending}
+                    >
+                      {strings.referrals.send}
                     </Button>
                   </div>
                 </div>
