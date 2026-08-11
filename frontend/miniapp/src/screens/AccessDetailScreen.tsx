@@ -254,7 +254,11 @@ export function AccessDetailScreen() {
           <div className="mt-3.5">
             <div className="mb-1.5 flex items-baseline justify-between text-xs text-text-3">
               <span>{strings.common.expiresIn}</span>
-              <CountdownBadge expiresAt={access.expires_at} valueClassName="text-[13px]" />
+              <CountdownBadge
+                expiresAt={access.expires_at}
+                variant="remaining"
+                valueClassName="text-[13px]"
+              />
             </div>
             <div className="h-[3px] overflow-hidden rounded-full bg-surface-2">
               <div

@@ -66,7 +66,11 @@ function AccessRow({ access }: { access: AccessSummary }) {
             status rather than on the timestamp — otherwise a revoked row ticks away as
             though it were still live. */}
         {access.expires_at && !ENDED_STATUSES.includes(access.status) ? (
-          <CountdownBadge expiresAt={access.expires_at} valueClassName="text-[13px] font-medium" />
+          <CountdownBadge
+            expiresAt={access.expires_at}
+            variant="remaining"
+            valueClassName="text-[13px] font-medium"
+          />
         ) : (
           <Chip tone={STATUS_TONE[access.status] ?? "default"}>{statusLabel(access.status)}</Chip>
         )}

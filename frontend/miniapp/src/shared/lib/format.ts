@@ -29,10 +29,14 @@ const WEEK = 7 * DAY;
 /** A month is 30 days here because that is what the Monthly tariff is: 43 200 minutes. */
 const MONTH = 30 * DAY;
 
-/** Largest unit first. Labels are English because the mini-app ships English only. */
+/**
+ * Largest unit first. Single letters, no space before them: this string is a countdown
+ * that reaches five units, so every character it does not spend is width it keeps.
+ * "mo" is the exception — month and minute cannot both be "m".
+ */
 const UNITS: ReadonlyArray<{ label: string; size: number }> = [
   { label: "mo", size: MONTH },
-  { label: "wk", size: WEEK },
+  { label: "w", size: WEEK },
   { label: "d", size: DAY },
   { label: "h", size: HOUR },
   { label: "m", size: MINUTE },
@@ -40,37 +44,42 @@ const UNITS: ReadonlyArray<{ label: string; size: number }> = [
 ];
 
 /**
- * How much time is left, in units a person can act on.
+ * A stopwatch — for a short window where the seconds are the thing being watched.
  *
- * Under an hour this stays a stopwatch (`MM:SS`). That covers the payment window and the
- * final hour of an access — the two moments where the seconds are the thing being watched,
- * and where a ticking clock is the familiar shape.
- *
- * Above an hour it switches to named units, because the stopwatch stops meaning anything:
- * a month of access read `719:55:31`, and nobody converts that to "about four weeks" while
- * deciding whether to extend.
- *
- * Two units, never more. The third is always smaller than the error a person cares about —
- * "4 wk 1 d 3 h 12 m 5 s" is not more informative than "4 wk 1 d", it is just harder to
- * read at a glance. Zero-valued units are skipped, so 32 days reads "1 mo 2 d", not
- * "1 mo 0 wk".
+ * Used by the payment countdown, whose whole span is the invoice's hour. `MM:SS` is the
+ * shape people already read as "time running out", and it is what belongs beside "waiting
+ * for your payment".
  */
 export function formatDuration(totalSeconds: number): string {
   const clamped = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(clamped / HOUR);
+  const minutes = Math.floor((clamped % HOUR) / MINUTE);
+  const seconds = clamped % MINUTE;
+  if (hours > 0) return `${hours}:${pad2(minutes)}:${pad2(seconds)}`;
+  return `${minutes}:${pad2(seconds)}`;
+}
 
-  if (clamped < HOUR) {
-    return `${Math.floor(clamped / MINUTE)}:${pad2(clamped % MINUTE)}`;
-  }
-
+/**
+ * How much of an access is left, counting down to the second.
+ *
+ * `719:55:31` for a month was unreadable, but so is stopping at the two largest units: a
+ * countdown that does not move is not a countdown. This runs from the largest unit that
+ * has anything in it all the way to seconds, so the row is always alive — `4w 1d 23h 55m
+ * 31s` at the start of a month, `45m 12s` near the end.
+ *
+ * Leading zeros are skipped, so twenty hours left reads `20h 15m 3s` rather than
+ * `0mo 0w 0d 20h …`. Zeros *inside* the run are kept: dropping them would shorten the
+ * string mid-tick and make the numbers jump sideways every time a unit emptied.
+ */
+export function formatTimeLeft(totalSeconds: number): string {
+  const clamped = Math.max(0, Math.floor(totalSeconds));
   const parts: string[] = [];
   let rest = clamped;
   for (const { label, size } of UNITS) {
     const value = Math.floor(rest / size);
-    if (value > 0) {
-      parts.push(`${value} ${label}`);
-      rest -= value * size;
-    }
-    if (parts.length === 2) break;
+    if (value === 0 && parts.length === 0 && size > 1) continue; // nothing started yet
+    parts.push(`${value}${label}`);
+    rest -= value * size;
   }
   return parts.join(" ");
 }

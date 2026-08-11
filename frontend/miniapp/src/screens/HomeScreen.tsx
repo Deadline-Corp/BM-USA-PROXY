@@ -152,7 +152,7 @@ export function HomeScreen() {
             <span className="text-[11px] uppercase tracking-[.08em] text-text-3">
               {strings.common.expiresIn}
             </span>
-            <CountdownBadge expiresAt={activeAccess.expires_at} />
+            <CountdownBadge expiresAt={activeAccess.expires_at} variant="remaining" />
           </div>
 
           <div className="mt-3 flex gap-2.5">
