@@ -152,7 +152,10 @@ export function ReferralsScreen() {
                   <Skeleton className="h-24" />
                 ) : (
                   <div className="flex flex-col gap-4">
-                    <div className="grid grid-cols-3 gap-3">
+                    {/* items-end so the three fields line up even when a label wraps —
+                        "Hold before payout (days)" takes two lines at this width and was
+                        dropping its input below the other two. */}
+                    <div className="grid grid-cols-3 gap-3 items-end">
                       <Input
                         type="number"
                         step="0.1"
