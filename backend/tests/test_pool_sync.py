@@ -17,8 +17,9 @@ from sqlalchemy import func, select
 class _StubIproxy:
     """Just enough of IproxyClient for sync_pool: both endpoints return the whole account."""
 
-    def __init__(self, connections: list[dict[str, Any]]) -> None:
+    def __init__(self, connections: list[dict[str, Any]], offline: set[str] | None = None) -> None:
         self._connections = connections
+        self.offline = offline or set()
         self.list_calls = 0
 
     async def list_connections(self) -> list[dict[str, Any]]:
@@ -26,7 +27,13 @@ class _StubIproxy:
         return self._connections
 
     async def connection_status(self) -> list[dict[str, Any]]:
-        return [{"id": c["id"], "online_status": "online"} for c in self._connections]
+        return [
+            {
+                "id": c["id"],
+                "online_status": "offline" if c["id"] in self.offline else "online",
+            }
+            for c in self._connections
+        ]
 
 
 def _conn(cid: str, city: str) -> dict[str, Any]:
@@ -75,7 +82,8 @@ async def test_sync_pool_upserts_every_connection_and_reuses_one_location(sessio
     result = await sync_pool(session, client=client)  # type: ignore[arg-type]
     await session.flush()
 
-    assert result["upserted"] == 3
+    assert result["seen"] == 3
+    assert result["written"] == 3  # first sighting: all three are inserts
     assert result["online"] == 3
     assert client.list_calls == 1  # one call for the whole pool, not one per phone
 
@@ -94,3 +102,52 @@ async def test_sync_pool_upserts_every_connection_and_reuses_one_location(sessio
         select(Connection.carrier).where(Connection.iproxy_connection_id == "aaa")
     )
     assert carrier == "Verizon"
+
+
+async def test_quiet_pass_writes_nothing_yet_still_stamps_freshness(session) -> None:
+    """The point of the whole exercise: a minute where nothing happened costs no row writes.
+
+    Freshness must survive that. `synced_at` is how an operator and the ops checks tell
+    "the pool is being watched" from "the sync died", so it has to keep moving even when
+    every phone reports exactly what it reported a minute ago.
+    """
+    client = _StubIproxy([_conn("aaa", "Boston"), _conn("bbb", "Denver")])
+    await sync_pool(session, client=client)  # type: ignore[arg-type]
+    await session.flush()
+    before = dict(
+        (await session.execute(
+            select(Connection.iproxy_connection_id, Connection.synced_at)
+        )).all()  # type: ignore[arg-type]
+    )
+
+    again = await sync_pool(session, client=client)  # type: ignore[arg-type]
+    await session.flush()
+
+    assert again["seen"] == 2
+    assert again["written"] == 0  # nothing moved, so nothing was written row by row
+    after = dict(
+        (await session.execute(
+            select(Connection.iproxy_connection_id, Connection.synced_at)
+        )).all()  # type: ignore[arg-type]
+    )
+    for cid, stamp in before.items():
+        assert after[cid] > stamp, f"{cid} stopped looking synced"
+
+
+async def test_only_the_phone_that_changed_is_written(session) -> None:
+    """One phone drops offline; the others must not be rewritten to say so."""
+    conns = [_conn("aaa", "Boston"), _conn("bbb", "Boston"), _conn("ccc", "Denver")]
+    client = _StubIproxy(conns)
+    await sync_pool(session, client=client)  # type: ignore[arg-type]
+    await session.flush()
+
+    client.offline = {"bbb"}
+    result = await sync_pool(session, client=client)  # type: ignore[arg-type]
+    await session.flush()
+
+    assert result["written"] == 1
+    assert result["online"] == 2
+    status = await session.scalar(
+        select(Connection.online_status).where(Connection.iproxy_connection_id == "bbb")
+    )
+    assert status == "offline"

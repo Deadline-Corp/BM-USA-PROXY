@@ -1,10 +1,15 @@
 """iproxy pool sync — mirror the account's connections into our sellable pool.
 
-Called from the worker cron (~every 5 min) and the admin "Sync now" button; both go
+Called from the worker cron (every minute) and the admin "Sync now" button; both go
 through sync_pool(). Each iproxy connection is enriched with carrier, exit-city
 location, and online status so the allocator can pick it. carrier / location_id /
 is_sellable / tier are set when a connection is first seen; later syncs refresh only
 volatile fields (name, online status), so an operator's manual edits in /admin survive.
+
+The pass writes only what moved. The pool is one row per phone and the client expects
+~2000 at launch, so a pass that touched every row was ~2000 statements a minute to record
+that nothing had happened. Now it is one read, one statement per phone that actually
+changed, and two batched stamps for the quiet rest — three statements on a calm minute.
 """
 
 from __future__ import annotations
@@ -12,7 +17,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -85,7 +90,12 @@ async def _resolve_location(
 
 
 async def sync_pool(session: AsyncSession, client: IproxyClient | None = None) -> dict[str, Any]:
-    """Upsert every iproxy connection into `connections`. Returns {upserted, online}."""
+    """Mirror the iproxy account into `connections`, writing only what changed.
+
+    Returns ``{seen, written, online}`` — phones the account reported, rows actually
+    written, and how many were up. ``written`` is the one worth watching: on a calm pass
+    it is zero, and a pass that keeps rewriting rows means something upstream is flapping.
+    """
     client = client or IproxyClient()
     conns = await client.list_connections()
     statuses = {
@@ -93,26 +103,58 @@ async def sync_pool(session: AsyncSession, client: IproxyClient | None = None) -
         for s in await client.connection_status()
     }
     now = datetime.now(UTC)
-    upserted = online = 0
+    # One read of what we already hold, so the loop can tell a changed phone from a phone
+    # that simply reported the same thing again. Without it every pass wrote every row.
+    current = {
+        row.iproxy_connection_id: row
+        for row in (
+            await session.execute(
+                select(
+                    Connection.iproxy_connection_id,
+                    Connection.name,
+                    Connection.online_status,
+                )
+            )
+        ).all()
+    }
+
+    seen = written = online = 0
+    # Rows where nothing moved still need their freshness stamps, but not a statement each:
+    # they are collected here and stamped in one UPDATE per group at the end.
+    stamp_online: list[str] = []
+    stamp_offline: list[str] = []
     location_cache: dict[str, int | None] = {}
+
     for c in conns:
         cid = str(c.get("id") or "")
         if not cid:
             continue
+        seen += 1
         basic = c.get("basic_info") or {}
         app_data = c.get("app_data") or {}
         device = app_data.get("device_info") or {}
         name = basic.get("name") or c.get("name") or ""
-        carrier = _normalize_carrier(device.get("network_operator_mobile"))
-        loc_id = await _resolve_location(session, app_data.get("ip_city"), location_cache)
         status = _online_status(statuses.get(cid, {}))
         if status == "online":
             online += 1
 
+        known = current.get(cid)
+        if known is not None and known.name == name and known.online_status == status:
+            (stamp_online if status == "online" else stamp_offline).append(cid)
+            continue
+
+        # Only a first sighting needs a location: location_id is deliberately absent from
+        # the conflict update below, so resolving it for a row we already hold would be
+        # work thrown away — and it is two statements per phone when uncached.
+        loc_id = (
+            await _resolve_location(session, app_data.get("ip_city"), location_cache)
+            if known is None
+            else None
+        )
         values: dict[str, Any] = {
             "iproxy_connection_id": cid,
             "name": name,
-            "carrier": carrier,
+            "carrier": _normalize_carrier(device.get("network_operator_mobile")),
             "location_id": loc_id,
             "is_sellable": True,  # auto-list on first sight; admin can toggle later
             "tier": "standard",
@@ -134,7 +176,23 @@ async def sync_pool(session: AsyncSession, client: IproxyClient | None = None) -
             set_["last_online_at"] = stmt.excluded.last_online_at
         stmt = stmt.on_conflict_do_update(index_elements=["iproxy_connection_id"], set_=set_)
         await session.execute(stmt)
-        upserted += 1
+        written += 1
 
-    log.info("iproxy.sync", upserted=upserted, online=online)
-    return {"upserted": upserted, "online": online}
+    # Two statements for the whole quiet majority. `last_online_at` still moves for phones
+    # that are up, so "when did we last see it alive" keeps its meaning for the ones that
+    # later go dark.
+    if stamp_offline:
+        await session.execute(
+            update(Connection)
+            .where(Connection.iproxy_connection_id.in_(stamp_offline))
+            .values(synced_at=now)
+        )
+    if stamp_online:
+        await session.execute(
+            update(Connection)
+            .where(Connection.iproxy_connection_id.in_(stamp_online))
+            .values(synced_at=now, last_online_at=now)
+        )
+
+    log.info("iproxy.sync", seen=seen, written=written, online=online)
+    return {"seen": seen, "written": written, "online": online}
