@@ -221,7 +221,10 @@ export interface ReferralBalances {
 export interface PayoutRail {
   network: string;
   asset: string;
+  /** Full "USDT TRC-20 (Tron)" — used where coin and network are named together. */
   label: string;
+  /** Network alone, "Tron (TRC-20)" — the payout form asks for it by itself. */
+  network_label: string;
 }
 
 export interface Referral {

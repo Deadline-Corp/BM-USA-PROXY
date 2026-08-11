@@ -256,6 +256,7 @@ export const strings = {
     payoutFormTitle: "Payout details",
     walletAddress: "Wallet address",
     network: "Network",
+    coin: "Coin",
     payoutBelowMin: "Minimum payout is",
     payoutSent: "Payout request sent.",
     signupsLabel: "Signups",

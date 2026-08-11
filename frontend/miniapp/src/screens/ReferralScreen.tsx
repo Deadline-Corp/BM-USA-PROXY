@@ -243,6 +243,10 @@ interface PayoutSheetProps {
 }
 
 function PayoutSheet({ onClose, walletAddress, setWalletAddress, network, setNetwork, rails, onSubmit, pending }: PayoutSheetProps) {
+  // `network` arrives already resolved to the rail that will be submitted, so the coin
+  // shown below is the coin that will actually be sent.
+  const selectedRail = rails.find((r) => r.network === network);
+
   return (
     <Sheet
       open
@@ -278,10 +282,27 @@ function PayoutSheet({ onClose, walletAddress, setWalletAddress, network, setNet
           >
             {rails.map((rail) => (
               <option key={rail.network} value={rail.network}>
-                {rail.asset} · {rail.label}
+                {rail.network_label}
               </option>
             ))}
           </select>
+        </div>
+        {/* The coin is shown, not chosen: every rail pays USDT, so a second dropdown would
+            be a control with one option. Disabled rather than plain text so it reads as
+            part of the same form — the person can see what they are getting and see that
+            it is not theirs to pick. Comes from the selected rail, never hard-coded, so
+            adding a non-USDT rail cannot make this line lie. */}
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-text-2" htmlFor="wallet-coin">
+            {strings.referral.coin}
+          </label>
+          <input
+            id="wallet-coin"
+            readOnly
+            disabled
+            value={selectedRail?.asset ?? ""}
+            className="h-11 w-full cursor-not-allowed rounded border border-border bg-surface px-3 text-sm text-text-2"
+          />
         </div>
       </div>
     </Sheet>

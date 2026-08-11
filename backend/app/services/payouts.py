@@ -22,7 +22,8 @@ class PayoutRail:
     network: str        # what we store on Payout.network
     asset: str          # always USDT for now
     chain: str          # watcher engine that will confirm the outgoing transfer
-    label: str          # human label for the admin/mini-app
+    label: str          # full "asset on network" label — admin lists, error messages
+    network_label: str  # network alone, for a form that asks for the network by itself
     address_re: re.Pattern[str]
 
     def validate_address(self, address: str) -> str:
@@ -40,9 +41,13 @@ _TRON_RE = re.compile(r"T[1-9A-HJ-NP-Za-km-z]{33}")
 _EVM_RE = re.compile(r"0x[0-9a-fA-F]{40}")
 
 PAYOUT_RAILS: dict[str, PayoutRail] = {
-    "trc20": PayoutRail("trc20", "USDT", "tron", "USDT TRC-20 (Tron)", _TRON_RE),
-    "erc20": PayoutRail("erc20", "USDT", "ethereum", "USDT ERC-20 (Ethereum)", _EVM_RE),
-    "bep20": PayoutRail("bep20", "USDT", "bsc", "USDT BEP-20 (BNB Chain)", _EVM_RE),
+    "trc20": PayoutRail("trc20", "USDT", "tron", "USDT TRC-20 (Tron)", "Tron (TRC-20)", _TRON_RE),
+    "erc20": PayoutRail(
+        "erc20", "USDT", "ethereum", "USDT ERC-20 (Ethereum)", "Ethereum (ERC-20)", _EVM_RE
+    ),
+    "bep20": PayoutRail(
+        "bep20", "USDT", "bsc", "USDT BEP-20 (BNB Chain)", "BNB Chain (BEP-20)", _EVM_RE
+    ),
 }
 
 
@@ -66,5 +71,19 @@ def validate_target(network: str, address: str) -> tuple[str, str]:
 
 
 def rails_for_client() -> list[dict[str, str]]:
-    """Payload for the mini-app payout form."""
-    return [{"network": r.network, "asset": r.asset, "label": r.label} for r in PAYOUT_RAILS.values()]
+    """Payload for the mini-app payout form.
+
+    ``network_label`` is sent alongside the full label because the form asks for the
+    network on its own — the coin is not a choice, every rail pays USDT. Naming networks
+    is the backend's job: the mini-app should not be assembling "Tron (TRC-20)" out of a
+    code it was handed.
+    """
+    return [
+        {
+            "network": r.network,
+            "asset": r.asset,
+            "label": r.label,
+            "network_label": r.network_label,
+        }
+        for r in PAYOUT_RAILS.values()
+    ]
