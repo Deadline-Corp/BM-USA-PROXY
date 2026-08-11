@@ -17,6 +17,16 @@ export function useClientDossier(id: string | null) {
     queryKey: ["clients", id],
     queryFn: () => clientsApi.get(id as string),
     enabled: id !== null,
+    // The dossier carries the conversation, and the other side of that conversation is a
+    // person typing into the bot right now. Nothing the operator does triggers a refetch,
+    // so without polling an incoming message only appeared after closing and reopening the
+    // panel — which reads as "the client has not replied yet" while the reply is sitting
+    // on the server. Ten seconds is well inside the pause between two chat messages.
+    // The query is disabled with the panel shut (id === null), so this costs nothing when
+    // no dossier is open.
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   });
 }
 

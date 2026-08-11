@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { SlideOver } from "@/shared/components/SlideOver";
 import { Button } from "@/shared/components/Button";
@@ -53,13 +53,20 @@ export function ClientDossier({ clientId, onClose }: ClientDossierProps) {
   const profile = data?.profile;
 
   const qc = useQueryClient();
+  const lastInboundRef = useRef("");
   useEffect(() => {
-    // Opening a dossier marks the client's inbound messages read server-side —
-    // refresh the sidebar "unread" badge so it reflects the new count.
-    if (data?.messages?.some((m) => m.direction === "in")) {
+    // Fetching a dossier marks that client's inbound messages read server-side, so the
+    // sidebar "unread" badge has to be refreshed to match. Only when the count actually
+    // moves, though: the dossier polls now, and firing on every poll would mean an extra
+    // dashboard request every ten seconds for as long as a panel sits open.
+    const inbound = data?.messages?.filter((m) => m.direction === "in").length ?? 0;
+    const key = `${clientId}:${inbound}`;
+    if (key === lastInboundRef.current) return;
+    lastInboundRef.current = key;
+    if (inbound > 0) {
       qc.invalidateQueries({ queryKey: ["dashboard", "summary"] });
     }
-  }, [data, qc]);
+  }, [data, qc, clientId]);
 
   if (!clientId) return null;
 
