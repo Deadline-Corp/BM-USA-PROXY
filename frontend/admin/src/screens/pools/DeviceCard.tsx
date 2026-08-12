@@ -56,7 +56,11 @@ export function DeviceCard({ connection: c, onEdit }: DeviceCardProps) {
         </div>
         <span className={clsx("flex items-center gap-1.5 text-[.7rem] px-[9px] py-[3px] rounded-full flex-none leading-none", statusStyle)}>
           <span className="w-[5px] h-[5px] rounded-full bg-current flex-none" />
-          {status === "online" ? "Online" : status === "full" ? "Full" : "Offline"}
+          {/* Busy, not Full. This chip answers "what is this phone doing" — Online, Busy,
+              Offline is one vocabulary about a device. "Full" was capacity language about
+              slots, and it sat next to a SLOTS 1/1 row that already says the same thing in
+              numbers. The pool legend keeps Used because it counts slots, not phones. */}
+          {status === "online" ? "Online" : status === "full" ? "Busy" : "Offline"}
         </span>
       </div>
 
