@@ -310,6 +310,42 @@ def _reject_mainnet_contracts_on_testnet(
         )
 
 
+def _reject_testnet_addresses_on_mainnet(
+    methods: dict[tuple[str, str], MethodConfig],
+) -> None:
+    """Fail loudly when a rail still points at a testnet address after the switch.
+
+    Flipping ONCHAIN_NETWORK is one variable; replacing nine addresses is nine edits, and
+    the switch is exactly when one gets missed. A missed one is not a broken deploy, it is
+    a checkout that hands a customer an address on the wrong chain — so this refuses to
+    start rather than quote it.
+
+    ⚠️ It can only catch the chains whose addresses carry a network in them: Bitcoin
+    (`tb1…`/`m…`/`n…`/`2…`) and Litecoin (`tltc1…`/`Q…`). **Tron, Ethereum, BSC and Solana
+    use the identical address format on both networks** — the same key controls the same
+    address on testnet and mainnet — so nothing here or anywhere else can tell you that
+    the EVM address in the config is still the throwaway wallet from testing. Those four
+    have to be checked by a human against the client's wallets. That is the whole reason
+    this docstring says so out loud.
+    """
+    testnet_prefixes = {
+        "bitcoin": ("tb1", "m", "n", "2"),
+        "litecoin": ("tltc1", "Q"),
+    }
+    for (asset, network), method in methods.items():
+        prefixes = testnet_prefixes.get(method.chain)
+        if not prefixes:
+            continue
+        if method.address.lower().startswith(tuple(p.lower() for p in prefixes)):
+            raise OnchainConfigError(
+                f"rail {asset}/{network} has a testnet address ({method.address}) but "
+                f"ONCHAIN_NETWORK=mainnet. A customer sent here cannot pay it. Replace it "
+                f"with the mainnet {method.chain} address before switching over — and "
+                f"check the Tron/EVM/Solana rails by hand while you are there, because "
+                f"their addresses look identical on both networks."
+            )
+
+
 def _reject_weak_confirmations_on_mainnet(
     methods: dict[tuple[str, str], MethodConfig],
 ) -> None:
@@ -385,6 +421,7 @@ def load_config(
         _reject_mainnet_contracts_on_testnet(methods)
     elif strict:
         _reject_weak_confirmations_on_mainnet(methods)
+        _reject_testnet_addresses_on_mainnet(methods)
     config = OnchainConfig(
         methods=methods,
         rpc=_parse_rpc(rpc_json),

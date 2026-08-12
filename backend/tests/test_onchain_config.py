@@ -178,3 +178,38 @@ def test_require_method_raises_for_unknown() -> None:
     cfg = load_config(json.dumps([{"asset": "USDT", "network": "trc20", "address": "TX"}]), "{}")
     with pytest.raises(OnchainConfigError):
         cfg.require_method("BTC", "native")
+
+
+def test_mainnet_refuses_a_leftover_testnet_address() -> None:
+    """The switch is one variable and nine addresses; this catches the ones missed.
+
+    Only where the address carries its network — Bitcoin and Litecoin. Tron, EVM and
+    Solana look identical on both, which is the point the error message makes.
+    """
+    methods = json.dumps(
+        [{"asset": "BTC", "network": "native",
+          "address": "tb1qpev303lfxcfdxrzgzjf0f494lh6e9dwvc98lq8", "confirmations": 6}]
+    )
+    with pytest.raises(OnchainConfigError) as exc:
+        load_config(methods, None, "mainnet", strict=True)
+    assert "testnet address" in str(exc.value)
+
+    # the same rail on testnet is fine, and a mainnet address on mainnet is fine
+    load_config(methods, None, "testnet")
+    load_config(
+        json.dumps([{"asset": "BTC", "network": "native",
+                     "address": "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq",
+                     "confirmations": 6}]),
+        None, "mainnet", strict=True,
+    )
+
+
+def test_mainnet_cannot_tell_an_evm_testnet_address_apart() -> None:
+    """Documents the limit rather than pretending it does not exist: the same key
+    controls the same 0x address on Sepolia and on Ethereum, so this passes."""
+    load_config(
+        json.dumps([{"asset": "ETH", "network": "native",
+                     "address": "0x26EC39000000000000000000000000000000E0b1",
+                     "confirmations": 12}]),
+        None, "mainnet", strict=True,
+    )
