@@ -8,6 +8,7 @@ in the worker too (real-provider mode). Everything else is wired against the rea
 
 from __future__ import annotations
 
+import re
 import secrets
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
@@ -16,7 +17,7 @@ from typing import Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import ColumnElement, Select, func, or_, select, text
+from sqlalchemy import ColumnElement, Select, String, and_, cast, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentAdmin, DbSession, Owner
@@ -71,6 +72,64 @@ def _utcnow() -> datetime:
 
 def _page(limit: int, offset: int) -> tuple[int, int]:
     return max(1, min(limit, 200)), max(0, offset)
+
+
+def _search_terms(q: str) -> list[str]:
+    """Split a search box into the words a row has to contain, each reduced to a stem.
+
+    The console shows these rows in English — "Revoked", "Banned", "App setting" — while
+    the columns hold `access.revoke`, `client.ban`, `app_setting`. Someone typing what
+    they can see has to find the row, so a regular past-tense ending comes off before
+    matching, and a consonant doubled to carry it ("banned" → "bann" → "ban") comes off
+    with it. Matching is by substring, so an over-short stem still hits: "revok" finds
+    `access.revoke`.
+
+    Only plain short words are stemmed. A hash, an address or a handle is matched exactly
+    as typed — chopping two characters off a transaction id to guess at grammar would be
+    absurd.
+    """
+    words = [w for w in re.split(r"[^0-9A-Za-z@._-]+", q.strip().lower()) if w]
+    terms: list[str] = []
+    for word in words:
+        if word.isalpha() and len(word) <= 12:
+            # Only "-ed". A bare trailing "d" would eat the last letter of names — "fred"
+            # became "fre", which then matched every row with "free" or "frequency" in it.
+            # Nothing needs it: "approved" and "revoked" both end in "ed" already.
+            if len(word) > 4 and word.endswith("ed"):
+                word = word[:-2]
+            if len(word) > 3 and word[-1] == word[-2] and word[-1] not in "aeiou":
+                word = word[:-1]
+        terms.append(word)
+    return terms
+
+
+def _sub(column: ColumnElement[Any], where: ColumnElement[bool]) -> ColumnElement[Any]:
+    """One column of a related row, usable as a search column on the row being listed.
+
+    A correlated scalar subquery rather than a join: the search on some of these screens
+    reaches three tables, and joining all of them into both the page query and its COUNT
+    restates the schema in every endpoint. A NULL from a missing related row simply never
+    matches, which is the behaviour we want anyway.
+    """
+    return select(column).where(where).scalar_subquery()
+
+
+def _search_condition(
+    q: str | None, columns: Sequence[ColumnElement[Any]]
+) -> ColumnElement[bool] | None:
+    """Every word of the query somewhere in the row; each word may land in any column.
+
+    One box over every column beats one box per column: the operator holds a value —
+    a handle, a city, a status — and usually cannot say which column it belongs to. AND
+    across words is what makes a second word narrow rather than widen, which is the whole
+    reason for typing it.
+    """
+    if not q or not q.strip():
+        return None
+    terms = _search_terms(q)
+    if not terms:
+        return None
+    return and_(*[or_(*[col.ilike(f"%{term}%") for col in columns]) for term in terms])
 
 
 async def _paginated(
@@ -244,18 +303,35 @@ async def list_clients(
     q: str | None = None,
     has_active: bool | None = None,
     banned: bool | None = None,
+    since: str | None = None,
+    before: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> dict[str, Any]:
     stmt = select(User)
     count_stmt = select(func.count()).select_from(User)
-    if q:
-        like = f"%{q}%"
-        cond = or_(
-            User.tg_username.ilike(like), User.first_name.ilike(like), User.email.ilike(like)
-        )
-        if q.isdigit():  # tg_id search: exact numeric match, ORed into the text search
-            cond = or_(cond, User.tg_user_id == int(q))
+    if since:
+        stmt = stmt.where(User.created_at >= _parse_day(since))
+        count_stmt = count_stmt.where(User.created_at >= _parse_day(since))
+    if before:
+        end = _parse_day(before) + timedelta(days=1)
+        stmt = stmt.where(User.created_at < end)
+        count_stmt = count_stmt.where(User.created_at < end)
+    # The telegram id is cast rather than compared as a number, so a partial one matches
+    # like every other column — an operator reading an id off a screenshot types the part
+    # they can see.
+    cond = _search_condition(
+        q,
+        [
+            User.tg_username,
+            User.first_name,
+            User.last_name,
+            User.email,
+            User.referral_code,
+            cast(User.tg_user_id, String),
+        ],
+    )
+    if cond is not None:
         stmt = stmt.where(cond)
         count_stmt = count_stmt.where(cond)
     if banned is not None:
@@ -717,11 +793,33 @@ async def list_connections(
     carrier: str | None = None,
     online: bool | None = None,
     sellable: bool | None = None,
+    q: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> dict[str, Any]:
+    """The phone pool. ``q`` searches everything printed on a device card.
+
+    No date range here, unlike the other lists: a card shows no date, so a from/to filter
+    would be a control with nothing on screen to check it against.
+    """
     stmt = select(Connection)
     count_stmt = select(func.count()).select_from(Connection)
+    search = _search_condition(
+        q,
+        [
+            Connection.iproxy_connection_id,
+            Connection.name,
+            Connection.carrier,
+            Connection.tier,
+            Connection.online_status,
+            Connection.health_note,
+            _sub(Location.city, Location.id == Connection.location_id),
+            _sub(Location.state_code, Location.id == Connection.location_id),
+        ],
+    )
+    if search is not None:
+        stmt = stmt.where(search)
+        count_stmt = count_stmt.where(search)
     if city:
         loc_ids = select(Location.id).where(Location.city.ilike(f"%{city}%"))
         stmt = stmt.where(Connection.location_id.in_(loc_ids))
@@ -947,11 +1045,20 @@ async def list_admin_accesses(
     city: str | None = None,
     user: str | None = None,
     user_id: int | None = None,
+    q: str | None = None,
+    since: str | None = None,
+    before: str | None = None,
     expiring: bool = False,
     expiring_24h: bool = False,
     limit: int = 50,
     offset: int = 0,
 ) -> dict[str, Any]:
+    """Issued accesses. ``q`` searches every column the table shows except the dates.
+
+    The screen used to have a box for the city and another for the user, which asks the
+    operator to classify the string in their hand before they can look for it. `city` and
+    `user` still work — the dossier and saved links use them — but the console sends `q`.
+    """
     stmt = select(Access)
     count_stmt = select(func.count()).select_from(Access)
     if status:
@@ -979,6 +1086,31 @@ async def list_admin_accesses(
         ).where(Location.city.ilike(f"%{city}%"))
         stmt = stmt.where(Access.connection_id.in_(conn_ids))
         count_stmt = count_stmt.where(Access.connection_id.in_(conn_ids))
+    if since:
+        stmt = stmt.where(Access.created_at >= _parse_day(since))
+        count_stmt = count_stmt.where(Access.created_at >= _parse_day(since))
+    if before:
+        end = _parse_day(before) + timedelta(days=1)
+        stmt = stmt.where(Access.created_at < end)
+        count_stmt = count_stmt.where(Access.created_at < end)
+    search = _search_condition(
+        q,
+        [
+            Access.status,
+            Access.tariff_code,
+            _sub(User.tg_username, User.id == Access.user_id),
+            _sub(User.first_name, User.id == Access.user_id),
+            _sub(cast(User.tg_user_id, String), User.id == Access.user_id),
+            _sub(Connection.carrier, Connection.id == Access.connection_id),
+            _sub(
+                Location.city,
+                Location.id == _sub(Connection.location_id, Connection.id == Access.connection_id),
+            ),
+        ],
+    )
+    if search is not None:
+        stmt = stmt.where(search)
+        count_stmt = count_stmt.where(search)
     if expiring or expiring_24h:
         cutoff = _utcnow() + timedelta(hours=24)
         stmt = stmt.where(
@@ -1853,11 +1985,35 @@ async def referrals_ledger(
     session: DbSession,
     status: str | None = None,
     referrer_user_id: int | None = None,
+    q: str | None = None,
+    since: str | None = None,
+    before: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> dict[str, Any]:
+    """Referral commissions. ``q`` searches the referrer and the status."""
     stmt = select(ReferralLedger)
     count_stmt = select(func.count()).select_from(ReferralLedger)
+    if since:
+        stmt = stmt.where(ReferralLedger.created_at >= _parse_day(since))
+        count_stmt = count_stmt.where(ReferralLedger.created_at >= _parse_day(since))
+    if before:
+        end = _parse_day(before) + timedelta(days=1)
+        stmt = stmt.where(ReferralLedger.created_at < end)
+        count_stmt = count_stmt.where(ReferralLedger.created_at < end)
+    search = _search_condition(
+        q,
+        [
+            ReferralLedger.status,
+            _sub(User.tg_username, User.id == ReferralLedger.referrer_user_id),
+            _sub(User.first_name, User.id == ReferralLedger.referrer_user_id),
+            _sub(cast(User.tg_user_id, String), User.id == ReferralLedger.referrer_user_id),
+            _sub(User.referral_code, User.id == ReferralLedger.referrer_user_id),
+        ],
+    )
+    if search is not None:
+        stmt = stmt.where(search)
+        count_stmt = count_stmt.where(search)
     if status:
         stmt = stmt.where(ReferralLedger.status == status)
         count_stmt = count_stmt.where(ReferralLedger.status == status)
@@ -1959,19 +2115,46 @@ async def payout_instruction(
 
 @router.get("/payouts")
 async def list_payouts(
-    admin: CurrentAdmin, session: DbSession, status: str | None = None
+    admin: CurrentAdmin,
+    session: DbSession,
+    status: str | None = None,
+    q: str | None = None,
+    since: str | None = None,
+    before: str | None = None,
 ) -> dict[str, Any]:
     """Open payouts by default — everything still awaiting action.
 
     Previously this defaulted to 'requested' only, which made an approved payout vanish
     from the queue before anyone could send it. 'Send' happens after approve, so both
     states have to stay visible.
+
+    ``q`` searches the referrer, the status, and the payout's destination — the network,
+    the wallet and the transaction hash — because "did we already send this one" is
+    answered by pasting the hash, not by scrolling.
     """
     stmt = select(Payout).order_by(Payout.requested_at)
     if status:
         stmt = stmt.where(Payout.status == status)
     else:
         stmt = stmt.where(Payout.status.in_(("requested", "approved")))
+    if since:
+        stmt = stmt.where(Payout.requested_at >= _parse_day(since))
+    if before:
+        stmt = stmt.where(Payout.requested_at < _parse_day(before) + timedelta(days=1))
+    search = _search_condition(
+        q,
+        [
+            Payout.status,
+            Payout.network,
+            Payout.wallet_address,
+            func.coalesce(Payout.tx_hash, ""),
+            _sub(User.tg_username, User.id == Payout.referrer_user_id),
+            _sub(User.first_name, User.id == Payout.referrer_user_id),
+            _sub(cast(User.tg_user_id, String), User.id == Payout.referrer_user_id),
+        ],
+    )
+    if search is not None:
+        stmt = stmt.where(search)
     rows = (await session.execute(stmt)).scalars().all()
     user_display_map = await _user_display_map(session, [p.referrer_user_id for p in rows])
     items = [
@@ -2604,16 +2787,29 @@ async def get_terms_admin(admin: CurrentAdmin, session: DbSession) -> dict[str, 
 class TermsBody(BaseModel):
     text_md: str
     questions: list[dict[str, Any]] = []
+    publish: bool = False
 
 
 @router.put("/terms")
 async def put_terms(body: TermsBody, admin: Owner, session: DbSession) -> dict[str, Any]:
+    """Write the terms. Publishing bumps the version; saving does not.
+
+    The version is the gate: `is_tos_accepted` compares it against what each client has
+    accepted, so bumping it puts every customer back in front of the acceptance screen
+    before they can use the app. That is right for a change of substance and wrong for a
+    typo, and until now every write bumped it — there was no way to fix a word without
+    re-prompting the entire user base.
+
+    A first write always takes version 1: version 0 means "no terms configured", which
+    turns the gate off entirely.
+    """
     tos = await settings_svc.get(session, "tos", {})
-    next_version = int(tos.get("version") or 0) + 1
-    new_tos = {"version": next_version, "text_md": body.text_md, "questions": body.questions}
+    current = int(tos.get("version") or 0)
+    version = current + 1 if body.publish or not current else current
+    new_tos = {"version": version, "text_md": body.text_md, "questions": body.questions}
     await settings_svc.set_value(session, "tos", new_tos, admin_id=admin.id)
     await audit.write(session, admin_id=admin.id, action="terms.update", entity="app_setting",
-                       entity_id="tos", after={"version": next_version})
+                       entity_id="tos", after={"version": version, "published": body.publish})
     return new_tos
 
 
@@ -2702,11 +2898,21 @@ async def patch_admin(
 async def list_audit(
     admin: CurrentAdmin,
     session: DbSession,
+    q: str | None = None,
+    since: str | None = None,
+    before: str | None = None,
     entity: str | None = None,
     admin_id: int | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> dict[str, Any]:
+    """The trail of who did what, searchable by any of it except the timestamp.
+
+    ``q`` runs over the admin, the entity and the action at once; the date is a range
+    instead, because nobody searches for a timestamp by typing it. The old screen had a
+    box per column, and the one labelled "admin" sent `?admin=` while this signature has
+    only `admin_id` — it silently filtered nothing at all.
+    """
     stmt = select(AuditLog)
     count_stmt = select(func.count()).select_from(AuditLog)
     if entity:
@@ -2715,6 +2921,28 @@ async def list_audit(
     if admin_id:
         stmt = stmt.where(AuditLog.admin_id == admin_id)
         count_stmt = count_stmt.where(AuditLog.admin_id == admin_id)
+    if since:
+        stmt = stmt.where(AuditLog.created_at >= _parse_day(since))
+        count_stmt = count_stmt.where(AuditLog.created_at >= _parse_day(since))
+    if before:
+        # inclusive end-of-day, same as the payments ledger
+        end = _parse_day(before) + timedelta(days=1)
+        stmt = stmt.where(AuditLog.created_at < end)
+        count_stmt = count_stmt.where(AuditLog.created_at < end)
+    # The admin is shown by display name, so it has to be searchable by display name —
+    # matching only the numeric id would mean searching for what the screen never shows.
+    admin_name = func.coalesce(
+        select(AdminUser.display_name)
+        .where(AdminUser.id == AuditLog.admin_id)
+        .scalar_subquery(),
+        "",
+    )
+    search = _search_condition(
+        q, [AuditLog.entity, AuditLog.action, cast(AuditLog.entity_id, String), admin_name]
+    )
+    if search is not None:
+        stmt = stmt.where(search)
+        count_stmt = count_stmt.where(search)
     stmt = stmt.order_by(AuditLog.created_at.desc())
 
     limit, offset = _page(limit, offset)

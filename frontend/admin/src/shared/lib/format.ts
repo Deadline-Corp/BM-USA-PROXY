@@ -47,6 +47,74 @@ export function formatChain(chain: string | null | undefined): string {
   return CHAIN_LABELS[chain.toLowerCase()] ?? titleCase(chain);
 }
 
+// ── audit log ────────────────────────────────────────────────────────────
+// The log stores machine keys — `app_setting`, `access.revoke` — and used to print them
+// raw, which asked the reader to parse punctuation to find out what happened. These turn
+// a key into the sentence it stands for. Derived rather than looked up in a table of
+// forty, so an action added on the backend tomorrow still reads as English.
+
+/** Words that are shouted, not capitalised. */
+const AUDIT_ACRONYMS: Record<string, string> = { ip: "IP", faq: "FAQ", tos: "ToS", url: "URL" };
+
+/** Verbs the -ed rules would get wrong. */
+const AUDIT_IRREGULAR: Record<string, string> = { send: "sent" };
+
+/** Keys whose natural English reverses the order of the words in them. Every word here
+ * still occurs in the key, so searching for what you can read still finds the row. */
+const AUDIT_PHRASES: Record<string, string> = {
+  "settings.referral.update": "Referral settings updated",
+  "notifications.settings.update": "Notification settings updated",
+};
+
+const VOWELS = "aeiou";
+
+/** `revoke` → revoked, `ban` → banned, `send` → sent. */
+function pastTense(verb: string): string {
+  if (verb in AUDIT_IRREGULAR) return AUDIT_IRREGULAR[verb];
+  if (verb.endsWith("e")) return `${verb}d`;
+  const tail = verb.slice(-3);
+  // consonant-vowel-consonant doubles the last letter: ban → banned. `extend` and `mark`
+  // are excluded by the vowel test on the first letter, which is what stops "extendded".
+  if (
+    tail.length === 3 &&
+    !VOWELS.includes(tail[0]) &&
+    VOWELS.includes(tail[1]) &&
+    !VOWELS.includes(tail[2]) &&
+    !"wxy".includes(tail[2])
+  ) {
+    return `${verb}${tail[2]}ed`;
+  }
+  return `${verb}ed`;
+}
+
+const auditWord = (word: string) => AUDIT_ACRONYMS[word] ?? word;
+
+/** `app_setting` → "App setting". */
+export function formatAuditEntity(entity: string | null | undefined): string {
+  if (!entity) return "—";
+  return titleCase(entity.split(/[._]/).map(auditWord).join(" "));
+}
+
+/** `access.revoke` → "Access revoked", `order.mark_paid` → "Order marked paid".
+ *
+ * Subject first, then the verb in the past — a record of something that happened, not an
+ * instruction. The last dotted segment is the verb phrase; everything before it is what
+ * the verb was done to.
+ */
+export function formatAuditAction(action: string | null | undefined): string {
+  if (!action) return "—";
+  if (action in AUDIT_PHRASES) return AUDIT_PHRASES[action];
+  const segments = action.split(".");
+  const verbPhrase = (segments.pop() ?? "").split("_");
+  const verb = verbPhrase.shift() ?? "";
+  const words = [
+    ...segments.flatMap((s) => s.split("_")).map(auditWord),
+    pastTense(verb),
+    ...verbPhrase.map(auditWord),
+  ].filter(Boolean);
+  return titleCase(words.join(" "));
+}
+
 export function formatNetwork(network: string | null | undefined): string {
   if (!network) return "—";
   return NETWORK_LABELS[network.toLowerCase()] ?? network.toUpperCase();

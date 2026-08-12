@@ -1,17 +1,18 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { PageHead } from "@/shared/components/PageHead";
 import { Panel } from "@/shared/components/Panel";
 import { DataTable } from "@/shared/components/DataTable";
-import { StatusBadge } from "@/shared/components/StatusBadge";
+import { StatusBadge, formatStatusLabel } from "@/shared/components/StatusBadge";
 import { Button } from "@/shared/components/Button";
-import { Select } from "@/shared/components/form/Select";
-import { Checkbox } from "@/shared/components/form/Checkbox";
 import { Input } from "@/shared/components/form/Input";
+import { FilterBar } from "@/shared/components/TableFilters";
+import { DateFilterPill, FilterPill } from "@/shared/components/FilterPill";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { Modal } from "@/shared/components/Modal";
 import { formatDate } from "@/shared/lib/format";
 import { useAccessesList, useExtendAccess, useReissueAccess, useRevokeAccess, useRotateIp } from "@/shared/hooks/useAccesses";
+import { useDebouncedValue } from "@/shared/hooks/useDebouncedValue";
 import { usePagination } from "@/shared/hooks/usePagination";
 import { useToast } from "@/shared/components/Toast";
 import { apiErrorMessage } from "@/shared/api/client";
@@ -21,13 +22,18 @@ import { IconRotate } from "@/shared/components/icons";
 
 type ActionKind = "revoke" | "extend" | "rotate" | "reissue";
 
+/** Every state an access can be in — the same list the database constraint allows. */
+const STATUSES = ["provisioning", "active", "expiring", "expired", "revoked", "failed"];
+
 export function PackagesScreen() {
   const toast = useToast();
+  const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
-  const [city, setCity] = useState("");
-  const [user, setUser] = useState("");
   const [expiringOnly, setExpiringOnly] = useState(false);
-  const { limit, offset, setOffset, resetOffset } = usePagination();
+  const [since, setSince] = useState("");
+  const [before, setBefore] = useState("");
+  const { limit, offset, setOffset } = usePagination();
+  const q = useDebouncedValue(search.trim());
 
   const [actionTarget, setActionTarget] = useState<{ row: AccessRow; kind: ActionKind } | null>(null);
   const [extendMinutes, setExtendMinutes] = useState(60);
@@ -37,17 +43,31 @@ export function PackagesScreen() {
   const rotateMutation = useRotateIp();
   const reissueMutation = useReissueAccess();
 
+  useEffect(() => {
+    setOffset(0);
+  }, [q, status, expiringOnly, since, before, setOffset]);
+
   const params = useMemo(
     () => ({
-      status: status || undefined,
-      city: city || undefined,
-      user: user || undefined,
-      expiring: expiringOnly || undefined,
       limit,
       offset,
+      ...(q ? { q } : {}),
+      ...(status ? { status } : {}),
+      ...(expiringOnly ? { expiring: true } : {}),
+      ...(since ? { since } : {}),
+      ...(before ? { before } : {}),
     }),
-    [status, city, user, expiringOnly, limit, offset],
+    [q, status, expiringOnly, since, before, limit, offset],
   );
+
+  const isFiltered = Boolean(q || status || expiringOnly || since || before);
+  const clearAll = () => {
+    setSearch("");
+    setStatus("");
+    setExpiringOnly(false);
+    setSince("");
+    setBefore("");
+  };
 
   const { data, isLoading, isError, refetch } = useAccessesList(params);
 
@@ -219,34 +239,43 @@ export function PackagesScreen() {
           isError={isError}
           onRetry={refetch}
           getRowId={(row) => row.id}
-          emptyTitle="No packages found"
+          emptyTitle={isFiltered ? "Nothing matches these filters" : "No packages found"}
+          emptyHint={isFiltered ? "Widen the date range, or clear the filters." : undefined}
           toolbar={
-            <div className="flex items-center gap-3 flex-wrap">
-              <Select value={status} onChange={(e) => { setStatus(e.target.value); resetOffset(); }} className="min-w-[150px]">
-                <option value="">{strings.packages.filterStatus}: {strings.common.all}</option>
-                <option value="active">Active</option>
-                <option value="expired">Expired</option>
-                <option value="revoked">Revoked</option>
-              </Select>
-              <Input
-                value={city}
-                onChange={(e) => { setCity(e.target.value); resetOffset(); }}
-                placeholder={strings.packages.filterCity}
-                className="max-w-[160px]"
+            <FilterBar
+              search={search}
+              onSearchChange={setSearch}
+              searchPlaceholder={strings.packages.searchPlaceholder}
+              isFiltered={isFiltered}
+              onClear={clearAll}
+            >
+              <FilterPill
+                label={strings.packages.filterStatus}
+                value={status}
+                onChange={setStatus}
+                options={STATUSES.map((s) => ({ value: s, label: formatStatusLabel(s) }))}
+                allLabel={strings.common.all}
               />
-              <Input
-                value={user}
-                onChange={(e) => { setUser(e.target.value); resetOffset(); }}
-                placeholder={strings.packages.filterUser}
-                className="max-w-[180px]"
-              />
-              <Checkbox
-                id="expiring-only"
+              <FilterPill
                 label={strings.packages.filterExpiring}
-                checked={expiringOnly}
-                onChange={(e) => { setExpiringOnly(e.target.checked); resetOffset(); }}
+                value={expiringOnly ? "soon" : ""}
+                onChange={(v) => setExpiringOnly(v === "soon")}
+                options={[{ value: "soon", label: "Within 24h" }]}
+                allLabel={strings.common.all}
               />
-            </div>
+              <DateFilterPill
+                label={strings.common.filterFrom}
+                value={since}
+                onChange={setSince}
+                anyLabel={strings.common.anyDate}
+              />
+              <DateFilterPill
+                label={strings.common.filterTo}
+                value={before}
+                onChange={setBefore}
+                anyLabel={strings.common.anyDate}
+              />
+            </FilterBar>
           }
         />
       </Panel>

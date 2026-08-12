@@ -47,6 +47,13 @@ export const strings = {
     no: "No",
     active: "Active",
     inactive: "Inactive",
+    // Shared by every table's filter bar — the same control must not be called two
+    // different things on two screens.
+    clearFilters: "Clear filters",
+    clearSearch: "Clear search",
+    filterFrom: "From",
+    filterTo: "To",
+    anyDate: "Any date",
   },
   nav: {
     groupOperations: "Operations",
@@ -122,6 +129,7 @@ export const strings = {
     filterCarrier: "Carrier",
     filterOnline: "Online only",
     filterSellable: "Sellable only",
+    searchPlaceholder: "Search device id, city, carrier, tier, note…",
     sellable: "Sellable",
     slots: "Slots",
     // "Busy" everywhere a slot is occupied, matching the chip on the device card. One word
@@ -139,6 +147,7 @@ export const strings = {
     filterCity: "City",
     filterUser: "User",
     filterExpiring: "Expiring soon",
+    searchPlaceholder: "Search user, status, city, carrier, tariff…",
     revoke: "Revoke",
     revokeConfirm: "Revoke this access immediately? The client loses connectivity right away.",
     extend: "Extend",
@@ -247,6 +256,8 @@ export const strings = {
     totalAttached: "Attached users",
     totalPaid: "Paid out",
     pendingPayouts: "Pending payouts",
+    payoutSearchPlaceholder: "Search referrer, network, wallet, tx hash…",
+    ledgerSearchPlaceholder: "Search referrer, status, referral code…",
     ledger: "Ledger",
     payoutsQueue: "Payouts queue",
     approve: "Approve",
@@ -316,10 +327,22 @@ export const strings = {
     subtitle: "App configuration, terms, admins, and audit trail.",
     appSettings: "App settings",
     terms: "Terms of service",
-    publish: "Publish",
+    termsSubtitle: "What clients read and accept before the mini-app lets them buy.",
+    termsText: "Agreement text (Markdown)",
+    termsTextHint:
+      "Shown on the acceptance screen in the mini-app. Markdown: ## heading, **bold**, - list.",
+    termsQuestions: "Questions asked on acceptance",
+    termsQuestionsHint:
+      "Answers are stored with the acceptance and shown in the client's dossier. The seeded email question is what gives you a contact address outside Telegram.",
+    termsPublishHint:
+      "Save updates the text for everyone immediately. Publish also bumps the version, which puts every existing client back through the acceptance screen — use it for changes of substance, not typos.",
+    termsPublishConfirm:
+      "Publish a new version? Every client will have to accept the terms again before they can use the app.",
+    publish: "Publish new version",
     addQuestion: "Add question",
     admins: "Admins",
     addAdmin: "Add admin",
     audit: "Audit log",
+    auditSearchPlaceholder: "Search admin, entity, action…",
   },
 } as const;

@@ -10,10 +10,10 @@ export function useReferralLedger(params: ListParams) {
   return useQuery({ queryKey: ["referrals", "ledger", params], queryFn: () => referralsApi.ledger(params) });
 }
 
-export function usePayouts(status?: string) {
+export function usePayouts(params?: ListParams) {
   return useQuery({
-    queryKey: ["payouts", status],
-    queryFn: () => referralsApi.payouts(status),
+    queryKey: ["payouts", params],
+    queryFn: () => referralsApi.payouts(params),
     // the watcher closes a payout on its own once it sees the transfer on-chain — poll so
     // the row flips to 'paid' without the operator reloading the page
     refetchInterval: 15_000,

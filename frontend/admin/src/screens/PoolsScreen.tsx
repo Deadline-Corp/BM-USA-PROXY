@@ -1,14 +1,15 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PageHead } from "@/shared/components/PageHead";
 import { Button } from "@/shared/components/Button";
-import { Select } from "@/shared/components/form/Select";
-import { Checkbox } from "@/shared/components/form/Checkbox";
 import { Num } from "@/shared/components/Num";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { ErrorState } from "@/shared/components/ErrorState";
 import { Skeleton } from "@/shared/components/Skeleton";
+import { FilterBar } from "@/shared/components/TableFilters";
+import { FilterPill } from "@/shared/components/FilterPill";
 import { IconRefresh } from "@/shared/components/icons";
 import { useConnections, usePoolSummary, useSyncPool } from "@/shared/hooks/usePool";
+import { useDebouncedValue } from "@/shared/hooks/useDebouncedValue";
 import { usePagination } from "@/shared/hooks/usePagination";
 import { useToast } from "@/shared/components/Toast";
 import { apiErrorMessage } from "@/shared/api/client";
@@ -19,27 +20,43 @@ import { EditConnectionModal } from "@/screens/pools/EditConnectionModal";
 
 export function PoolsScreen() {
   const toast = useToast();
+  const [search, setSearch] = useState("");
   const [city, setCity] = useState("");
   const [carrier, setCarrier] = useState("");
   const [onlineOnly, setOnlineOnly] = useState(false);
   const [sellableOnly, setSellableOnly] = useState(false);
   const [editing, setEditing] = useState<Connection | null>(null);
-  const { limit, offset, setOffset, resetOffset } = usePagination(60);
+  const { limit, offset, setOffset } = usePagination(60);
+  const q = useDebouncedValue(search.trim());
 
   const summaryQuery = usePoolSummary();
   const syncMutation = useSyncPool();
 
+  useEffect(() => {
+    setOffset(0);
+  }, [q, city, carrier, onlineOnly, sellableOnly, setOffset]);
+
   const params = useMemo(
     () => ({
-      city: city || undefined,
-      carrier: carrier || undefined,
-      online: onlineOnly || undefined,
-      sellable: sellableOnly || undefined,
       limit,
       offset,
+      ...(q ? { q } : {}),
+      ...(city ? { city } : {}),
+      ...(carrier ? { carrier } : {}),
+      ...(onlineOnly ? { online: true } : {}),
+      ...(sellableOnly ? { sellable: true } : {}),
     }),
-    [city, carrier, onlineOnly, sellableOnly, limit, offset],
+    [q, city, carrier, onlineOnly, sellableOnly, limit, offset],
   );
+
+  const isFiltered = Boolean(q || city || carrier || onlineOnly || sellableOnly);
+  const clearAll = () => {
+    setSearch("");
+    setCity("");
+    setCarrier("");
+    setOnlineOnly(false);
+    setSellableOnly(false);
+  };
 
   const connectionsQuery = useConnections(params);
   const summary = summaryQuery.data;
@@ -137,56 +154,46 @@ export function PoolsScreen() {
         </div>
       )}
 
-      {/* Filters */}
-      <div className="flex items-center gap-3 flex-wrap mb-4">
-        <Select
-          value={city}
-          onChange={(e) => {
-            setCity(e.target.value);
-            resetOffset();
-          }}
-          className="min-w-[160px]"
+      {/* Filters — same shape as every other list in the console. No date range here:
+          a device card shows no date, so a from/to filter would have nothing on screen
+          to check itself against. */}
+      <div className="mb-4">
+        <FilterBar
+          search={search}
+          onSearchChange={setSearch}
+          searchPlaceholder={strings.pools.searchPlaceholder}
+          isFiltered={isFiltered}
+          onClear={clearAll}
         >
-          <option value="">{strings.pools.filterCity}: {strings.common.all}</option>
-          {cityOptions.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </Select>
-        <Select
-          value={carrier}
-          onChange={(e) => {
-            setCarrier(e.target.value);
-            resetOffset();
-          }}
-          className="min-w-[160px]"
-        >
-          <option value="">{strings.pools.filterCarrier}: {strings.common.all}</option>
-          {carrierOptions.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </Select>
-        <Checkbox
-          id="pools-online"
-          label={strings.pools.filterOnline}
-          checked={onlineOnly}
-          onChange={(e) => {
-            setOnlineOnly(e.target.checked);
-            resetOffset();
-          }}
-        />
-        <Checkbox
-          id="pools-sellable"
-          label={strings.pools.filterSellable}
-          checked={sellableOnly}
-          onChange={(e) => {
-            setSellableOnly(e.target.checked);
-            resetOffset();
-          }}
-        />
+          <FilterPill
+            label={strings.pools.filterCity}
+            value={city}
+            onChange={setCity}
+            options={cityOptions.map((c) => ({ value: c, label: c }))}
+            allLabel={strings.common.all}
+          />
+          <FilterPill
+            label={strings.pools.filterCarrier}
+            value={carrier}
+            onChange={setCarrier}
+            options={carrierOptions.map((c) => ({ value: c, label: c }))}
+            allLabel={strings.common.all}
+          />
+          <FilterPill
+            label="Status"
+            value={onlineOnly ? "online" : ""}
+            onChange={(v) => setOnlineOnly(v === "online")}
+            options={[{ value: "online", label: strings.pools.filterOnline }]}
+            allLabel={strings.common.all}
+          />
+          <FilterPill
+            label="Listed"
+            value={sellableOnly ? "yes" : ""}
+            onChange={(v) => setSellableOnly(v === "yes")}
+            options={[{ value: "yes", label: strings.pools.filterSellable }]}
+            allLabel={strings.common.all}
+          />
+        </FilterBar>
       </div>
 
       {/* Device grid */}

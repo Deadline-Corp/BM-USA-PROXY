@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { systemApi } from "@/shared/api/endpoints";
-import type { AdminAccountInput, AppSettings, ListParams, Terms } from "@/shared/api/types";
+import type { AdminAccountInput, AppSettings, ListParams, TermsInput } from "@/shared/api/types";
 
 export function useAppSettings() {
   return useQuery({ queryKey: ["system", "settings"], queryFn: systemApi.getSettings });
@@ -21,7 +21,7 @@ export function useTerms() {
 export function usePutTerms() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: Terms) => systemApi.putTerms(body),
+    mutationFn: (body: TermsInput) => systemApi.putTerms(body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["system", "terms"] }),
   });
 }

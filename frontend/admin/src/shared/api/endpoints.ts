@@ -44,6 +44,7 @@ import type {
   Tariff,
   TariffInput,
   Terms,
+  TermsInput,
   AccessRow,
 } from "@/shared/api/types";
 
@@ -210,10 +211,8 @@ export const referralsApi = {
     apiClient
       .get<Paginated<ReferralLedgerEntry>>("/referrals/ledger", { params })
       .then((r) => r.data),
-  payouts: (status?: string) =>
-    apiClient
-      .get<Paginated<Payout>>("/payouts", { params: { status } })
-      .then((r) => r.data),
+  payouts: (params?: ListParams) =>
+    apiClient.get<Paginated<Payout>>("/payouts", { params }).then((r) => r.data),
   payoutInstruction: (id: string) =>
     apiClient
       .get<PayoutInstruction>(`/payouts/${id}/instruction`)
@@ -305,7 +304,7 @@ export const systemApi = {
   updateSettings: (body: Partial<AppSettings>) =>
     apiClient.patch<AppSettings>("/settings", { values: body }).then((r) => r.data),
   getTerms: () => apiClient.get<Terms>("/terms").then((r) => r.data),
-  putTerms: (body: Terms) => apiClient.put<Terms>("/terms", body).then((r) => r.data),
+  putTerms: (body: TermsInput) => apiClient.put<Terms>("/terms", body).then((r) => r.data),
   listAdmins: () => apiClient.get<AdminAccount[]>("/admins").then((r) => r.data),
   createAdmin: (body: AdminAccountInput) =>
     apiClient.post<AdminAccount>("/admins", body).then((r) => r.data),

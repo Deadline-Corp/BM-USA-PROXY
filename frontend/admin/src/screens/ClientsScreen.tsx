@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { ColumnDef } from "@tanstack/react-table";
 import { PageHead } from "@/shared/components/PageHead";
@@ -6,33 +6,55 @@ import { Button } from "@/shared/components/Button";
 import { Panel } from "@/shared/components/Panel";
 import { DataTable } from "@/shared/components/DataTable";
 import { StatusBadge } from "@/shared/components/StatusBadge";
-import { Checkbox } from "@/shared/components/form/Checkbox";
+import { FilterBar } from "@/shared/components/TableFilters";
+import { DateFilterPill, FilterPill } from "@/shared/components/FilterPill";
 import { initials, formatDate } from "@/shared/lib/format";
 import { useClientsList } from "@/shared/hooks/useClients";
+import { useDebouncedValue } from "@/shared/hooks/useDebouncedValue";
 import { usePagination } from "@/shared/hooks/usePagination";
 import { strings } from "@/shared/strings";
 import type { Client } from "@/shared/api/types";
 import { ClientDossier } from "@/screens/clients/ClientDossier";
-import { IconRefresh, IconSearch } from "@/shared/components/icons";
+import { IconRefresh } from "@/shared/components/icons";
 
 export function ClientsScreen() {
   const [searchParams] = useSearchParams();
-  const [query, setQuery] = useState(searchParams.get("q") ?? "");
-  const [hasActive, setHasActive] = useState(false);
-  const [bannedOnly, setBannedOnly] = useState(false);
+  const [search, setSearch] = useState(searchParams.get("q") ?? "");
+  // Three-state pills rather than checkboxes: a checkbox can only say "only the banned
+  // ones", never "only the ones who are not", and the second question gets asked too.
+  const [access, setAccess] = useState("");
+  const [status, setStatus] = useState("");
+  const [since, setSince] = useState("");
+  const [before, setBefore] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const { limit, offset, setOffset, resetOffset } = usePagination();
+  const { limit, offset, setOffset } = usePagination();
+  const query = useDebouncedValue(search.trim());
+
+  useEffect(() => {
+    setOffset(0);
+  }, [query, access, status, since, before, setOffset]);
 
   const params = useMemo(
     () => ({
-      q: query || undefined,
-      has_active: hasActive || undefined,
-      banned: bannedOnly || undefined,
       limit,
       offset,
+      ...(query ? { q: query } : {}),
+      ...(access ? { has_active: access === "yes" } : {}),
+      ...(status ? { banned: status === "banned" } : {}),
+      ...(since ? { since } : {}),
+      ...(before ? { before } : {}),
     }),
-    [query, hasActive, bannedOnly, limit, offset],
+    [query, access, status, since, before, limit, offset],
   );
+
+  const isFiltered = Boolean(query || access || status || since || before);
+  const clearAll = () => {
+    setSearch("");
+    setAccess("");
+    setStatus("");
+    setSince("");
+    setBefore("");
+  };
 
   const { data, isLoading, isError, refetch, isFetching } = useClientsList(params);
 
@@ -116,38 +138,46 @@ export function ClientsScreen() {
           emptyTitle="No clients found"
           emptyHint="Try a different search or clear filters."
           toolbar={
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="relative flex-1 min-w-[220px] max-w-[360px]">
-                <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-3 pointer-events-none" />
-                <input
-                  value={query}
-                  onChange={(e) => {
-                    setQuery(e.target.value);
-                    resetOffset();
-                  }}
-                  placeholder={strings.clients.searchPlaceholder}
-                  className="w-full h-10 pl-9 pr-3 bg-surface-2 border border-border rounded-lg text-text text-[.86rem] focus:outline-none focus:border-accent-line transition-colors duration-150 ease-brand"
-                />
-              </div>
-              <Checkbox
-                id="filter-active"
-                label={strings.clients.filterActive}
-                checked={hasActive}
-                onChange={(e) => {
-                  setHasActive(e.target.checked);
-                  resetOffset();
-                }}
+            <FilterBar
+              search={search}
+              onSearchChange={setSearch}
+              searchPlaceholder={strings.clients.searchPlaceholder}
+              isFiltered={isFiltered}
+              onClear={clearAll}
+            >
+              <FilterPill
+                label={strings.clients.colAccess}
+                value={access}
+                onChange={setAccess}
+                options={[
+                  { value: "yes", label: "Has access" },
+                  { value: "no", label: "No access" },
+                ]}
+                allLabel={strings.common.all}
               />
-              <Checkbox
-                id="filter-banned"
-                label={strings.clients.filterBanned}
-                checked={bannedOnly}
-                onChange={(e) => {
-                  setBannedOnly(e.target.checked);
-                  resetOffset();
-                }}
+              <FilterPill
+                label={strings.clients.colStatus}
+                value={status}
+                onChange={setStatus}
+                options={[
+                  { value: "active", label: strings.common.active },
+                  { value: "banned", label: strings.clients.banned },
+                ]}
+                allLabel={strings.common.all}
               />
-            </div>
+              <DateFilterPill
+                label={strings.common.filterFrom}
+                value={since}
+                onChange={setSince}
+                anyLabel={strings.common.anyDate}
+              />
+              <DateFilterPill
+                label={strings.common.filterTo}
+                value={before}
+                onChange={setBefore}
+                anyLabel={strings.common.anyDate}
+              />
+            </FilterBar>
           }
         />
       </Panel>

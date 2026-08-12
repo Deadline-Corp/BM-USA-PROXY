@@ -1,10 +1,12 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { PageHead } from "@/shared/components/PageHead";
 import { Panel } from "@/shared/components/Panel";
 import { DataTable } from "@/shared/components/DataTable";
 import { StatCard, StatClusterRow } from "@/shared/components/StatCard";
-import { StatusBadge } from "@/shared/components/StatusBadge";
+import { StatusBadge, formatStatusLabel } from "@/shared/components/StatusBadge";
+import { FilterBar } from "@/shared/components/TableFilters";
+import { DateFilterPill, FilterPill } from "@/shared/components/FilterPill";
 import { Button } from "@/shared/components/Button";
 import { Num } from "@/shared/components/Num";
 import { Input } from "@/shared/components/form/Input";
@@ -21,6 +23,7 @@ import {
   useReferralSummary,
   useRejectPayout,
 } from "@/shared/hooks/useReferrals";
+import { useDebouncedValue } from "@/shared/hooks/useDebouncedValue";
 import { usePagination } from "@/shared/hooks/usePagination";
 import { useToast } from "@/shared/components/Toast";
 import { apiErrorMessage } from "@/shared/api/client";
@@ -29,15 +32,70 @@ import type { Payout, ReferralLedgerEntry } from "@/shared/api/types";
 import { IconClients, IconMail, IconReferrals, IconWallet } from "@/shared/components/icons";
 import { PayoutInstructionModal } from "@/screens/referrals/PayoutInstructionModal";
 
+/** Every state a commission row can hold — the database constraint's own list. */
+const LEDGER_STATUSES = ["hold", "available", "requested", "paid", "reversed"];
+
 export function ReferralsScreen() {
   const toast = useToast();
   const summaryQuery = useReferralSummary();
   const { limit, offset, setOffset } = usePagination();
-  const ledgerParams = useMemo(() => ({ limit, offset }), [limit, offset]);
+
+  // The queue and the ledger are two lists answering two questions, so they filter
+  // separately — narrowing the payouts you are about to send should not also hide half
+  // the commission history you are checking them against.
+  const [payoutSearch, setPayoutSearch] = useState("");
+  const [payoutSince, setPayoutSince] = useState("");
+  const [payoutBefore, setPayoutBefore] = useState("");
+  const [ledgerSearch, setLedgerSearch] = useState("");
+  const [ledgerStatus, setLedgerStatus] = useState("");
+  const [ledgerSince, setLedgerSince] = useState("");
+  const [ledgerBefore, setLedgerBefore] = useState("");
+
+  const payoutQ = useDebouncedValue(payoutSearch.trim());
+  const ledgerQ = useDebouncedValue(ledgerSearch.trim());
+
+  useEffect(() => {
+    setOffset(0);
+  }, [ledgerQ, ledgerStatus, ledgerSince, ledgerBefore, setOffset]);
+
+  const ledgerParams = useMemo(
+    () => ({
+      limit,
+      offset,
+      ...(ledgerQ ? { q: ledgerQ } : {}),
+      ...(ledgerStatus ? { status: ledgerStatus } : {}),
+      ...(ledgerSince ? { since: ledgerSince } : {}),
+      ...(ledgerBefore ? { before: ledgerBefore } : {}),
+    }),
+    [limit, offset, ledgerQ, ledgerStatus, ledgerSince, ledgerBefore],
+  );
   const ledgerQuery = useReferralLedger(ledgerParams);
+
+  const payoutParams = useMemo(
+    () => ({
+      ...(payoutQ ? { q: payoutQ } : {}),
+      ...(payoutSince ? { since: payoutSince } : {}),
+      ...(payoutBefore ? { before: payoutBefore } : {}),
+    }),
+    [payoutQ, payoutSince, payoutBefore],
+  );
   // no status → the API returns everything still open (requested + approved). Passing
   // "pending" here filtered on a status that doesn't exist, so the queue was always empty.
-  const payoutsQuery = usePayouts();
+  const payoutsQuery = usePayouts(payoutParams);
+
+  const payoutsFiltered = Boolean(payoutQ || payoutSince || payoutBefore);
+  const clearPayouts = () => {
+    setPayoutSearch("");
+    setPayoutSince("");
+    setPayoutBefore("");
+  };
+  const ledgerFiltered = Boolean(ledgerQ || ledgerStatus || ledgerSince || ledgerBefore);
+  const clearLedger = () => {
+    setLedgerSearch("");
+    setLedgerStatus("");
+    setLedgerSince("");
+    setLedgerBefore("");
+  };
 
   const approveMutation = useApprovePayout();
   const rejectMutation = useRejectPayout();
@@ -123,6 +181,28 @@ export function ReferralsScreen() {
       <div className="flex flex-col gap-4">
         <Panel>
           <Panel.Head title={strings.referrals.payoutsQueue} subtitle={`${payoutsQuery.data?.total ?? 0} pending`} />
+          <div className="px-[18px] py-3 border-b border-border">
+            <FilterBar
+              search={payoutSearch}
+              onSearchChange={setPayoutSearch}
+              searchPlaceholder={strings.referrals.payoutSearchPlaceholder}
+              isFiltered={payoutsFiltered}
+              onClear={clearPayouts}
+            >
+              <DateFilterPill
+                label={strings.common.filterFrom}
+                value={payoutSince}
+                onChange={setPayoutSince}
+                anyLabel={strings.common.anyDate}
+              />
+              <DateFilterPill
+                label={strings.common.filterTo}
+                value={payoutBefore}
+                onChange={setPayoutBefore}
+                anyLabel={strings.common.anyDate}
+              />
+            </FilterBar>
+          </div>
           <div className="flex flex-col">
             {payoutsQuery.isLoading ? (
               <Skeleton className="h-40 m-4" />
@@ -178,7 +258,37 @@ export function ReferralsScreen() {
             isError={ledgerQuery.isError}
             onRetry={ledgerQuery.refetch}
             getRowId={(row) => row.id}
-            emptyTitle="No referral activity yet"
+            emptyTitle={ledgerFiltered ? "Nothing matches these filters" : "No referral activity yet"}
+            emptyHint={ledgerFiltered ? "Widen the date range, or clear the filters." : undefined}
+            toolbar={
+              <FilterBar
+                search={ledgerSearch}
+                onSearchChange={setLedgerSearch}
+                searchPlaceholder={strings.referrals.ledgerSearchPlaceholder}
+                isFiltered={ledgerFiltered}
+                onClear={clearLedger}
+              >
+                <FilterPill
+                  label={strings.orders.colStatus}
+                  value={ledgerStatus}
+                  onChange={setLedgerStatus}
+                  options={LEDGER_STATUSES.map((s) => ({ value: s, label: formatStatusLabel(s) }))}
+                  allLabel={strings.common.all}
+                />
+                <DateFilterPill
+                  label={strings.common.filterFrom}
+                  value={ledgerSince}
+                  onChange={setLedgerSince}
+                  anyLabel={strings.common.anyDate}
+                />
+                <DateFilterPill
+                  label={strings.common.filterTo}
+                  value={ledgerBefore}
+                  onChange={setLedgerBefore}
+                  anyLabel={strings.common.anyDate}
+                />
+              </FilterBar>
+            }
           />
         </Panel>
 

@@ -7,7 +7,7 @@ import { StatusBadge, formatStatusLabel } from "@/shared/components/StatusBadge"
 import { Num } from "@/shared/components/Num";
 import { CopyInline } from "@/shared/components/CopyInline";
 import { DateFilterPill, FilterPill } from "@/shared/components/FilterPill";
-import { IconSearch, IconX } from "@/shared/components/icons";
+import { FilterBar } from "@/shared/components/TableFilters";
 import { formatChain, formatCryptoAmount, formatDateTime, formatNetwork } from "@/shared/lib/format";
 import { useDepositLedger, useLedgerSummary } from "@/shared/hooks/useLedger";
 import { useDebouncedValue } from "@/shared/hooks/useDebouncedValue";
@@ -243,28 +243,16 @@ export function LedgerScreen() {
           emptyTitle={filtered ? strings.ledger.emptyFiltered : strings.ledger.empty}
           emptyHint={filtered ? strings.ledger.emptyFilteredHint : undefined}
           toolbar={
-            <div className="flex flex-col gap-3">
-              <div className="relative">
-                <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-3 pointer-events-none" />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder={strings.ledger.searchPlaceholder}
-                  className="w-full h-10 pl-9 pr-9 bg-surface-2 border border-border rounded-lg text-text font-body text-[.88rem] transition-colors duration-150 ease-brand placeholder:text-text-3 focus:outline-none focus:border-accent-line"
-                />
-                {search && (
-                  <button
-                    type="button"
-                    onClick={() => setSearch("")}
-                    aria-label={strings.common.cancel}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 grid place-items-center rounded text-text-3 hover:text-text hover:bg-surface"
-                  >
-                    <IconX className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <FilterPill
+            // This screen's toolbar is where the shape came from; it now renders through
+            // the shared component so the other five cannot drift away from it.
+            <FilterBar
+              search={search}
+              onSearchChange={setSearch}
+              searchPlaceholder={strings.ledger.searchPlaceholder}
+              isFiltered={filtered}
+              onClear={clearAll}
+            >
+              <FilterPill
                   label={strings.ledger.filterView}
                   value={currentOnly ? "" : "all"}
                   onChange={(v) => setCurrentOnly(v !== "all")}
@@ -298,23 +286,13 @@ export function LedgerScreen() {
                   onChange={setSince}
                   anyLabel={strings.ledger.filterAnyDate}
                 />
-                <DateFilterPill
-                  label={strings.ledger.filterTo}
-                  value={before}
-                  onChange={setBefore}
-                  anyLabel={strings.ledger.filterAnyDate}
-                />
-                {filtered && (
-                  <button
-                    type="button"
-                    onClick={clearAll}
-                    className="h-8 px-3 text-[.78rem] text-text-3 hover:text-text transition-colors duration-150 ease-brand"
-                  >
-                    {strings.ledger.clearFilters}
-                  </button>
-                )}
-              </div>
-            </div>
+              <DateFilterPill
+                label={strings.ledger.filterTo}
+                value={before}
+                onChange={setBefore}
+                anyLabel={strings.ledger.filterAnyDate}
+              />
+            </FilterBar>
           }
         />
       </Panel>

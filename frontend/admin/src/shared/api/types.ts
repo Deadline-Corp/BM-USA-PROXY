@@ -485,15 +485,29 @@ export interface AppSettings {
 }
 
 export interface TermsQuestion {
+  /** Stable key the answer is stored under; renaming one orphans past answers. */
   id: string;
-  text: string;
+  /** What the client reads above the field. The mini-app renders `label` — the admin
+   * used to call this `text`, so a question added here reached the client blank. */
+  label: string;
+  /** `email` is format-checked on both sides; anything else is free text. */
+  type: "text" | "email";
   required: boolean;
 }
 
 export interface Terms {
-  version: string;
-  published: boolean;
+  /** Bumped only by Publish. Clients must re-accept when it changes. */
+  version: number;
+  /** The agreement itself, Markdown, rendered by the mini-app above the questions. */
+  text_md: string;
   questions: TermsQuestion[];
+}
+
+export interface TermsInput {
+  text_md: string;
+  questions: TermsQuestion[];
+  /** True bumps the version and puts every client back through the gate. */
+  publish?: boolean;
 }
 
 export interface AdminAccount {
