@@ -6,7 +6,8 @@ from fastapi import APIRouter
 from sqlalchemy import text
 
 from app.core.db import SessionFactory
-from app.core.redis import redis_client, redis_ping
+from app.core.redis import redis_ping
+from app.workers.heartbeat import REQUIRED_JOBS, alive_jobs
 
 router = APIRouter(tags=["health"])
 
@@ -24,21 +25,6 @@ async def health() -> dict[str, object]:
     return {"ok": ok, "db": db_ok, "redis": redis_ok}
 
 
-# Jobs that must be beating for the system to be doing its work at all. Each refreshes
-# `worker:alive:<job>` with a 180s expiry, so a missing key means "has not run in three
-# minutes" — well past every one of these schedules.
-#
-# `daily_reconciliation` is deliberately absent: it runs once a night, so its heartbeat is
-# expired for 23 hours out of 24 and requiring it would make this endpoint permanently red.
-_REQUIRED_JOBS = (
-    "watch_onchain_deposits",  # the only thing that sees money arrive
-    "watch_payout_transfers",
-    "send_outbox",             # nothing reaches a customer without it
-    "expiry_sweeper",          # access outlives its purchase without it
-    "sync_connections",        # the catalogue goes stale without it
-)
-
-
 @router.get("/health/worker")
 async def health_worker() -> dict[str, object]:
     """Whether the worker is doing its job — not merely whether it once existed.
@@ -52,13 +38,8 @@ async def health_worker() -> dict[str, object]:
     fine when the worker is not.
     """
     try:
-        keys = [k async for k in redis_client.scan_iter("worker:alive:*")]
-        beats = {k.split(":", 2)[-1] for k in keys}
+        beats = await alive_jobs()
     except Exception as exc:
-        return {"ok": False, "error": f"{type(exc).__name__}", "stale": list(_REQUIRED_JOBS)}
-    stale = [job for job in _REQUIRED_JOBS if job not in beats]
-    return {
-        "ok": not stale,
-        "stale": stale,
-        "alive": sorted(beats),
-    }
+        return {"ok": False, "error": f"{type(exc).__name__}", "stale": list(REQUIRED_JOBS)}
+    stale = [job for job in REQUIRED_JOBS if job not in beats]
+    return {"ok": not stale, "stale": stale, "alive": sorted(beats)}

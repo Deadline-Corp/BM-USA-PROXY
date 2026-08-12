@@ -15,11 +15,18 @@ set -e
 ROLE="${ROLE:-api}"
 
 if [ "$ROLE" = "worker" ]; then
+  # The health endpoint comes up FIRST, before the schema wait, so the platform has
+  # something to check while the worker is still starting. It reports the cron
+  # heartbeats, which is what makes a wedged-but-running worker restartable — the exact
+  # failure this service exists to separate out.
+  uvicorn app.workers.health_server:app --host 0.0.0.0 --port "${PORT:-8000}" &
   # The API service owns alembic and the seed. Starting arq against a half-migrated
   # database gives a crash-loop whose logs blame the worker for the API's timing, so
   # wait for the schema instead.
   python -m scripts.wait_for_schema || exit 1
-  echo "[start] role=worker — arq only"
+  echo "[start] role=worker — arq"
+  # exec: arq is the process the container lives and dies by. If it exits, the container
+  # exits and the platform restarts it — the health server must never outlive it.
   exec arq app.workers.main.WorkerSettings
 fi
 
