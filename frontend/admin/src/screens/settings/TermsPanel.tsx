@@ -130,10 +130,13 @@ export function TermsPanel() {
               </div>
               {draft.questions.map((q) => (
                 <div key={q.id} className="flex items-center gap-2.5 flex-wrap">
-                  {/* The growing has to happen on the wrapper: Input and Select hand their
-                      className to the control itself, so `flex-1` there lands inside a flex
-                      column and grows the field downwards — which is to say, not at all. */}
-                  <div className="flex-1 min-w-[260px]">
+                  {/* Sized to the longest question anyone would actually write, not to the
+                      row. `flex-1` here stretched it across the whole page to hold the word
+                      "Email" — a box far wider than its content reads as a field you have
+                      not finished filling in. The width has to be set on the wrapper, not
+                      passed to Input: Input hands its className to the control, which sits
+                      inside a flex column, so a width there does nothing horizontally. */}
+                  <div className="w-[380px] max-w-full">
                     <Input
                       value={q.label}
                       onChange={(e) => updateQuestion(q.id, { label: e.target.value })}
