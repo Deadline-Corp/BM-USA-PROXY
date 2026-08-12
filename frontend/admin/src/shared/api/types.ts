@@ -95,7 +95,6 @@ export interface ClientOrder {
 
 export interface ClientReferral {
   code: string;
-  clicks: number;
   attached: number;
   balance_usd: number;
 }

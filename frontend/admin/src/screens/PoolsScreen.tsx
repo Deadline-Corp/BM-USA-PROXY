@@ -85,9 +85,12 @@ export function PoolsScreen() {
         </div>
       ) : (
         <div className="flex items-stretch bg-surface border border-border rounded-lg mb-5 overflow-hidden flex-wrap">
+          {/* Free before Busy, matching the legend to the right. It is also the number an
+              operator looks for first — "can we sell right now" comes before "how much is
+              out". */}
           <SummaryCell label={strings.pools.slots} value={summary?.slots_total ?? 0} />
-          <SummaryCell label={strings.pools.used} value={summary?.slots_used ?? 0} tone="accent" />
           <SummaryCell label={strings.pools.free} value={summary?.slots_free ?? 0} tone="success" />
+          <SummaryCell label={strings.pools.used} value={summary?.slots_used ?? 0} tone="accent" />
           <div className="flex-1 min-w-[220px] px-6 py-3.5 border-l border-border flex flex-col gap-1.5 justify-center">
             <div className="flex justify-between items-baseline">
               <span className="text-[.69rem] uppercase tracking-[.08em] text-text-3">Capacity</span>

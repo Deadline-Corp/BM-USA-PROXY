@@ -441,8 +441,10 @@ async def client_dossier(client_id: int, admin: CurrentAdmin, session: DbSession
             for o in orders
         ],
         "referral": {
+            # No "clicks": it was hard-coded to 0 and nothing ever counted it. A link tap
+            # that never reaches Telegram's START is invisible to us, and one that does is
+            # the signup already counted in `attached`.
             "code": user.referral_code,
-            "clicks": 0,
             "attached": referred_count,
             "balance_usd": referral_balances["available"],
         },

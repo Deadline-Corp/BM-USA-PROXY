@@ -24,7 +24,9 @@ import { useTariffs } from "@/shared/hooks/useTariffs";
 import { useToast } from "@/shared/components/Toast";
 import { apiErrorMessage } from "@/shared/api/client";
 import { strings } from "@/shared/strings";
-import { IconMail, IconPlus } from "@/shared/components/icons";
+import clsx from "clsx";
+import { IconChevronRight, IconMail, IconPlus } from "@/shared/components/icons";
+import { CopyInline } from "@/shared/components/CopyInline";
 import type { ClientDossier as ClientDossierData, ConversationMessage } from "@/shared/api/types";
 
 interface ClientDossierProps {
@@ -344,8 +346,9 @@ function DossierBody({
       </Section>
 
       {/* Accesses */}
-      <Section
+      <CollapsibleSection
         title={strings.clients.dossierAccesses}
+        count={data.accesses.length}
         actions={
           <Button variant="quiet" size="sm" onClick={onIssueAccessClick}>
             <IconPlus className="w-3.5 h-3.5" />
@@ -367,10 +370,10 @@ function DossierBody({
             ))}
           </RowList>
         )}
-      </Section>
+      </CollapsibleSection>
 
       {/* Orders */}
-      <Section title={strings.clients.dossierOrders}>
+      <CollapsibleSection title={strings.clients.dossierOrders} count={data.orders.length}>
         {data.orders.length === 0 ? (
           <EmptyRow text="No orders yet" />
         ) : (
@@ -379,21 +382,32 @@ function DossierBody({
               <RowItem
                 key={o.id}
                 title={<Num value={o.amount_usd} usd />}
-                sub={`${o.provider} · ${formatDateTime(o.created_at)}`}
+                /* The order number is the only identifier on this panel the customer can
+                   quote back, and it is what the orders screen and the resolve dialog both
+                   search by — so it is copyable, not just printed. */
+                sub={
+                  <span className="inline-flex items-center gap-1.5">
+                    <CopyInline value={o.id} head={8} />
+                    <span>· {o.provider} · {formatDateTime(o.created_at)}</span>
+                  </span>
+                }
                 trailing={<StatusBadge status={o.status} />}
               />
             ))}
           </RowList>
         )}
-      </Section>
+      </CollapsibleSection>
 
       {/* Referral */}
       <Section title={strings.clients.dossierReferral}>
         {!data.referral ? (
           <EmptyRow text="Not a referrer" />
         ) : (
-          <div className="grid grid-cols-3 gap-2">
-            <MiniStat label="Clicks" value={data.referral.clicks} />
+          /* No Clicks tile: the backend hard-coded it to 0 and nothing ever counted it —
+             the same dead metric that was removed from the mini-app. A link tap that never
+             reaches Telegram's START is invisible to us, and one that does is the signup
+             already counted in Attached. */
+          <div className="grid grid-cols-2 gap-2">
             <MiniStat label="Attached" value={data.referral.attached} />
             <MiniStat label="Balance" value={data.referral.balance_usd} usd />
           </div>
@@ -446,6 +460,52 @@ function Section({ title, actions, children }: { title: string; actions?: React.
         {actions}
       </div>
       {children}
+    </div>
+  );
+}
+
+/** A Section whose list can be folded away, with the item count always visible.
+ *
+ * A client who has been around a while has a long tail of accesses and orders, and the
+ * dossier turned into a scroll. Folded still answers "how many" from the header, so the
+ * count is never what the fold hides.
+ *
+ * Open by default only while the list is short: a couple of rows are worth seeing without
+ * a click, a dozen are the reason this exists.
+ */
+const COLLAPSE_ABOVE = 3;
+
+function CollapsibleSection({
+  title,
+  count,
+  actions,
+  children,
+}: {
+  title: string;
+  count: number;
+  actions?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(count <= COLLAPSE_ABOVE);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="flex items-center gap-1.5 text-[.72rem] uppercase tracking-[.08em] text-text-3 font-semibold hover:text-text-2"
+        >
+          <IconChevronRight
+            className={clsx("w-3 h-3 transition-transform duration-150 ease-brand", open && "rotate-90")}
+          />
+          {title}
+          <span className="font-mono tabular-nums text-text-3/80">{count}</span>
+        </button>
+        {actions}
+      </div>
+      {open && children}
     </div>
   );
 }
