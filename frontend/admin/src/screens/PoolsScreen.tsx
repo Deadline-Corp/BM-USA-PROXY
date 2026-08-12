@@ -114,11 +114,13 @@ export function PoolsScreen() {
               />
             </div>
             <div className="flex gap-3.5 text-[.7rem] text-text-3">
+              {/* Free / Used echo the summary cells to the left, so the same number is not
+                  called two different things a few centimetres apart. */}
               <span className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-success" />Online {freeSlots}
+                <span className="w-1.5 h-1.5 rounded-full bg-success" />Free {freeSlots}
               </span>
               <span className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-warning" />Full {usedSlots}
+                <span className="w-1.5 h-1.5 rounded-full bg-warning" />Used {usedSlots}
               </span>
               <span className="flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-text-3" />Offline {unavailableSlots}
