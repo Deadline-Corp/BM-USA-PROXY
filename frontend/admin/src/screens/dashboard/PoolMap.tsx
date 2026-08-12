@@ -8,10 +8,18 @@ interface PoolMapProps {
 
 type NodeState = "online" | "full" | "offline";
 
+/** What an operator needs from a dot: can I sell here, is it all sold, or is it dark?
+ *
+ * The old test for "full" was `full_nodes === online_nodes + full_nodes`, where the
+ * backend's `online_nodes` already counted the full ones. It reduced to "no nodes at all
+ * while some are full" — unreachable, so a city that had sold out never showed amber. The
+ * fields now mean what they say, and the order below is the operator's own priority:
+ * anything sellable wins, otherwise sold-out is worth seeing before dark.
+ */
 function stateFor(c: PoolCitySummary): NodeState {
-  if (c.offline_nodes > 0 && c.online_nodes === 0) return "offline";
-  if (c.full_nodes > 0 && c.full_nodes === c.online_nodes + c.full_nodes) return "full";
-  return "online";
+  if (c.nodes_free > 0) return "online";
+  if (c.nodes_busy > 0) return "full";
+  return "offline";
 }
 
 const STATE_COLOR: Record<NodeState, string> = {

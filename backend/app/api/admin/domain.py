@@ -828,6 +828,22 @@ async def sync_connections(admin: CurrentAdmin, session: DbSession) -> dict[str,
 
 @router.get("/pool/summary")
 async def pool_summary(admin: CurrentAdmin, session: DbSession) -> dict[str, Any]:
+    """Pool health in three buckets that always add up to the whole pool.
+
+    The old counts left connections out. `offline` matched only `online_status='offline'`,
+    so a phone reporting 'unknown' — which is what iproxy sends when it has not heard from
+    a device — landed in no bucket at all, and neither did an online phone an operator had
+    marked unsellable. On the live pool that was two of three connections counted nowhere,
+    while their cards on the same screen read "Offline".
+
+    So the buckets are defined by what an operator can do with a connection, and every
+    connection falls in exactly one:
+      busy        — an access is live on it. Sold capacity, whether or not the phone is
+                    answering right now; a device dropping off does not un-sell it.
+      free        — sellable, online, nothing on it. This is what the allocator can hand
+                    out this second, and the only number that answers "can we sell?".
+      unavailable — everything else: offline, silent, or withheld by an operator.
+    """
     rows = await session.execute(
         text(
             """
@@ -844,13 +860,11 @@ async def pool_summary(admin: CurrentAdmin, session: DbSession) -> dict[str, Any
                           AND a.status IN ('provisioning','active','expiring'))
                 ) AS free,
                 count(*) FILTER (
-                    WHERE c.online_status = 'online'
-                      AND EXISTS (
+                    WHERE EXISTS (
                         SELECT 1 FROM accesses a
                         WHERE a.connection_id = c.id
                           AND a.status IN ('provisioning','active','expiring'))
-                ) AS busy,
-                count(*) FILTER (WHERE c.online_status = 'offline') AS offline
+                ) AS busy
             FROM connections c
             LEFT JOIN locations l ON l.id = c.location_id
             GROUP BY l.city, l.state_code, c.carrier
@@ -859,12 +873,16 @@ async def pool_summary(admin: CurrentAdmin, session: DbSession) -> dict[str, Any
         )
     )
     cities: list[dict[str, Any]] = []
-    slots_total = slots_used = slots_free = 0
-    for city, state, carrier, total, free, busy, offline in rows:
-        total, free, busy, offline = int(total), int(free), int(busy), int(offline)
+    slots_total = slots_used = slots_free = slots_unavailable = 0
+    for city, state, carrier, total, free, busy in rows:
+        total, free, busy = int(total), int(free), int(busy)
+        # Derived, never counted separately: whatever is neither sold nor sellable is
+        # unavailable by definition, so the three can never fail to cover the pool.
+        unavailable = total - busy - free
         slots_total += total
         slots_used += busy
         slots_free += free
+        slots_unavailable += unavailable
         cities.append(
             {
                 "city": city,
@@ -872,15 +890,19 @@ async def pool_summary(admin: CurrentAdmin, session: DbSession) -> dict[str, Any
                 "carrier": carrier,
                 "slots_total": total,
                 "slots_used": busy,
-                "online_nodes": free + busy,
-                "offline_nodes": offline,
-                "full_nodes": busy,
+                # Named for what they are. The previous `online_nodes` meant free+busy while
+                # its only consumer (the dashboard map) read it as "online and not full",
+                # which made the map's "full" state unreachable arithmetic.
+                "nodes_free": free,
+                "nodes_busy": busy,
+                "nodes_unavailable": unavailable,
             }
         )
     return {
         "slots_total": slots_total,
         "slots_used": slots_used,
         "slots_free": slots_free,
+        "slots_unavailable": slots_unavailable,
         "cities": cities,
     }
 

@@ -151,3 +151,39 @@ async def test_only_the_phone_that_changed_is_written(session) -> None:
         select(Connection.online_status).where(Connection.iproxy_connection_id == "bbb")
     )
     assert status == "offline"
+
+
+async def test_pool_summary_buckets_cover_every_connection(session) -> None:
+    """Free + used + unavailable must always equal the whole pool.
+
+    They did not. `offline` counted only `online_status='offline'`, so a phone reporting
+    'unknown' — iproxy's answer when it has not heard from a device — was in no bucket, and
+    neither was an online phone an operator had withheld from sale. On the live pool that
+    was two of three connections counted nowhere, while their own cards on the same screen
+    read "Offline", and the capacity bar drew a third of a track for it.
+    """
+    from app.api.admin.domain import pool_summary
+
+    session.add_all([
+        Connection(iproxy_connection_id="sum-online", online_status="online", is_sellable=True),
+        Connection(iproxy_connection_id="sum-unknown", online_status="unknown", is_sellable=True),
+        Connection(iproxy_connection_id="sum-offline", online_status="offline", is_sellable=True),
+        # online, but an operator took it off the market — sellable capacity it is not
+        Connection(iproxy_connection_id="sum-withheld", online_status="online", is_sellable=False),
+    ])
+    await session.flush()
+
+    s = await pool_summary(admin=None, session=session)  # type: ignore[arg-type]
+
+    assert s["slots_total"] == 4
+    assert s["slots_free"] == 1          # only the online, sellable, idle one
+    assert s["slots_used"] == 0          # nothing has an access on it
+    assert s["slots_unavailable"] == 3   # unknown + offline + withheld
+    assert s["slots_free"] + s["slots_used"] + s["slots_unavailable"] == s["slots_total"]
+
+    # and the per-city rows carry the same three, so the dashboard map cannot disagree
+    for row in s["cities"]:
+        assert (
+            row["nodes_free"] + row["nodes_busy"] + row["nodes_unavailable"]
+            == row["slots_total"]
+        )

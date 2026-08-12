@@ -174,21 +174,26 @@ export interface ConnectionUpdate {
   health_note?: string;
 }
 
+/** The three buckets always add up to slots_total — see pool_summary on the backend. */
 export interface PoolCitySummary {
   city: string;
   state: string;
   carrier: string;
   slots_total: number;
   slots_used: number;
-  online_nodes: number;
-  offline_nodes: number;
-  full_nodes: number;
+  /** Sellable, online, nothing on it — what can be handed out right now. */
+  nodes_free: number;
+  /** An access is live on it. */
+  nodes_busy: number;
+  /** Offline, silent, or withheld by an operator. */
+  nodes_unavailable: number;
 }
 
 export interface PoolSummary {
   slots_total: number;
   slots_used: number;
   slots_free: number;
+  slots_unavailable: number;
   cities: PoolCitySummary[];
 }
 

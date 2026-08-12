@@ -43,7 +43,13 @@ export function PoolsScreen() {
 
   const connectionsQuery = useConnections(params);
   const summary = summaryQuery.data;
-  const usedPct = summary && summary.slots_total > 0 ? Math.round((summary.slots_used / summary.slots_total) * 100) : 0;
+  const totalSlots = summary?.slots_total ?? 0;
+  const usedSlots = summary?.slots_used ?? 0;
+  const freeSlots = summary?.slots_free ?? 0;
+  const unavailableSlots = summary?.slots_unavailable ?? 0;
+  const usedPct = totalSlots > 0 ? Math.round((usedSlots / totalSlots) * 100) : 0;
+  /** Share of the pool, for a bar segment. Unrounded so the three always fill the track. */
+  const pct = (n: number) => (totalSlots > 0 ? (n / totalSlots) * 100 : 0);
 
   const cityOptions = useMemo(() => Array.from(new Set((summary?.cities ?? []).map((c) => c.city))), [summary]);
   const carrierOptions = useMemo(() => Array.from(new Set((summary?.cities ?? []).map((c) => c.carrier))), [summary]);
@@ -87,13 +93,36 @@ export function PoolsScreen() {
               <span className="text-[.69rem] uppercase tracking-[.08em] text-text-3">Capacity</span>
               <span className="font-mono tabular-nums text-[.78rem] text-text-2">{usedPct}%</span>
             </div>
-            <div className="h-[5px] bg-surface-2 rounded-full overflow-hidden">
-              <div className="h-full bg-accent rounded-full transition-[width] duration-300 ease-brand" style={{ width: `${usedPct}%` }} />
+            {/* The legend promised three colours; the bar drew one solid accent fill, so
+                nothing under it matched anything in it. It is a real stacked bar now, and
+                the three segments are the backend's three buckets, which always cover the
+                pool. Counts sit in the legend because proportions alone hid the story
+                here: a third amber reads as "a third sold" when it in fact means one node
+                sold and two unreachable. */}
+            <div className="h-[5px] bg-surface-2 rounded-full overflow-hidden flex">
+              <div
+                className="h-full bg-success transition-[width] duration-300 ease-brand"
+                style={{ width: `${pct(freeSlots)}%` }}
+              />
+              <div
+                className="h-full bg-warning transition-[width] duration-300 ease-brand"
+                style={{ width: `${pct(usedSlots)}%` }}
+              />
+              <div
+                className="h-full bg-text-3 transition-[width] duration-300 ease-brand"
+                style={{ width: `${pct(unavailableSlots)}%` }}
+              />
             </div>
             <div className="flex gap-3.5 text-[.7rem] text-text-3">
-              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-success" />Online</span>
-              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-warning" />Full</span>
-              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-text-3" />Offline</span>
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-success" />Online {freeSlots}
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-warning" />Full {usedSlots}
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-text-3" />Offline {unavailableSlots}
+              </span>
             </div>
           </div>
         </div>
