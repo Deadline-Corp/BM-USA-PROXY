@@ -63,7 +63,6 @@ export function ReferralSettingsPanel() {
       title={strings.referrals.settings}
       select={(key) => REFERRAL_KEYS.includes(key)}
       order={REFERRAL_KEYS}
-      columns={3}
     />
   );
 }
@@ -82,14 +81,12 @@ function SettingsGroupPanel({
   title,
   select,
   order,
-  columns = 2,
   footnote,
 }: {
   title: string;
   select: (key: string) => boolean;
   /** Explicit key order; without it the backend's own order wins. */
   order?: string[];
-  columns?: 2 | 3;
   footnote?: string;
 }) {
   const toast = useToast();
@@ -151,18 +148,30 @@ function SettingsGroupPanel({
           <EmptyState title="No editable settings" hint="Nothing in this group is exposed by the backend." />
         ) : (
           <>
-            <div className={columns === 3 ? "grid grid-cols-3 gap-4 max-[820px]:grid-cols-1" : "grid grid-cols-2 gap-4"}>
+            {/* Every field is exactly as wide as the longest label in the panel — these
+                values are "60", "10", "23", and a box stretched across half the screen to
+                hold two digits reads as a text area you are meant to write prose in.
+                Two pieces make that work, and both look removable if you don't know why
+                they are there:
+                  · w-fit + equal 1fr tracks — inside a shrink-to-fit container, equal
+                    tracks all resolve to the widest item, so the longest label sets the
+                    width for the whole panel with no hardcoded number to go stale.
+                  · size={1} — an input's own intrinsic width is 20 characters, which wins
+                    over any label shorter than ~180px and would quietly re-inflate the
+                    referral panel (measured: 150px → 179px). */}
+            <div className="grid grid-cols-3 gap-x-6 gap-y-4 w-fit max-[820px]:grid-cols-2 max-[560px]:grid-cols-1">
               {visibleEntries.map(([key, value]) => (
                 <RequireRole
                   key={key}
                   role="owner"
                   fallback={
-                    <Input label={labelFor(key)} value={String(value)} disabled />
+                    <Input label={labelFor(key)} value={String(value)} size={1} disabled />
                   }
                 >
                   <Input
                     label={labelFor(key)}
                     value={String(value)}
+                    size={1}
                     onChange={(e) => setDraft((prev) => ({ ...(prev ?? data), [key]: e.target.value }))}
                   />
                 </RequireRole>
