@@ -322,6 +322,18 @@ export interface PaymentRail {
   is_stablecoin: boolean;
 }
 
+/** A wallet we SEND referral payouts from. Not a receiving address — it is watched so
+ * a payout an operator sends by hand gets its real transaction hash attached
+ * automatically. Three rails, fixed: USDT on TRC-20, ERC-20, BEP-20. */
+export interface PayoutWallet {
+  network: string;
+  chain: string;
+  asset: string;
+  /** "USDT TRC-20 (Tron)" — the full rail name, as the payout instructions show it. */
+  label: string;
+  address: string;
+}
+
 export interface PaymentRails {
   provider: string;
   network: string;
@@ -334,6 +346,7 @@ export interface PaymentRails {
   supported_count: number;
   /** Every rail the watcher has an engine for, configured or not. */
   rails: PaymentRail[];
+  payout_wallets: PayoutWallet[];
   /** Set when the stored rail list itself is malformed. */
   error: string | null;
 }

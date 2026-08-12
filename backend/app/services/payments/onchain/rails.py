@@ -34,10 +34,12 @@ from app.services.payments.onchain.assets import SPECS, find_spec
 from app.services.payments.onchain.config import (
     DEFAULT_CONFIRMATIONS,
     OnchainConfigError,
+    set_payout_override,
     set_rails_override,
 )
 
 RAILS_SETTING_KEY = "onchain_rails"
+PAYOUT_SETTING_KEY = "onchain_payout_wallets"
 
 # Per-chain address shapes, mainnet and testnet. Bech32 is matched case-insensitively
 # because the standard allows an all-uppercase form even though wallets emit lowercase.
@@ -135,22 +137,78 @@ def normalise_rails(raw: Any, *, network: str) -> list[dict[str, Any]]:
     return out
 
 
+def normalise_payout_wallets(raw: Any) -> list[dict[str, Any]]:
+    """Validate the wallets we SEND referral payouts from.
+
+    Three rails, fixed by the client's 2026-07-30 decision: USDT on TRC-20, ERC-20 and
+    BEP-20. The address is checked with the same regex a referrer's own payout address is
+    checked against — pasting an EVM address into the Tron rail sends money to an address
+    nobody controls, and the transfer is irreversible.
+
+    These wallets are not where money is received. They are watched so that a payout an
+    operator sends by hand gets its real transaction hash attached automatically instead
+    of being typed in.
+    """
+    from app.services.payouts import PAYOUT_RAILS, normalize_network
+
+    if not isinstance(raw, list):
+        raise OnchainConfigError("payout wallets must be a list")
+
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for entry in raw:
+        if not isinstance(entry, dict):
+            raise OnchainConfigError("each payout wallet must be an object")
+        network = normalize_network(str(entry.get("network", "")))
+        rail = PAYOUT_RAILS.get(network)
+        if rail is None:
+            allowed = ", ".join(PAYOUT_RAILS)
+            raise OnchainConfigError(
+                f"payouts are supported only on {allowed} — got {network!r}"
+            )
+        if rail.network in seen:
+            raise OnchainConfigError(f"payout wallet {rail.network} appears twice")
+        seen.add(rail.network)
+
+        address = str(entry.get("address") or "").strip()
+        if not address:
+            continue
+        if not rail.address_re.fullmatch(address):
+            raise OnchainConfigError(
+                f"'{address}' does not look like a {rail.label} address — "
+                "check the network and the address"
+            )
+        wallet: dict[str, Any] = {"network": rail.network, "address": address}
+        for key in ("token_contract", "decimals"):
+            if entry.get(key):
+                wallet[key] = entry[key]
+        out.append(wallet)
+    return out
+
+
 async def load_rails(session: AsyncSession) -> list[dict[str, Any]] | None:
     """The console-managed rail list, or ``None`` when the env var is still in charge."""
     stored = await settings_svc.get(session, RAILS_SETTING_KEY, None)
     return stored if isinstance(stored, list) else None
 
 
+async def load_payout_wallets(session: AsyncSession) -> list[dict[str, Any]] | None:
+    stored = await settings_svc.get(session, PAYOUT_SETTING_KEY, None)
+    return stored if isinstance(stored, list) else None
+
+
 async def refresh_rails(session: AsyncSession) -> None:
-    """Point the config at whatever the console last saved.
+    """Point the config at whatever the console last saved — receiving and payout both.
 
     Called wherever the config is about to be used with a session in hand — quoting an
-    invoice, a watcher tick, the admin screen — rather than cached with a TTL. It is one
-    indexed read, and the alternative is a window where the API quotes an address the
+    invoice, a watcher tick, the admin screen — rather than cached with a TTL. It is two
+    indexed reads, and the alternative is a window where the API quotes an address the
     operator has already replaced.
     """
     rails = await load_rails(session)
     set_rails_override(json.dumps(rails) if rails is not None else None)
+    wallets = await load_payout_wallets(session)
+    set_payout_override(json.dumps(wallets) if wallets is not None else None)
 
 
 async def save_rails(
@@ -161,6 +219,15 @@ async def save_rails(
     await settings_svc.set_value(session, RAILS_SETTING_KEY, rails, admin_id=admin_id)
     set_rails_override(json.dumps(rails))
     return rails
+
+
+async def save_payout_wallets(
+    session: AsyncSession, raw: Any, *, admin_id: int | None
+) -> list[dict[str, Any]]:
+    wallets = normalise_payout_wallets(raw)
+    await settings_svc.set_value(session, PAYOUT_SETTING_KEY, wallets, admin_id=admin_id)
+    set_payout_override(json.dumps(wallets))
+    return wallets
 
 
 def supported_rails() -> list[tuple[str, str, str]]:

@@ -2725,6 +2725,7 @@ async def _payment_rails_view(session: DbSession) -> dict[str, Any]:
         rails_are_console_managed,
     )
     from app.services.payments.onchain.rails import refresh_rails, supported_rails
+    from app.services.payouts import PAYOUT_RAILS
 
     await refresh_rails(session)
 
@@ -2753,9 +2754,26 @@ async def _payment_rails_view(session: DbSession) -> dict[str, Any]:
             }
         )
 
+    # The other half of the money flow: the wallets we SEND referral payouts from. They
+    # are not where anything is received — they are watched so a payout an operator sends
+    # by hand gets its real transaction hash attached instead of being typed in. Three
+    # rails, fixed by the client's decision that payouts are USDT only.
+    sent_from = {s.network: s.address for s in (cfg.payout_sources if cfg else ())}
+    payout_wallets = [
+        {
+            "network": rail.network,
+            "chain": rail.chain,
+            "asset": rail.asset,
+            "label": rail.label,
+            "address": sent_from.get(rail.network, ""),
+        }
+        for rail in PAYOUT_RAILS.values()
+    ]
+
     return {
         "provider": settings.payment_provider,
         "network": cfg.network if cfg else settings.onchain_network,
+        "payout_wallets": payout_wallets,
         # The rails are inert unless the provider is actually the on-chain one — worth
         # saying on the page, or the addresses read as live when nothing is watching them.
         "watching": settings.payment_provider == "onchain",
@@ -2776,6 +2794,7 @@ async def list_payment_rails(admin: CurrentAdmin, session: DbSession) -> dict[st
 
 class PaymentRailsBody(BaseModel):
     rails: list[dict[str, Any]]
+    payout_wallets: list[dict[str, Any]] | None = None
 
 
 @router.put("/payment-rails")
@@ -2801,15 +2820,23 @@ async def put_payment_rails(
     means money lands where we do not watch, not that money leaves.
     """
     from app.services.payments.onchain.config import OnchainConfigError, get_onchain_config
-    from app.services.payments.onchain.rails import save_rails
+    from app.services.payments.onchain.rails import save_payout_wallets, save_rails
 
     before = {
         (m.asset, m.network): m.address
         for m in (get_onchain_config().enabled_methods() if _config_ok() else [])
     }
+    before_payout = {s.network: s.address for s in (
+        get_onchain_config().payout_sources if _config_ok() else ()
+    )}
     try:
         saved = await save_rails(
             session, body.rails, admin_id=admin.id, network=_onchain_network()
+        )
+        saved_payout = (
+            await save_payout_wallets(session, body.payout_wallets, admin_id=admin.id)
+            if body.payout_wallets is not None
+            else None
         )
     except OnchainConfigError as exc:
         raise ValidationError(str(exc)) from None
@@ -2823,6 +2850,12 @@ async def put_payment_rails(
     for (asset, network), address in before.items():
         if (asset, network) not in after:
             changes[f"{asset}/{network}"] = {"from": address, "to": ""}
+    if saved_payout is not None:
+        after_payout = {w["network"]: w["address"] for w in saved_payout}
+        for network in set(before_payout) | set(after_payout):
+            was, now = before_payout.get(network, ""), after_payout.get(network, "")
+            if was != now:
+                changes[f"payout:{network}"] = {"from": was, "to": now}
 
     await audit.write(
         session, admin_id=admin.id, action="payment_rails.update", entity="app_setting",

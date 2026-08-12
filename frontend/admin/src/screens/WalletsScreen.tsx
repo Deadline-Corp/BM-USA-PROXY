@@ -13,7 +13,7 @@ import { apiErrorMessage } from "@/shared/api/client";
 import { useToast } from "@/shared/components/Toast";
 import { formatChain, formatNetwork } from "@/shared/lib/format";
 import { strings } from "@/shared/strings";
-import type { PaymentRail } from "@/shared/api/types";
+import type { PaymentRail, PayoutWallet } from "@/shared/api/types";
 
 const railKey = (r: { asset: string; network: string }) => `${r.asset}/${r.network}`;
 
@@ -38,17 +38,23 @@ export function WalletsScreen() {
   });
 
   const [draft, setDraft] = useState<PaymentRail[] | null>(null);
+  const [payoutDraft, setPayoutDraft] = useState<PayoutWallet[] | null>(null);
   const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
-    if (data) setDraft(data.rails);
+    if (data) {
+      setDraft(data.rails);
+      setPayoutDraft(data.payout_wallets);
+    }
   }, [data]);
 
   const saveMutation = useMutation({
-    mutationFn: (rails: PaymentRail[]) => walletsApi.saveRails(rails),
+    mutationFn: ({ rails, payouts }: { rails: PaymentRail[]; payouts: PayoutWallet[] }) =>
+      walletsApi.saveRails(rails, payouts),
     onSuccess: (saved) => {
       qc.setQueryData(["payment-rails"], saved);
       setDraft(saved.rails);
+      setPayoutDraft(saved.payout_wallets);
       toast.success(strings.wallets.saved);
       setConfirming(false);
     },
@@ -64,19 +70,33 @@ export function WalletsScreen() {
     );
   }
 
-  /** What the confirm dialog reads out: the rails whose address is about to change. */
+  /** What the confirm dialog reads out: every address about to change, both directions
+   *  of the money flow, because both are irreversible once a transfer goes out. */
   const addressChanges = useMemo(() => {
-    if (!data || !draft) return [];
+    if (!data || !draft || !payoutDraft) return [];
     const before = new Map(data.rails.map((r) => [railKey(r), r.address]));
-    return draft
-      .filter((r) => (before.get(railKey(r)) ?? "") !== r.address)
-      .map((r) => ({ key: railKey(r), from: before.get(railKey(r)) ?? "", to: r.address }));
-  }, [data, draft]);
+    const beforePayout = new Map(data.payout_wallets.map((w) => [w.network, w.address]));
+    return [
+      ...draft
+        .filter((r) => (before.get(railKey(r)) ?? "") !== r.address)
+        .map((r) => ({ key: railKey(r), from: before.get(railKey(r)) ?? "", to: r.address })),
+      ...payoutDraft
+        .filter((w) => (beforePayout.get(w.network) ?? "") !== w.address)
+        .map((w) => ({
+          key: `payout ${w.network}`,
+          from: beforePayout.get(w.network) ?? "",
+          to: w.address,
+        })),
+    ];
+  }, [data, draft, payoutDraft]);
 
   const isDirty = useMemo(() => {
-    if (!data || !draft) return false;
-    return JSON.stringify(data.rails) !== JSON.stringify(draft);
-  }, [data, draft]);
+    if (!data || !draft || !payoutDraft) return false;
+    return (
+      JSON.stringify(data.rails) !== JSON.stringify(draft) ||
+      JSON.stringify(data.payout_wallets) !== JSON.stringify(payoutDraft)
+    );
+  }, [data, draft, payoutDraft]);
 
   const accepting = draft?.filter((r) => r.address.trim()).length ?? 0;
 
@@ -88,7 +108,15 @@ export function WalletsScreen() {
         actions={
           isDirty && (
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={() => data && setDraft(data.rails)}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  if (!data) return;
+                  setDraft(data.rails);
+                  setPayoutDraft(data.payout_wallets);
+                }}
+              >
                 {strings.common.cancel}
               </Button>
               <Button variant="primary" size="sm" onClick={() => setConfirming(true)}>
@@ -101,7 +129,7 @@ export function WalletsScreen() {
 
       {isLoading ? (
         <Skeleton className="h-64 rounded-lg" />
-      ) : isError || !data || !draft ? (
+      ) : isError || !data || !draft || !payoutDraft ? (
         <ErrorState onRetry={refetch} />
       ) : (
         <div className="flex flex-col gap-4">
@@ -149,13 +177,61 @@ export function WalletsScreen() {
               ))}
             </div>
           </Panel>
+
+          {/* The other direction of the money flow. Down here on purpose: it is read far
+              less often than the receiving addresses, and mixing the two lists would
+              invite pasting a payout wallet into a receiving rail. */}
+          <Panel>
+            <Panel.Head
+              title={strings.wallets.payoutTitle}
+              subtitle={strings.wallets.payoutHint}
+            />
+            <div className="flex flex-col">
+              {payoutDraft.map((w) => (
+                <div
+                  key={w.network}
+                  className="px-[18px] py-4 border-b border-border last:border-b-0 flex items-end gap-3 flex-wrap"
+                >
+                  <div className="min-w-[210px]">
+                    <div className="text-[.92rem] font-semibold text-text">{w.label}</div>
+                    <div className="text-[.78rem] text-text-3 mt-0.5">
+                      {formatChain(w.chain)} · {formatNetwork(w.network)}
+                    </div>
+                  </div>
+                  <div className="w-[420px] max-w-full">
+                    <Input
+                      value={w.address}
+                      onChange={(e) =>
+                        setPayoutDraft((prev) =>
+                          prev
+                            ? prev.map((x) =>
+                                x.network === w.network ? { ...x, address: e.target.value } : x,
+                              )
+                            : prev,
+                        )
+                      }
+                      placeholder={strings.wallets.payoutPlaceholder}
+                      className="w-full font-mono text-[.82rem]"
+                      size={1}
+                    />
+                  </div>
+                  <StatusBadge
+                    tone={w.address.trim() ? "success" : "neutral"}
+                    label={w.address.trim() ? strings.wallets.payoutOn : strings.wallets.payoutOff}
+                  />
+                </div>
+              ))}
+            </div>
+          </Panel>
         </div>
       )}
 
       <ConfirmDialog
         open={confirming}
         onClose={() => setConfirming(false)}
-        onConfirm={() => draft && saveMutation.mutate(draft)}
+        onConfirm={() =>
+          draft && payoutDraft && saveMutation.mutate({ rails: draft, payouts: payoutDraft })
+        }
         title={strings.wallets.confirmTitle}
         description={
           addressChanges.length === 0

@@ -45,6 +45,7 @@ import type {
   TariffInput,
   PaymentRail,
   PaymentRails,
+  PayoutWallet,
   Terms,
   TermsInput,
   AccessRow,
@@ -208,8 +209,10 @@ export const requestsApi = {
 
 export const walletsApi = {
   rails: () => apiClient.get<PaymentRails>("/payment-rails").then((r) => r.data),
-  saveRails: (rails: PaymentRail[]) =>
-    apiClient.put<PaymentRails>("/payment-rails", { rails }).then((r) => r.data),
+  saveRails: (rails: PaymentRail[], payout_wallets: PayoutWallet[]) =>
+    apiClient
+      .put<PaymentRails>("/payment-rails", { rails, payout_wallets })
+      .then((r) => r.data),
 };
 
 export const referralsApi = {

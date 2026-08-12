@@ -93,6 +93,12 @@ export const strings = {
       "These addresses currently come from ONCHAIN_METHODS in the deploy environment. Saving here takes over from it — after that, this screen is what decides.",
     configError: "The stored rail list could not be read",
     saved: "Rails saved — new invoices quote these addresses",
+    payoutTitle: "Payout wallets",
+    payoutHint:
+      "The wallets referral payouts are sent FROM. Nothing is received here — they are watched so a payout you send by hand gets its transaction hash attached on its own. Payouts are USDT only, on these three networks.",
+    payoutPlaceholder: "Address you send referral payouts from",
+    payoutOn: "Watched",
+    payoutOff: "Not set",
     confirmTitle: "Save receiving wallets",
     confirmNoAddressChange:
       "No address changes — only confirmations, minimums or tolerances. Save?",

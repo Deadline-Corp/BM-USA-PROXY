@@ -440,12 +440,24 @@ def load_config(
 # global rather than a lookup inside the parser.
 _rails_override: str | None = None
 
+# Same idea for the wallets we PAY OUT from. Separate global because the two are saved
+# separately and either can be console-managed while the other is not.
+_payout_override: str | None = None
+
 
 def set_rails_override(methods_json: str | None) -> None:
     """Install (or clear) the console-managed rail list for this process."""
     global _rails_override
     if methods_json != _rails_override:
         _rails_override = methods_json
+        get_onchain_config.cache_clear()
+
+
+def set_payout_override(sources_json: str | None) -> None:
+    """Install (or clear) the console-managed payout wallets for this process."""
+    global _payout_override
+    if sources_json != _payout_override:
+        _payout_override = sources_json
         get_onchain_config.cache_clear()
 
 
@@ -458,7 +470,11 @@ def get_onchain_config() -> OnchainConfig:
         settings.onchain_methods if _rails_override is None else _rails_override,
         settings.onchain_rpc,
         settings.onchain_network,
-        settings.onchain_payout_sources,
+        (
+            settings.onchain_payout_sources
+            if _payout_override is None
+            else _payout_override
+        ),
         strict=True,
     )
 
@@ -468,8 +484,14 @@ def rails_are_console_managed() -> bool:
     return _rails_override is not None
 
 
+def payouts_are_console_managed() -> bool:
+    """True once the payout wallets have been saved from the console."""
+    return _payout_override is not None
+
+
 def reset_config_cache() -> None:
     """Drop the cached config (tests / settings reload)."""
-    global _rails_override
+    global _rails_override, _payout_override
     _rails_override = None
+    _payout_override = None
     get_onchain_config.cache_clear()

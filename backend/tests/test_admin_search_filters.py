@@ -320,3 +320,32 @@ async def test_saving_terms_keeps_the_version_publishing_bumps_it(client: AsyncC
 
     # and the questions survive the round trip in the shape the mini-app renders
     assert (await client.get("/api/admin/terms")).json()["questions"] == before["questions"]
+
+
+async def test_payout_wallets_are_listed_and_saved(client: AsyncClient) -> None:
+    """The other direction of the money flow: three rails, USDT only, editable."""
+    body = (await client.get("/api/admin/payment-rails")).json()
+    assert [w["network"] for w in body["payout_wallets"]] == ["trc20", "erc20", "bep20"]
+
+    tron = "TMtvQXAP2f6mqnjJgTLMVUMcFEhivJaRhq"
+    evm = "0x26EC3900000000000000000000000000000E0b1a"
+    r = await client.put(
+        "/api/admin/payment-rails",
+        json={
+            "rails": [],
+            "payout_wallets": [
+                {"network": "trc20", "address": tron},
+                {"network": "erc20", "address": evm},
+            ],
+        },
+    )
+    assert r.status_code == 200, r.text
+    saved = {w["network"]: w["address"] for w in r.json()["payout_wallets"]}
+    assert saved == {"trc20": tron, "erc20": evm, "bep20": ""}
+
+    # …and the same guard as a referrer's own payout address: right address, wrong rail
+    wrong = await client.put(
+        "/api/admin/payment-rails",
+        json={"rails": [], "payout_wallets": [{"network": "erc20", "address": tron}]},
+    )
+    assert wrong.status_code == 422, wrong.text
