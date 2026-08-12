@@ -4,7 +4,6 @@ import { Button } from "@/shared/components/Button";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { Modal } from "@/shared/components/Modal";
 import { Input } from "@/shared/components/form/Input";
-import { Select } from "@/shared/components/form/Select";
 import { Skeleton } from "@/shared/components/Skeleton";
 import { ErrorState } from "@/shared/components/ErrorState";
 import { EmptyState } from "@/shared/components/EmptyState";
@@ -13,11 +12,11 @@ import { useAdmins, useCreateAdmin, useUpdateAdmin } from "@/shared/hooks/useSys
 import { useToast } from "@/shared/components/Toast";
 import { apiErrorMessage } from "@/shared/api/client";
 import { strings } from "@/shared/strings";
-import type { AdminAccount, AdminRole } from "@/shared/api/types";
+import type { AdminAccount } from "@/shared/api/types";
 
-/** Only rendered inside <RequireRole role="owner"> by the parent screen —
- * see design-spec.md §9. Not gated internally here on purpose: if this
- * component is mounted at all, the viewer is already an owner. */
+/** Console accounts. There is no role to pick any more — every admin can do
+ * everything, so the only things worth setting are who they are, their password, and
+ * whether the account is still active. */
 export function AdminsPanel() {
   const toast = useToast();
   const { data, isLoading, isError, refetch } = useAdmins();
@@ -28,14 +27,12 @@ export function AdminsPanel() {
   const [editing, setEditing] = useState<AdminAccount | null>(null);
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [role, setRole] = useState<AdminRole>("operator");
   const [password, setPassword] = useState("");
 
   function openCreate() {
     setEditing(null);
     setEmail("");
     setDisplayName("");
-    setRole("operator");
     setPassword("");
     setFormOpen(true);
   }
@@ -44,7 +41,6 @@ export function AdminsPanel() {
     setEditing(a);
     setEmail(a.email);
     setDisplayName(a.display_name);
-    setRole(a.role);
     setPassword("");
     setFormOpen(true);
   }
@@ -54,11 +50,11 @@ export function AdminsPanel() {
       if (editing) {
         await updateMutation.mutateAsync({
           id: editing.id,
-          body: { email, display_name: displayName, role, ...(password ? { password } : {}) },
+          body: { email, display_name: displayName, ...(password ? { password } : {}) },
         });
         toast.success("Admin updated");
       } else {
-        await createMutation.mutateAsync({ email, display_name: displayName, role, password });
+        await createMutation.mutateAsync({ email, display_name: displayName, password });
         toast.success("Admin created");
       }
       setFormOpen(false);
@@ -93,7 +89,6 @@ export function AdminsPanel() {
                 <div className="text-[.78rem] text-text-3 mt-0.5">{a.email}</div>
               </div>
               <StatusBadge tone={a.is_active ? "success" : "neutral"} label={a.is_active ? strings.common.active : strings.common.inactive} />
-              <span className="text-[.78rem] text-text-2 capitalize w-20">{a.role}</span>
               <Button variant="quiet" size="sm" onClick={() => openEdit(a)}>
                 {strings.common.edit}
               </Button>
@@ -125,10 +120,6 @@ export function AdminsPanel() {
         <div className="flex flex-col gap-4">
           <Input label={strings.auth.emailLabel} type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
           <Input label="Display name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
-          <Select label="Role" value={role} onChange={(e) => setRole(e.target.value as AdminRole)}>
-            <option value="owner">Owner</option>
-            <option value="operator">Operator</option>
-          </Select>
           <Input
             label={editing ? "New password (leave blank to keep current)" : strings.auth.passwordLabel}
             type="password"

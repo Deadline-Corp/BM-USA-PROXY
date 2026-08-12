@@ -78,11 +78,9 @@ async def get_current_admin(
 
 CurrentAdmin = Annotated[AdminUser, Depends(get_current_admin)]
 
-
-def require_owner(admin: CurrentAdmin) -> AdminUser:
-    if admin.role != "owner":
-        raise Forbidden("owner only")
-    return admin
-
-
-Owner = Annotated[AdminUser, Depends(require_owner)]
+# There is no second tier. `require_owner`/`Owner` used to gate settings, terms, admin
+# accounts and the order-money actions; removed on the client's instruction — the same
+# people run and own this business, so the escalation tier had nobody on the other side of
+# it. Signing in is the whole authorisation model now, and the audit log is what says who
+# did what. The `role` column stays on admin_users, unused, so tiers can come back without
+# a migration.

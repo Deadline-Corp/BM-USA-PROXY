@@ -43,6 +43,7 @@ import type {
   SupportRequest,
   Tariff,
   TariffInput,
+  PaymentRails,
   Terms,
   TermsInput,
   AccessRow,
@@ -203,6 +204,10 @@ export const requestsApi = {
 };
 
 // ---------- Referrals ----------
+
+export const walletsApi = {
+  rails: () => apiClient.get<PaymentRails>("/payment-rails").then((r) => r.data),
+};
 
 export const referralsApi = {
   summary: () =>

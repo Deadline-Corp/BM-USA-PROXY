@@ -20,8 +20,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import ColumnElement, Select, String, and_, cast, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentAdmin, DbSession, Owner
-from app.core.errors import Conflict, Forbidden, NotFound, ValidationError
+from app.api.deps import CurrentAdmin, DbSession
+from app.core.errors import Conflict, NotFound, ValidationError
 from app.core.security import hash_password
 from app.models import (
     AdminUser,
@@ -191,34 +191,20 @@ async def _admin_display_map(
     return {aid: (display_name or email) for aid, display_name, email in rows}
 
 
-# ── money authority (operators run the business; owner is the escalation tier) ──
-# Operators perform refunds up to a configurable USD ceiling; above it an owner is
-# required. This keeps the business running without an owner in the loop while bounding
-# what one compromised operator account can move. Every action is audit-logged regardless.
+# ── no role tiers ────────────────────────────────────────────────────────
+# Every signed-in admin can do everything. There used to be an owner tier gating
+# settings, terms, admin accounts and the two order-money actions, plus a USD ceiling on
+# what an operator could refund without one.
 #
-# Referral payouts deliberately have NO ceiling: the client never asked for one, and the
-# gate would have been theatre anyway — the operator approving a payout is the same person
-# holding the wallet keys, so the money moves whether or not a button was pressed. What
-# does the real work there is that the watcher settles only an approved payout.
-_OPERATOR_LIMIT_DEFAULTS: dict[str, float] = {
-    "operator_refund_limit_usd": 200.0,
-}
-
-
-async def _require_money_authority(
-    session: DbSession, admin: AdminUser, amount_usd: float, setting_key: str
-) -> None:
-    """Allow an operator to move money up to the configured ceiling; owner above it."""
-    if admin.role == "owner":
-        return
-    limit = float(
-        await settings_svc.get(session, setting_key, _OPERATOR_LIMIT_DEFAULTS[setting_key])
-    )
-    if amount_usd > limit:
-        raise Forbidden(
-            f"amount ${amount_usd:.2f} exceeds the operator limit of ${limit:.2f} — "
-            "ask an owner to approve this one"
-        )
+# It went because the split described a company that does not exist here: the same two
+# people run the business and own it, so "ask an owner" meant "ask the person sitting
+# next to you, who has the same password manager". A gate nobody is on the other side of
+# does not protect anything — it just makes the console refuse work at the moment someone
+# is trying to do it. What actually limits damage stays: every action is audit-logged
+# with who did it, and the on-chain rails hold no keys the backend could spend.
+#
+# The `role` column is still on admin_users, unused, so this is reversible without a
+# migration if the client ever wants tiers back.
 
 
 # ── dashboard ────────────────────────────────────────────────────────────
@@ -1663,9 +1649,6 @@ async def attach_deposit(
     row = await session.get(OnchainDepositLedger, deposit_id)
     if row is None:
         raise NotFound("deposit not found")
-    await _require_money_authority(
-        session, admin, float(row.amount_usd or 0), "operator_refund_limit_usd"
-    )
     return await manual_resolution.attach_to_order(
         session,
         deposit_id=deposit_id,
@@ -1746,7 +1729,7 @@ class ResolveBody(BaseModel):
 
 @router.post("/orders/{order_id}/resolve")
 async def resolve_order(
-    order_id: str, body: ResolveBody, admin: Owner, session: DbSession
+    order_id: str, body: ResolveBody, admin: CurrentAdmin, session: DbSession
 ) -> dict[str, Any]:
     order = await _get_order(session, order_id)
     # This endpoint exists to clear the manual-review queue. Restricting it to that state
@@ -1766,9 +1749,6 @@ async def resolve_order(
     elif body.action == "fail":
         order.status = "cancelled"
     elif body.action == "refund":
-        await _require_money_authority(
-            session, admin, float(order.amount_usd), "operator_refund_limit_usd"
-        )
         order.status = "refunded"
     else:
         raise ValidationError("action must be 'approve', 'fail', or 'refund'")
@@ -1789,9 +1769,6 @@ class RefundBody(BaseModel):
 async def refund_order(
     order_id: str, body: RefundBody, admin: CurrentAdmin, session: DbSession
 ) -> dict[str, Any]:
-    await _require_money_authority(
-        session, admin, body.amount_usd, "operator_refund_limit_usd"
-    )
     order = await _get_order(session, order_id)
     if order.paid_at is None:
         raise ValidationError("cannot refund an order that was never paid")
@@ -1853,7 +1830,7 @@ class MarkPaidBody(BaseModel):
 
 @router.post("/orders/{order_id}/mark-paid")
 async def admin_mark_paid(
-    order_id: str, body: MarkPaidBody, admin: Owner, session: DbSession
+    order_id: str, body: MarkPaidBody, admin: CurrentAdmin, session: DbSession
 ) -> dict[str, Any]:
     from app.services import orders as orders_svc
 
@@ -2729,9 +2706,83 @@ async def patch_notification_settings(
     return await get_notification_settings(admin, session)
 
 
+# ── receiving wallets ────────────────────────────────────────────────────
+@router.get("/payment-rails")
+async def list_payment_rails(admin: CurrentAdmin) -> dict[str, Any]:
+    """Where customer money lands: one receiving address per rail we accept.
+
+    Read-only on purpose. These addresses come from ``ONCHAIN_METHODS`` in the deploy
+    environment, and an editable field here would be the single most valuable thing in
+    the console to an attacker who got one session — change the address, and every
+    payment from that moment on goes somewhere else while the watcher happily confirms
+    nothing. Changing a rail stays a deploy.
+
+    Rails we support but have no address for are listed too. Without them the page reads
+    as "these are the coins we take", when what it actually shows is "these are the coins
+    someone has configured" — and the difference is exactly the coin a customer is asking
+    about.
+    """
+    from app.core.config import settings
+    from app.services.payments.onchain.assets import SPECS
+    from app.services.payments.onchain.config import (
+        DEFAULT_CONFIRMATIONS,
+        OnchainConfigError,
+        get_onchain_config,
+    )
+
+    configured: list[dict[str, Any]] = []
+    error: str | None = None
+    try:
+        cfg = get_onchain_config()
+    except OnchainConfigError as exc:
+        cfg = None
+        error = str(exc)
+
+    seen: set[tuple[str, str]] = set()
+    if cfg is not None:
+        for method in sorted(cfg.enabled_methods(), key=lambda m: (m.chain, m.asset)):
+            seen.add((method.asset, method.network))
+            configured.append(
+                {
+                    "asset": method.asset,
+                    "network": method.network,
+                    "chain": method.chain,
+                    "address": method.address,
+                    "confirmations": method.confirmations,
+                    "min_amount_usd": float(method.min_amount_usd),
+                    "tolerance_pct": float(method.tolerance_pct),
+                    "token_contract": method.spec.token_contract or method.spec.token_mint,
+                    "is_stablecoin": method.spec.is_stable,
+                }
+            )
+
+    missing = [
+        {
+            "asset": spec.asset,
+            "network": spec.network,
+            "chain": spec.chain,
+            "default_confirmations": DEFAULT_CONFIRMATIONS.get(spec.chain, 12),
+            "is_stablecoin": spec.is_stable,
+        }
+        for key, spec in sorted(SPECS.items(), key=lambda kv: (kv[1].chain, kv[1].asset))
+        if key not in seen
+    ]
+
+    return {
+        "provider": settings.payment_provider,
+        "network": cfg.network if cfg else settings.onchain_network,
+        # The rails are inert unless the provider is actually the on-chain one — worth
+        # saying on the page, or the addresses read as live when nothing is watching them.
+        "watching": settings.payment_provider == "onchain",
+        "configured": configured,
+        "missing": missing,
+        "error": error,
+    }
+
+
 # ── system ───────────────────────────────────────────────────────────────
 @router.get("/settings")
-async def get_all_settings(admin: Owner, session: DbSession) -> dict[str, Any]:
+async def get_all_settings(admin: CurrentAdmin, session: DbSession) -> dict[str, Any]:
     rows = (await session.execute(select(AppSetting))).scalars().all()
     return {row.key: row.value for row in rows}
 
@@ -2751,16 +2802,13 @@ _SETTINGS_WHITELIST: frozenset[str] = frozenset(
         "rotation_cooldown_sec",
         "pool_low_watermark",
         "attribution",
-        # ceiling for what an operator may refund without an owner (_require_money_authority).
-        # There is no payout equivalent on purpose — see the note there.
-        "operator_refund_limit_usd",
     }
 )
 
 
 @router.patch("/settings")
 async def patch_all_settings(
-    body: SettingsPatch, admin: Owner, session: DbSession
+    body: SettingsPatch, admin: CurrentAdmin, session: DbSession
 ) -> dict[str, Any]:
     rejected = [k for k in body.values if k not in _SETTINGS_WHITELIST]
     if rejected:
@@ -2791,7 +2839,7 @@ class TermsBody(BaseModel):
 
 
 @router.put("/terms")
-async def put_terms(body: TermsBody, admin: Owner, session: DbSession) -> dict[str, Any]:
+async def put_terms(body: TermsBody, admin: CurrentAdmin, session: DbSession) -> dict[str, Any]:
     """Write the terms. Publishing bumps the version; saving does not.
 
     The version is the gate: `is_tos_accepted` compares it against what each client has
@@ -2826,7 +2874,7 @@ def _admin_user_view(a: AdminUser) -> dict[str, Any]:
 
 
 @router.get("/admins")
-async def list_admins(admin: Owner, session: DbSession) -> list[dict[str, Any]]:
+async def list_admins(admin: CurrentAdmin, session: DbSession) -> list[dict[str, Any]]:
     rows = (await session.execute(select(AdminUser).order_by(AdminUser.created_at))).scalars().all()
     return [_admin_user_view(a) for a in rows]
 
@@ -2835,54 +2883,46 @@ class AdminCreateBody(BaseModel):
     email: str
     password: str
     display_name: str
-    role: str = "operator"
 
 
 @router.post("/admins", status_code=201)
 async def create_admin(
-    body: AdminCreateBody, admin: Owner, session: DbSession
+    body: AdminCreateBody, admin: CurrentAdmin, session: DbSession
 ) -> dict[str, Any]:
-    if body.role not in ("owner", "operator"):
-        raise ValidationError("role must be 'owner' or 'operator'")
     existing = await session.scalar(select(AdminUser.id).where(AdminUser.email == body.email))
     if existing is not None:
         raise Conflict("admin with this email already exists")
+    # No role: every admin has the same rights. The column keeps its 'operator' default so
+    # bringing tiers back later is a code change, not a migration.
     new_admin = AdminUser(
         email=body.email,
         password_hash=hash_password(body.password),
         display_name=body.display_name,
-        role=body.role,
     )
     session.add(new_admin)
     await session.flush()
     await audit.write(session, admin_id=admin.id, action="admin.create", entity="admin_user",
-                       entity_id=new_admin.id, after={"email": body.email, "role": body.role})
+                       entity_id=new_admin.id, after={"email": body.email})
     return _admin_user_view(new_admin)
 
 
 class AdminPatchBody(BaseModel):
     display_name: str | None = None
-    role: str | None = None
     is_active: bool | None = None
     password: str | None = None
 
 
 @router.patch("/admins/{admin_id}")
 async def patch_admin(
-    admin_id: int, body: AdminPatchBody, admin: Owner, session: DbSession
+    admin_id: int, body: AdminPatchBody, admin: CurrentAdmin, session: DbSession
 ) -> dict[str, Any]:
     target = await session.get(AdminUser, admin_id)
     if target is None:
         raise NotFound("admin not found")
-    if body.role is not None and body.role not in ("owner", "operator"):
-        raise ValidationError("role must be 'owner' or 'operator'")
-    # Owner self-protection: an owner must not downgrade their own role or
-    # deactivate themselves (would lock the system out of any active owner).
-    if admin.id == admin_id:
-        new_role = body.role
-        new_is_active = body.is_active
-        if (new_role is not None and new_role != "owner") or new_is_active is False:
-            raise Conflict("cannot downgrade or deactivate self")
+    # The one guard worth keeping: deactivating yourself signs you out of the console with
+    # no way back in. Nothing to do with tiers — it is true of the last admin standing.
+    if admin.id == admin_id and body.is_active is False:
+        raise Conflict("cannot deactivate yourself")
     updates = body.model_dump(exclude_unset=True, exclude={"password"})
     for field, value in updates.items():
         setattr(target, field, value)

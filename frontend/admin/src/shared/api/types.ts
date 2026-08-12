@@ -3,13 +3,10 @@
 // dossier sub-lists) are inferred from the spec's plain-English description
 // where the spec didn't give a literal JSON shape. Documented per-type below.
 
-export type AdminRole = "owner" | "operator";
-
 export interface Admin {
   id: string;
   email: string;
   display_name: string;
-  role: AdminRole;
 }
 
 export interface Paginated<T> {
@@ -311,6 +308,42 @@ export interface DepositLedgerSummary {
   unmatched_total: number;
 }
 
+// ---------- Receiving wallets ----------
+
+export interface PaymentRail {
+  asset: string;
+  network: string;
+  chain: string;
+  /** The address a customer's payment lands on. Shared per rail, not per order. */
+  address: string;
+  confirmations: number;
+  min_amount_usd: number;
+  tolerance_pct: number;
+  /** Contract (EVM/Tron) or mint (Solana); null for native coins. */
+  token_contract: string | null;
+  is_stablecoin: boolean;
+}
+
+export interface MissingPaymentRail {
+  asset: string;
+  network: string;
+  chain: string;
+  default_confirmations: number;
+  is_stablecoin: boolean;
+}
+
+export interface PaymentRails {
+  provider: string;
+  network: string;
+  /** False when PAYMENT_PROVIDER is not "onchain" — the addresses exist but nothing
+   * is watching them, which the page has to say out loud. */
+  watching: boolean;
+  configured: PaymentRail[];
+  missing: MissingPaymentRail[];
+  /** Set when ONCHAIN_METHODS itself is malformed. */
+  error: string | null;
+}
+
 // ---------- Requests ----------
 
 export type RequestStatus = "new" | "in_progress" | "waiting" | "done";
@@ -514,14 +547,12 @@ export interface AdminAccount {
   id: string;
   email: string;
   display_name: string;
-  role: AdminRole;
   is_active: boolean;
 }
 
 export interface AdminAccountInput {
   email: string;
   display_name: string;
-  role: AdminRole;
   password?: string;
 }
 

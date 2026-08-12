@@ -15,7 +15,6 @@ import { useMarkPaidOrder, useOrder, useRefundOrder, useResolveOrder } from "@/s
 import { useToast } from "@/shared/components/Toast";
 import { apiErrorMessage } from "@/shared/api/client";
 import { strings } from "@/shared/strings";
-import { RequireRole } from "@/shared/auth/RequireRole";
 
 interface OrderDetailProps {
   orderId: string | null;
@@ -108,11 +107,9 @@ export function OrderDetail({ orderId, onClose }: OrderDetailProps) {
               <Button variant="ghost" size="sm" onClick={() => setRefundOpen(true)}>
                 {strings.orders.refund}
               </Button>
-              <RequireRole role="owner">
-                <Button variant="ghost" size="sm" onClick={() => setMarkPaidOpen(true)}>
-                  {strings.orders.markPaid}
-                </Button>
-              </RequireRole>
+              <Button variant="ghost" size="sm" onClick={() => setMarkPaidOpen(true)}>
+                {strings.orders.markPaid}
+              </Button>
             </>
           )
         }
@@ -238,18 +235,16 @@ export function OrderDetail({ orderId, onClose }: OrderDetailProps) {
         </div>
       </Modal>
 
-      <RequireRole role="owner">
-        <ConfirmDialog
-          open={markPaidOpen}
-          onClose={() => setMarkPaidOpen(false)}
-          onConfirm={handleMarkPaid}
-          title={strings.orders.markPaid}
-          description="This manually marks the order paid, bypassing the payment provider. Use only for verified off-system payments."
-          confirmLabel={strings.orders.markPaid}
-          requireReason
-          isSubmitting={markPaidMutation.isPending}
-        />
-      </RequireRole>
+      <ConfirmDialog
+        open={markPaidOpen}
+        onClose={() => setMarkPaidOpen(false)}
+        onConfirm={handleMarkPaid}
+        title={strings.orders.markPaid}
+        description="This manually marks the order paid, bypassing the payment provider. Use only for verified off-system payments."
+        confirmLabel={strings.orders.markPaid}
+        requireReason
+        isSubmitting={markPaidMutation.isPending}
+      />
     </>
   );
 }

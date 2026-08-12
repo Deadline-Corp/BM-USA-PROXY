@@ -14,7 +14,6 @@ import { useTerms, usePutTerms } from "@/shared/hooks/useSystem";
 import { useToast } from "@/shared/components/Toast";
 import { apiErrorMessage } from "@/shared/api/client";
 import { strings } from "@/shared/strings";
-import { RequireRole } from "@/shared/auth/RequireRole";
 import type { Terms, TermsQuestion } from "@/shared/api/types";
 
 let localIdCounter = 0;
@@ -112,28 +111,15 @@ export function TermsPanel() {
           <ErrorState onRetry={refetch} />
         ) : draft ? (
           <div className="flex flex-col gap-5">
-            <RequireRole
-              role="owner"
-              fallback={
-                <Textarea
-                  label={strings.settings.termsText}
-                  hint={strings.settings.termsTextHint}
-                  value={draft.text_md}
-                  rows={18}
-                  disabled
-                />
-              }
-            >
-              <Textarea
-                label={strings.settings.termsText}
-                hint={strings.settings.termsTextHint}
-                value={draft.text_md}
-                onChange={(e) => setDraft((prev) => (prev ? { ...prev, text_md: e.target.value } : prev))}
-                rows={18}
-                placeholder={"## Terms of Service\n\n1. …"}
-                className="font-mono text-[.82rem] leading-relaxed"
-              />
-            </RequireRole>
+            <Textarea
+              label={strings.settings.termsText}
+              hint={strings.settings.termsTextHint}
+              value={draft.text_md}
+              onChange={(e) => setDraft((prev) => (prev ? { ...prev, text_md: e.target.value } : prev))}
+              rows={18}
+              placeholder={"## Terms of Service\n\n1. …"}
+              className="font-mono text-[.82rem] leading-relaxed"
+            />
 
             <div className="flex flex-col gap-2.5">
               <div>
@@ -144,18 +130,26 @@ export function TermsPanel() {
               </div>
               {draft.questions.map((q) => (
                 <div key={q.id} className="flex items-center gap-2.5 flex-wrap">
-                  <Input
-                    value={q.label}
-                    onChange={(e) => updateQuestion(q.id, { label: e.target.value })}
-                    placeholder="Question shown to the client"
-                    className="flex-1 min-w-[240px]"
-                  />
+                  {/* The growing has to happen on the wrapper: Input and Select hand their
+                      className to the control itself, so `flex-1` there lands inside a flex
+                      column and grows the field downwards — which is to say, not at all. */}
+                  <div className="flex-1 min-w-[260px]">
+                    <Input
+                      value={q.label}
+                      onChange={(e) => updateQuestion(q.id, { label: e.target.value })}
+                      placeholder="Question shown to the client"
+                      className="w-full"
+                      size={1}
+                    />
+                  </div>
+                  {/* No width class: a native select is already exactly as wide as its
+                      longest option, which is the width we want and one that follows the
+                      options if they ever change. */}
                   <Select
                     value={q.type}
                     onChange={(e) =>
                       updateQuestion(q.id, { type: e.target.value as TermsQuestion["type"] })
                     }
-                    className="w-[140px]"
                   >
                     <option value="text">Free text</option>
                     <option value="email">Email</option>
@@ -166,44 +160,38 @@ export function TermsPanel() {
                     checked={q.required}
                     onChange={(e) => updateQuestion(q.id, { required: e.target.checked })}
                   />
-                  <RequireRole role="owner">
-                    <Button
-                      variant="quiet"
-                      size="sm"
-                      onClick={() => removeQuestion(q.id)}
-                      aria-label="Remove question"
-                    >
-                      <IconTrash className="w-3.5 h-3.5" />
-                    </Button>
-                  </RequireRole>
+                  <Button
+                    variant="quiet"
+                    size="sm"
+                    onClick={() => removeQuestion(q.id)}
+                    aria-label="Remove question"
+                  >
+                    <IconTrash className="w-3.5 h-3.5" />
+                  </Button>
                 </div>
               ))}
 
-              <RequireRole role="owner">
-                <div>
-                  <Button variant="quiet" size="sm" onClick={addQuestion}>
-                    <IconPlus className="w-3.5 h-3.5" />
-                    {strings.settings.addQuestion}
-                  </Button>
-                </div>
-              </RequireRole>
+              <div>
+                <Button variant="quiet" size="sm" onClick={addQuestion}>
+                  <IconPlus className="w-3.5 h-3.5" />
+                  {strings.settings.addQuestion}
+                </Button>
+              </div>
             </div>
 
-            <RequireRole role="owner">
-              <div className="flex items-center justify-between gap-3 pt-3 border-t border-border flex-wrap">
-                <p className="text-[.78rem] text-text-3 max-w-[620px]">
-                  {strings.settings.termsPublishHint}
-                </p>
-                <div className="flex gap-2 flex-none">
-                  <Button variant="ghost" size="sm" onClick={() => save(false)} isLoading={putMutation.isPending}>
-                    {strings.common.save}
-                  </Button>
-                  <Button variant="primary" size="sm" onClick={() => setConfirmPublish(true)}>
-                    {strings.settings.publish}
-                  </Button>
-                </div>
+            <div className="flex items-center justify-between gap-3 pt-3 border-t border-border flex-wrap">
+              <p className="text-[.78rem] text-text-3 max-w-[620px]">
+                {strings.settings.termsPublishHint}
+              </p>
+              <div className="flex gap-2 flex-none">
+                <Button variant="ghost" size="sm" onClick={() => save(false)} isLoading={putMutation.isPending}>
+                  {strings.common.save}
+                </Button>
+                <Button variant="primary" size="sm" onClick={() => setConfirmPublish(true)}>
+                  {strings.settings.publish}
+                </Button>
               </div>
-            </RequireRole>
+            </div>
           </div>
         ) : null}
       </Panel.Body>

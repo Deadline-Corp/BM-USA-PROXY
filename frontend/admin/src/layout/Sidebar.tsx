@@ -92,7 +92,9 @@ export function Sidebar() {
         </div>
         <div className="min-w-0 flex-1">
           <div className="text-[.86rem] font-semibold text-text truncate">{admin?.display_name}</div>
-          <div className="text-[.72rem] text-text-3 capitalize">{admin?.role}</div>
+          {/* The role used to sit here. It is gone with the tiers — every admin has the
+              same rights, so the line said nothing and implied something. */}
+          <div className="text-[.72rem] text-text-3 truncate">{admin?.email}</div>
         </div>
         <button
           type="button"

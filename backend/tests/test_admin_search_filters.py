@@ -198,6 +198,32 @@ async def test_referral_ledger_accepts_a_query(client: AsyncClient) -> None:
     assert r.status_code == 200, r.text
 
 
+# ── receiving wallets ────────────────────────────────────────────────────
+async def test_payment_rails_lists_configured_and_missing(client: AsyncClient) -> None:
+    """The page has to say which coins we take *and* which we merely support.
+
+    Without the second list it reads as "these are the coins we accept" while actually
+    showing "these are the coins someone configured" — and the gap is exactly the coin a
+    customer is asking about. Litecoin is the live example: fully implemented, no address.
+    """
+    r = await client.get("/api/admin/payment-rails")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "configured" in body and "missing" in body
+    assert body["watching"] is (body["provider"] == "onchain")
+
+    rails = {(x["asset"], x["network"]) for x in body["configured"] + body["missing"]}
+    # every supported rail is accounted for in exactly one of the two lists
+    assert ("LTC", "native") in rails
+    assert ("USDT", "trc20") in rails
+    configured = {(x["asset"], x["network"]) for x in body["configured"]}
+    missing = {(x["asset"], x["network"]) for x in body["missing"]}
+    assert not (configured & missing)
+
+    for rail in body["configured"]:
+        assert rail["address"], "a configured rail without an address is not configured"
+
+
 # ── terms ────────────────────────────────────────────────────────────────
 async def test_saving_terms_keeps_the_version_publishing_bumps_it(client: AsyncClient) -> None:
     """The version is the re-acceptance gate. Every write used to bump it, so fixing a

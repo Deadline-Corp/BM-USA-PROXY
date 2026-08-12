@@ -13,6 +13,7 @@ import {
   IconRequests,
   IconSettings,
   IconTariffs,
+  IconWallet,
 } from "@/shared/components/icons";
 import { strings } from "@/shared/strings";
 
@@ -55,6 +56,7 @@ export const navGroups: NavGroupConfig[] = [
       { to: "/tariffs", label: strings.nav.tariffs, icon: <IconTariffs /> },
       { to: "/referrals", label: strings.nav.referrals, icon: <IconReferrals /> },
       { to: "/ledger", label: strings.nav.ledger, icon: <IconLedger /> },
+      { to: "/wallets", label: strings.nav.wallets, icon: <IconWallet /> },
     ],
   },
   {

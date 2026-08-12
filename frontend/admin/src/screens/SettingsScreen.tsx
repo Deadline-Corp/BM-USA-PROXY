@@ -1,6 +1,5 @@
 import { PageHead } from "@/shared/components/PageHead";
 import { strings } from "@/shared/strings";
-import { RequireRole } from "@/shared/auth/RequireRole";
 import { AppSettingsPanel, ReferralSettingsPanel } from "@/screens/settings/AppSettingsPanel";
 import { TermsPanel } from "@/screens/settings/TermsPanel";
 import { AdminsPanel } from "@/screens/settings/AdminsPanel";
@@ -15,9 +14,7 @@ export function SettingsScreen() {
         <AppSettingsPanel />
         <ReferralSettingsPanel />
         <TermsPanel />
-        <RequireRole role="owner">
-          <AdminsPanel />
-        </RequireRole>
+        <AdminsPanel />
         <AuditPanel />
       </div>
     </div>

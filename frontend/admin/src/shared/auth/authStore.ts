@@ -27,6 +27,6 @@ export const useAuthStore = create<AuthState>((set) => ({
   clearSession: () => set({ accessToken: null, admin: null }),
 }));
 
-export function isOwner(admin: Admin | null): boolean {
-  return admin?.role === "owner";
-}
+// `isOwner` and the <RequireRole> wrapper that used it are gone with the role tiers.
+// Being signed in is the whole authorisation model: every admin can do everything, and
+// the audit log is what records who did it.

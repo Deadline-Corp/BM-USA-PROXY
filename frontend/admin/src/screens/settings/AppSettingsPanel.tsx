@@ -9,7 +9,6 @@ import { useAppSettings, useUpdateAppSettings } from "@/shared/hooks/useSystem";
 import { useToast } from "@/shared/components/Toast";
 import { apiErrorMessage } from "@/shared/api/client";
 import { strings } from "@/shared/strings";
-import { RequireRole } from "@/shared/auth/RequireRole";
 import type { AppSettings } from "@/shared/api/types";
 
 /** Names for the keys we know about. Everything else falls back to the key with its
@@ -25,7 +24,6 @@ const SETTING_LABELS: Record<string, string> = {
   referral_pct: strings.referrals.commissionPct,
   referral_min_payout_usd: strings.referrals.minPayoutUsd,
   referral_hold_days: strings.referrals.holdDays,
-  operator_refund_limit_usd: "Operator refund limit (USD)",
   invoice_ttl_minutes: "Invoice lifetime (minutes)",
   rotation_cooldown_sec: "IP rotation cooldown (seconds)",
   pool_low_watermark: "Pool low-stock alert (free slots)",
@@ -43,7 +41,13 @@ const REFERRAL_KEYS = ["referral_pct", "referral_min_payout_usd", "referral_hold
 // Structured settings (Terms, notification texts) have their own dedicated editors;
 // the generic key/value grid only shows scalar keys, so object values never render
 // as "[object Object]" and the two editors never fight over the same key.
-const isManaged = (key: string) => key.startsWith("notify_texts:") || key === "tos";
+//
+// `operator_refund_limit_usd` is listed as retired rather than forgotten: roles are gone,
+// so the backend no longer accepts the key, and a leftover row in the settings table would
+// otherwise render a field that 400s the moment anyone edits anything in this panel.
+const RETIRED_KEYS = ["operator_refund_limit_usd", "operator_payout_limit_usd"];
+const isManaged = (key: string) =>
+  key.startsWith("notify_texts:") || key === "tos" || RETIRED_KEYS.includes(key);
 
 /** Everything except the referral keys — the catch-all half of the bag. */
 export function AppSettingsPanel() {
@@ -130,13 +134,11 @@ function SettingsGroupPanel({
       <Panel.Head
         title={title}
         actions={
-          <RequireRole role="owner">
-            {isDirty && (
-              <Button size="sm" variant="primary" onClick={handleSave} isLoading={updateMutation.isPending}>
-                {strings.common.save}
-              </Button>
-            )}
-          </RequireRole>
+          isDirty && (
+            <Button size="sm" variant="primary" onClick={handleSave} isLoading={updateMutation.isPending}>
+              {strings.common.save}
+            </Button>
+          )
         }
       />
       <Panel.Body>
@@ -161,20 +163,13 @@ function SettingsGroupPanel({
                     referral panel (measured: 150px → 179px). */}
             <div className="grid grid-cols-3 gap-x-6 gap-y-4 w-fit max-[820px]:grid-cols-2 max-[560px]:grid-cols-1">
               {visibleEntries.map(([key, value]) => (
-                <RequireRole
+                <Input
                   key={key}
-                  role="owner"
-                  fallback={
-                    <Input label={labelFor(key)} value={String(value)} size={1} disabled />
-                  }
-                >
-                  <Input
-                    label={labelFor(key)}
-                    value={String(value)}
-                    size={1}
-                    onChange={(e) => setDraft((prev) => ({ ...(prev ?? data), [key]: e.target.value }))}
-                  />
-                </RequireRole>
+                  label={labelFor(key)}
+                  value={String(value)}
+                  size={1}
+                  onChange={(e) => setDraft((prev) => ({ ...(prev ?? data), [key]: e.target.value }))}
+                />
               ))}
             </div>
             {footnote && <p className="mt-4 text-[.78rem] text-text-3">{footnote}</p>}

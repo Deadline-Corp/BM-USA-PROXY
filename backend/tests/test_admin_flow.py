@@ -299,8 +299,14 @@ async def test_refresh_rotation_is_single_use(raw_client: AsyncClient) -> None:
     assert after.status_code == 401
 
 
-async def test_operator_money_actions_are_capped(engine, raw_client: AsyncClient) -> None:
-    """Operators run the business, so they may move money — but only up to the ceiling."""
+async def test_no_role_tier_left(engine, raw_client: AsyncClient) -> None:
+    """Signing in is the whole authorisation model — an 'operator' can reach everything.
+
+    This used to assert the opposite: a refund over $200 was 403 for anyone but an owner,
+    and settings/terms/admins were owner-only. Removed on the client's instruction, so the
+    test now guards the removal — a reintroduced gate would fail here rather than surface
+    as a 403 in someone's face mid-shift.
+    """
     from app.core.security import hash_password
     from app.models import AdminUser
     from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -321,16 +327,15 @@ async def test_operator_money_actions_are_capped(engine, raw_client: AsyncClient
     assert login.status_code == 200
     raw_client.headers["Authorization"] = f"Bearer {login.json()['access_token']}"
 
+    # A five-thousand-dollar refund gets as far as any other: 404, because that order does
+    # not exist. Not 403.
     fake = "00000000-0000-0000-0000-000000000000"
-    # Over the ceiling → 403 before anything is touched (default operator limit is $200).
-    over = await raw_client.post(
+    big = await raw_client.post(
         f"/api/admin/orders/{fake}/refund", json={"amount_usd": 5000, "reason": "x"}
     )
-    assert over.status_code == 403, over.text
+    assert big.status_code == 404, big.text
 
-    # Under the ceiling → the authority check passes; the request then fails only because
-    # the order doesn't exist (404), proving the operator was NOT blocked by role.
-    under = await raw_client.post(
-        f"/api/admin/orders/{fake}/refund", json={"amount_usd": 10, "reason": "x"}
-    )
-    assert under.status_code == 404, under.text
+    # …and the four screens that were owner-only all answer.
+    for path in ("/api/admin/settings", "/api/admin/terms", "/api/admin/admins"):
+        r = await raw_client.get(path)
+        assert r.status_code == 200, f"{path} → {r.status_code} {r.text[:200]}"
