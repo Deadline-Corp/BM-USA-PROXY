@@ -349,3 +349,27 @@ async def test_payout_wallets_are_listed_and_saved(client: AsyncClient) -> None:
         json={"rails": [], "payout_wallets": [{"network": "erc20", "address": tron}]},
     )
     assert wrong.status_code == 422, wrong.text
+
+
+async def test_an_address_for_the_other_network_says_so(client: AsyncClient) -> None:
+    """The switchover in the wrong order is not a typo, and must not be reported as one.
+
+    Someone pasting the client's real wallets in while the deployment is still on testnet
+    gets told which way round it is, not "that is not a bitcoin address" — which would be
+    both wrong and useless.
+    """
+    r = await client.put(
+        "/api/admin/payment-rails",
+        json={
+            "rails": [
+                # tests run against ONCHAIN_NETWORK=mainnet, so a testnet address is the
+                # wrong-network case here
+                {"asset": "BTC", "network": "native",
+                 "address": "tb1qpev303lfxcfdxrzgzjf0f494lh6e9dwvc98lq8"}
+            ]
+        },
+    )
+    assert r.status_code == 422, r.text
+    body = r.text.lower()
+    assert "testnet bitcoin address" in body
+    assert "onchain_network" in body

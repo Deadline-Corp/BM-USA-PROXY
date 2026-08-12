@@ -74,12 +74,27 @@ def validate_address(chain: str, network: str, address: str) -> None:
     pattern = _ADDRESS_PATTERNS.get((chain, network))
     if pattern is None:  # unknown chain — the rail itself is rejected elsewhere
         return
-    if not re.match(pattern, address):
-        hint = _CHAIN_HINTS.get(chain, "")
+    if re.match(pattern, address):
+        return
+
+    # A well-formed address for the *other* network is not a typo, it is someone doing the
+    # switchover in the wrong order — pasting the client's real wallets in while the
+    # deployment is still on testnet. Saying "that is not a bitcoin address" would be both
+    # wrong and useless, so say what actually happened and what to do about it.
+    other = "mainnet" if network == "testnet" else "testnet"
+    other_pattern = _ADDRESS_PATTERNS.get((chain, other))
+    if other_pattern and re.match(other_pattern, address):
         raise OnchainConfigError(
-            f"'{address}' does not look like a {chain} address on {network}"
-            + (f" — {hint}" if hint else "")
+            f"'{address}' is a {other} {chain} address, but this deployment is running on "
+            f"{network}. Switch ONCHAIN_NETWORK to {other} first, then save the addresses "
+            f"— saving them now would point checkout at a chain nothing is watching."
         )
+
+    hint = _CHAIN_HINTS.get(chain, "")
+    raise OnchainConfigError(
+        f"'{address}' does not look like a {chain} address on {network}"
+        + (f" — {hint}" if hint else "")
+    )
 
 
 def normalise_rails(raw: Any, *, network: str) -> list[dict[str, Any]]:
