@@ -71,7 +71,9 @@ export const strings = {
     subtitle: "USA 5G mobile proxy network — live state across the pool",
     revenue7d: "Revenue — last 7 days",
     vsPriorWeek: "vs prior week",
-    activeAccesses: "Active proxies",
+    // "Busy", not "Active": it counts proxies a client is holding right now, which is the
+    // same state the pools screen and the device chips call Busy. One word per state.
+    activeAccesses: "Busy proxies",
     freePool: "Free pool slots",
     pendingReview: "Pending manual review",
     newRequests: "New requests",
