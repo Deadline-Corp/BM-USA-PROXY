@@ -33,12 +33,65 @@ const SETTING_LABELS: Record<string, string> = {
 
 const labelFor = (key: string) => SETTING_LABELS[key] ?? key.replace(/_/g, " ");
 
+/** The affiliate programme's three dials, in the order the Referrals screen used to show
+ * them — commission first, since that is the one anybody actually comes here to change.
+ * They get their own panel: a commission percentage sitting between "invoice lifetime"
+ * and "pool low-stock alert" in one long grid is findable only by someone who already
+ * knows it is there. */
+const REFERRAL_KEYS = ["referral_pct", "referral_min_payout_usd", "referral_hold_days"];
+
+// Structured settings (Terms, notification texts) have their own dedicated editors;
+// the generic key/value grid only shows scalar keys, so object values never render
+// as "[object Object]" and the two editors never fight over the same key.
+const isManaged = (key: string) => key.startsWith("notify_texts:") || key === "tos";
+
+/** Everything except the referral keys — the catch-all half of the bag. */
+export function AppSettingsPanel() {
+  return (
+    <SettingsGroupPanel
+      title={strings.settings.appSettings}
+      select={(key) => !REFERRAL_KEYS.includes(key)}
+      footnote="Terms of Service and notification message texts are edited on their own screens — see the Terms of service panel below and the Notifications page."
+    />
+  );
+}
+
+/** The referral trio, under the name the Referrals screen gave them. */
+export function ReferralSettingsPanel() {
+  return (
+    <SettingsGroupPanel
+      title={strings.referrals.settings}
+      select={(key) => REFERRAL_KEYS.includes(key)}
+      order={REFERRAL_KEYS}
+      columns={3}
+    />
+  );
+}
+
 /** App settings is a free-form key/value bag per the spec (`GET/PATCH
  * /settings` with no fixed schema given). We render every key as a text
  * input — good enough for an ops console where the shape is whatever the
  * backend currently exposes, and it degrades gracefully as keys are
- * added/removed server-side without a frontend deploy. */
-export function AppSettingsPanel() {
+ * added/removed server-side without a frontend deploy.
+ *
+ * Grouping is a `select` over the same bag rather than separate requests: the panels
+ * partition the keyspace, and each saves only the keys it shows, so two drafts over one
+ * query can never overwrite each other's values.
+ */
+function SettingsGroupPanel({
+  title,
+  select,
+  order,
+  columns = 2,
+  footnote,
+}: {
+  title: string;
+  select: (key: string) => boolean;
+  /** Explicit key order; without it the backend's own order wins. */
+  order?: string[];
+  columns?: 2 | 3;
+  footnote?: string;
+}) {
   const toast = useToast();
   const { data, isLoading, isError, refetch } = useAppSettings();
   const updateMutation = useUpdateAppSettings();
@@ -48,15 +101,16 @@ export function AppSettingsPanel() {
     if (data && !draft) setDraft(data);
   }, [data, draft]);
 
-  const isDirty = draft && data && JSON.stringify(draft) !== JSON.stringify(data);
-
-  // Structured settings (Terms, notification texts) have their own dedicated editors;
-  // the generic key/value grid only shows scalar keys, so object values never render
-  // as "[object Object]" and the two editors never fight over the same key.
-  const isManaged = (key: string) => key.startsWith("notify_texts:") || key === "tos";
   const visibleEntries = Object.entries(draft ?? data ?? {}).filter(
-    ([key, value]) => !isManaged(key) && (value === null || typeof value !== "object"),
+    ([key, value]) => !isManaged(key) && select(key) && (value === null || typeof value !== "object"),
   );
+  if (order) visibleEntries.sort(([a], [b]) => order.indexOf(a) - order.indexOf(b));
+
+  // Dirty against this panel's own keys only — otherwise editing one panel lights up the
+  // Save button on the other, and pressing it there would look like it saved your change.
+  const isDirty =
+    data !== undefined &&
+    visibleEntries.some(([key, value]) => value !== (data as Record<string, unknown>)[key]);
 
   async function handleSave() {
     if (!draft || !data) return;
@@ -77,7 +131,7 @@ export function AppSettingsPanel() {
   return (
     <Panel>
       <Panel.Head
-        title={strings.settings.appSettings}
+        title={title}
         actions={
           <RequireRole role="owner">
             {isDirty && (
@@ -94,10 +148,10 @@ export function AppSettingsPanel() {
         ) : isError ? (
           <ErrorState onRetry={refetch} />
         ) : visibleEntries.length === 0 ? (
-          <EmptyState title="No editable settings" />
+          <EmptyState title="No editable settings" hint="Nothing in this group is exposed by the backend." />
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-4">
+            <div className={columns === 3 ? "grid grid-cols-3 gap-4 max-[820px]:grid-cols-1" : "grid grid-cols-2 gap-4"}>
               {visibleEntries.map(([key, value]) => (
                 <RequireRole
                   key={key}
@@ -114,10 +168,7 @@ export function AppSettingsPanel() {
                 </RequireRole>
               ))}
             </div>
-            <p className="mt-4 text-[.78rem] text-text-3">
-              Terms of Service and notification message texts are edited on their own
-              screens — see the Terms of service panel below and the Notifications page.
-            </p>
+            {footnote && <p className="mt-4 text-[.78rem] text-text-3">{footnote}</p>}
           </>
         )}
       </Panel.Body>

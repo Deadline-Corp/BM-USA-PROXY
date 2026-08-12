@@ -116,39 +116,20 @@ export function ReferralsScreen() {
         </StatClusterRow>
       )}
 
-      <div className="grid grid-cols-[1.4fr_1fr] gap-4 max-[1100px]:grid-cols-1">
-        <div className="flex flex-col gap-4">
-          <Panel>
-            <Panel.Head title={strings.referrals.ledger} />
-            <DataTable
-              columns={ledgerColumns}
-              data={ledgerQuery.data?.items ?? []}
-              total={ledgerQuery.data?.total ?? 0}
-              limit={limit}
-              offset={offset}
-              onOffsetChange={setOffset}
-              isLoading={ledgerQuery.isLoading}
-              isError={ledgerQuery.isError}
-              onRetry={ledgerQuery.refetch}
-              getRowId={(row) => row.id}
-              emptyTitle="No referral activity yet"
-            />
-          </Panel>
-
-          {/* The referral settings panel used to sit here, editing the same three keys the
-              Settings screen already edits. Two editors for one value is how they end up
-              disagreeing about which one is authoritative — and the generic list there
-              showed them as "referral pct", so neither looked like the real one. Settings
-              owns them now, under these labels. */}
-        </div>
-
+      {/* Stacked, queue first. Side by side, the queue was a narrow column of work next to
+          a wide column of history — and the work is what the operator opens this screen
+          for. Full width also lets a payout row breathe: who, when, how much, and the
+          three buttons no longer fight for the same 400px. */}
+      <div className="flex flex-col gap-4">
         <Panel>
           <Panel.Head title={strings.referrals.payoutsQueue} subtitle={`${payoutsQuery.data?.total ?? 0} pending`} />
           <div className="flex flex-col">
             {payoutsQuery.isLoading ? (
               <Skeleton className="h-40 m-4" />
             ) : (payoutsQuery.data?.items.length ?? 0) === 0 ? (
-              <EmptyState title="No pending payouts" />
+              // Not the default "try adjusting your filters" — this queue has no filters,
+              // and an empty one is the normal, good state.
+              <EmptyState title="No pending payouts" hint="Requests appear here as referrers ask to be paid." />
             ) : (
               payoutsQuery.data?.items.map((p) => (
                 <div key={p.id} className="flex items-center gap-3 px-[18px] py-3.5 border-b border-border last:border-b-0">
@@ -156,7 +137,9 @@ export function ReferralsScreen() {
                     <div className="font-mono text-[.82rem] text-text truncate">{p.referrer}</div>
                     <div className="text-[.76rem] text-text-3 mt-0.5">{formatDateTime(p.requested_at)}</div>
                   </div>
-                  <Num value={p.amount_usd} usd className="text-[.9rem] font-semibold text-text flex-none" />
+                  {/* Fixed width and right-aligned so amounts stack into a readable column
+                      instead of drifting with the button row's width. */}
+                  <Num value={p.amount_usd} usd className="text-[.9rem] font-semibold text-text flex-none w-[110px] text-right" />
                   <div className="flex items-center gap-1.5 flex-none">
                     <Button variant="quiet" size="sm" onClick={() => setRejectTarget(p)}>
                       {strings.referrals.reject}
@@ -181,6 +164,28 @@ export function ReferralsScreen() {
             )}
           </div>
         </Panel>
+
+        <Panel>
+          <Panel.Head title={strings.referrals.ledger} />
+          <DataTable
+            columns={ledgerColumns}
+            data={ledgerQuery.data?.items ?? []}
+            total={ledgerQuery.data?.total ?? 0}
+            limit={limit}
+            offset={offset}
+            onOffsetChange={setOffset}
+            isLoading={ledgerQuery.isLoading}
+            isError={ledgerQuery.isError}
+            onRetry={ledgerQuery.refetch}
+            getRowId={(row) => row.id}
+            emptyTitle="No referral activity yet"
+          />
+        </Panel>
+
+        {/* The referral settings panel used to sit under the ledger, editing the same three
+            keys the Settings screen already edits. Two editors for one value is how they
+            end up disagreeing about which one is authoritative. Settings owns them now, in
+            a panel of their own named after this screen. */}
       </div>
 
       <ConfirmDialog
