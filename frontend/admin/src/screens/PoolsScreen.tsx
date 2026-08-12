@@ -123,7 +123,11 @@ export function PoolsScreen() {
                 <span className="w-1.5 h-1.5 rounded-full bg-warning" />Used {usedSlots}
               </span>
               <span className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-text-3" />Offline {unavailableSlots}
+                {/* Not "Offline": this bucket also holds phones reporting 'unknown' and
+                    ones an operator withheld from sale while they are still online. What
+                    they share is that none of them can be sold. */}
+                <span className="w-1.5 h-1.5 rounded-full bg-text-3" />Unavailable{" "}
+                {unavailableSlots}
               </span>
             </div>
           </div>
