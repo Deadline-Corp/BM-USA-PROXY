@@ -6,7 +6,6 @@ export const strings = {
   app: {
     name: "BM USA Proxy",
     tagline: "Admin console",
-    topbarTagline: "USA mobile proxy · 5G unlimited",
   },
   auth: {
     loginTitle: "Sign in",
@@ -32,7 +31,6 @@ export const strings = {
     confirm: "Confirm",
     reason: "Reason",
     reasonRequired: "Reason is required",
-    search: "Search…",
     refresh: "Refresh",
     copied: "Copied",
     copy: "Copy",
