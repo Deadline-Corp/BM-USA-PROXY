@@ -143,18 +143,21 @@ export function DashboardScreen() {
             <PoolMap cities={poolQuery.data?.cities ?? []} />
           )}
         </div>
+        {/* A dot answers "can I sell in this city": yes, no because it is all sold, no
+            because there is nothing there. Same three words as the pool bar — the numbers
+            to the right are the same buckets, so the words have to be too. */}
         <div className="flex items-center gap-[18px] flex-wrap px-[18px] py-3.5 border-t border-border">
           <span className="flex items-center gap-1.5 text-[.78rem] text-text-2">
             <span className="w-2 h-2 rounded-full bg-success inline-block" />
-            Online
+            Free
           </span>
           <span className="flex items-center gap-1.5 text-[.78rem] text-text-2">
             <span className="w-2 h-2 rounded-full bg-warning inline-block" />
-            Full capacity
+            Busy
           </span>
           <span className="flex items-center gap-1.5 text-[.78rem] text-text-2">
             <span className="w-2 h-2 rounded-full bg-text-3 inline-block" />
-            Offline
+            Unavailable
           </span>
           <div className="ml-auto flex items-center gap-[18px]">
             <TotalStat label="Slots" value={poolQuery.data?.slots_total ?? 0} />
