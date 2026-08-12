@@ -5,7 +5,7 @@
     "dockerfilePath": "backend/Dockerfile.api"
   },
   "deploy": {
-    "startCommand": "sh start-api.sh",
+    "startCommand": "sh start.sh",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 300,
     "restartPolicyType": "ON_FAILURE",

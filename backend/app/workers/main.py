@@ -33,6 +33,14 @@ class WorkerSettings:
     on_startup = startup
     on_shutdown = shutdown
     functions: list = []  # webhook processing is inline; all work below is cron-driven
+    # A tick that cannot finish must be abandoned, not left holding a slot. arq's default
+    # is 300s — twenty deposit-watcher ticks — so one wedged pass would sit on a worker
+    # slot for five minutes while the schedule kept firing behind it. 90s is generous
+    # against the measured tick (3.8s across five chains) and short enough that a stuck
+    # RPC costs one pass, not twenty. Every job here is idempotent, so an abandoned pass
+    # is retried by the next one rather than needing recovery.
+    job_timeout = 90
+    max_jobs = 20
     cron_jobs = [
         cron(jobs.send_outbox, second={0, 10, 20, 30, 40, 50}, run_at_startup=True),
         cron(jobs.expiry_sweeper, second=0),
