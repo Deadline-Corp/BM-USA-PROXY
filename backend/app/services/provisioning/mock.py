@@ -33,3 +33,44 @@ class MockProvisioner(Provisioner):
 
     async def current_ip(self, *, iproxy_connection_id: str) -> str | None:
         return None
+
+    async def create_vpn_access(
+        self, *, iproxy_connection_id: str, kind: str, name: str
+    ) -> str:
+        return f"mock-{kind}-{secrets.token_hex(4)}"
+
+    async def vpn_config(
+        self, *, iproxy_connection_id: str, kind: str, vpn_access_id: str
+    ) -> bytes:
+        # Shaped like the real thing so anything that parses or displays a config —
+        # a test, a local run — sees the same structure it will see in production.
+        if kind == "wg":
+            lines = [
+                "[Interface]",
+                f"PrivateKey = {secrets.token_urlsafe(32)}",
+                "Address = 10.190.0.2/32",
+                "DNS = 10.190.0.1",
+                "",
+                "[Peer]",
+                f"PublicKey = {secrets.token_urlsafe(32)}",
+                f"Endpoint = mock-{vpn_access_id}.local:51820",
+                "AllowedIPs = 0.0.0.0/0, ::/0",
+                "PersistentKeepalive = 25",
+            ]
+        else:
+            lines = [
+                "client",
+                "dev tun",
+                "proto udp",
+                f"remote mock-{vpn_access_id}.local 1194",
+                "resolv-retry infinite",
+                "nobind",
+                "persist-key",
+                "persist-tun",
+            ]
+        return ("\n".join(lines) + "\n").encode()
+
+    async def delete_vpn_access(
+        self, *, iproxy_connection_id: str, kind: str, vpn_access_id: str
+    ) -> None:
+        return None

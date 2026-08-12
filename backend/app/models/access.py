@@ -87,3 +87,34 @@ class AccessEvent(Base):
         ),
         Index("ix_access_events_access", "access_id", text("created_at DESC")),
     )
+
+
+class AccessVpnConfig(Base):
+    """A VPN config issued to a customer for one access, on one protocol.
+
+    iproxy keeps OpenVPN and WireGuard as resources of their own on a connection —
+    siblings of the proxy access, not variants of it — so the id has to be stored
+    separately to be revoked later. Without this row the config outlives the purchase:
+    the proxy is torn down when the access expires and the VPN tunnel keeps working
+    forever, which is a paid product given away by omission.
+
+    The unique constraint is the "one per protocol per access" rule, enforced where two
+    taps on the button cannot race it. iproxy caps configs at 20 per connection, so
+    without it one customer could exhaust a phone and block everyone else on it.
+    """
+
+    __tablename__ = "access_vpn_configs"
+
+    id: Mapped[int] = pk()
+    access_id: Mapped[int] = mapped_column(
+        ForeignKey("accesses.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(Text, nullable=False)  # 'ovpn' | 'wg'
+    # iproxy's id for the ovpn-access / wg-access resource — what DELETE needs.
+    iproxy_vpn_access_id: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = created_at_col()
+
+    __table_args__ = (
+        CheckConstraint("kind IN ('ovpn','wg')", name="kind_valid"),
+        Index("uq_access_vpn_kind", "access_id", "kind", unique=True),
+    )

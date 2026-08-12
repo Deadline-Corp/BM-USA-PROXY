@@ -11,6 +11,8 @@ Rate limits are undocumented → a token-bucket throttle + bounded retries on 42
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import contextlib
 from typing import Any
 
@@ -165,6 +167,60 @@ class IproxyClient:
         data = await self._request("GET", f"/api/console/v1/connection/{connection_id}")
         return data if isinstance(data, dict) else {}
 
+    # ── VPN configs (OpenVPN / WireGuard) ───────────────────────────────
+    # Verified against the live API 2026-08-12, because the docs do not describe this:
+    # OpenVPN is documented, **WireGuard is not documented at all** — no endpoint, no
+    # page (`/docs-api-wireguard` is a 404) — yet `wg-access` exists and behaves exactly
+    # like `ovpn-access`. Everything below was confirmed by calling it: create → 201,
+    # config → 200 with a real file, delete → 204.
+    #
+    # A VPN config is a resource of the CONNECTION, a sibling of proxy-access rather than
+    # a `listen_service` variant of it — that enum accepts only http and socks5.
+    #
+    # DNS is deliberately not sent. Measured: creating with no `dns` field still produces
+    # a config containing `DNS = <the server's own resolver>`, so iproxy fills the right
+    # one per connection. Passing a value would replace a per-server address with one
+    # constant and hand the wrong resolver to phones on other subnets.
+
+    @staticmethod
+    def _vpn_segment(kind: str) -> str:
+        if kind not in ("ovpn", "wg"):
+            raise IproxyBadRequest(f"unknown VPN kind {kind!r}")
+        return f"{kind}-access"
+
+    async def create_vpn_access(
+        self, connection_id: str, *, kind: str, name: str
+    ) -> dict[str, Any]:
+        data = await self._request(
+            "POST",
+            f"/api/console/v1/connection/{connection_id}/{self._vpn_segment(kind)}",
+            json={"name": name[:64], "description": "bm-usa-proxy"},
+        )
+        return data if isinstance(data, dict) else {}
+
+    async def get_vpn_config(self, connection_id: str, *, kind: str, vpn_access_id: str) -> bytes:
+        """The config file itself, decoded. Raises if the response is not what we expect."""
+        seg = self._vpn_segment(kind)
+        data = await self._request(
+            "GET",
+            f"/api/console/v1/connection/{connection_id}/{seg}/{vpn_access_id}/config",
+        )
+        encoded = (data or {}).get("config_base64") if isinstance(data, dict) else None
+        if not encoded:
+            raise IproxyBadRequest(f"{kind} config response had no config_base64")
+        try:
+            return base64.b64decode(encoded)
+        except (ValueError, binascii.Error) as exc:
+            raise IproxyBadRequest(f"{kind} config was not valid base64: {exc}") from None
+
+    async def delete_vpn_access(self, connection_id: str, *, kind: str, vpn_access_id: str) -> None:
+        # Must be the connection-scoped path. The flat `/{kind}-access/{id}` form is
+        # documented for OpenVPN but answers 404 — measured, both protocols.
+        await self._request(
+            "DELETE",
+            f"/api/console/v1/connection/{connection_id}/{self._vpn_segment(kind)}/{vpn_access_id}",
+        )
+
 
 def _parse_proxy_access(raw: dict[str, Any]) -> IssuedProxy:
     """Map an iproxy proxy-access payload → our IssuedProxy.
@@ -213,6 +269,36 @@ class IproxyProvisioner(Provisioner):
     async def revoke(self, *, iproxy_connection_id: str, iproxy_access_id: str) -> None:
         with contextlib.suppress(IproxyNotFound):  # already gone — fine
             await self._client.delete_proxy_access(iproxy_connection_id, iproxy_access_id)
+
+    async def create_vpn_access(
+        self, *, iproxy_connection_id: str, kind: str, name: str
+    ) -> str:
+        raw = await self._client.create_vpn_access(iproxy_connection_id, kind=kind, name=name)
+        # The response nests under the resource name on some shapes and is flat on others;
+        # take whichever carries the id rather than assuming.
+        inner = raw.get(f"{kind}_access") if isinstance(raw.get(f"{kind}_access"), dict) else raw
+        vpn_id = str(inner.get("id") or "")
+        if not vpn_id:
+            raise ProvisioningError(f"iproxy {kind} create returned no id: {sorted(raw)[:6]}")
+        return vpn_id
+
+    async def vpn_config(
+        self, *, iproxy_connection_id: str, kind: str, vpn_access_id: str
+    ) -> bytes:
+        try:
+            return await self._client.get_vpn_config(
+                iproxy_connection_id, kind=kind, vpn_access_id=vpn_access_id
+            )
+        except IproxyError as exc:
+            raise ProvisioningError(f"iproxy {kind} config fetch failed: {exc}") from exc
+
+    async def delete_vpn_access(
+        self, *, iproxy_connection_id: str, kind: str, vpn_access_id: str
+    ) -> None:
+        with contextlib.suppress(IproxyNotFound):  # already gone — fine
+            await self._client.delete_vpn_access(
+                iproxy_connection_id, kind=kind, vpn_access_id=vpn_access_id
+            )
 
     async def rotate_ip(self, *, iproxy_connection_id: str) -> None:
         try:

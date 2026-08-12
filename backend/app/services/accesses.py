@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import Forbidden, NotFound
 from app.core.security import decrypt_credentials
 from app.models import Access, Connection, Location, Tariff
+from app.services import vpn_configs
 from app.services.provisioning.registry import get_provisioner
 
 _ACTIVE = ("provisioning", "active", "expiring")
@@ -91,7 +92,10 @@ async def detail_for_user(session: AsyncSession, public_id: str, user_id: int) -
             "password": creds.get("password"),
         },
         "swap_left": max(0, max_swaps - access.swap_count),
-        "configs_available": ["ovpn", "wg"],
+        # Derived, not hardcoded. It was ["ovpn", "wg"] for every access in every state,
+        # so a revoked or expired access still offered buttons for configs that can no
+        # longer be issued — and, before 2026-08-12, for configs nothing issued at all.
+        "configs_available": vpn_configs.available_kinds(access),
     }
 
 

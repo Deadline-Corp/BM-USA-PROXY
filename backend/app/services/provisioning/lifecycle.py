@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import Conflict, ProvisioningError
 from app.core.security import encrypt_credentials
 from app.models import Access, AccessEvent, Connection, Order, Tariff
+from app.services import vpn_configs
 from app.services.notifications import enqueue
 from app.services.provisioning.allocator import allocate
 from app.services.provisioning.registry import get_provisioner
@@ -87,6 +88,10 @@ async def revoke_access(
                     iproxy_connection_id=conn.iproxy_connection_id,
                     iproxy_access_id=access.iproxy_access_id,
                 )
+    # A VPN config is a separate iproxy resource with no expiry of its own. Leaving it
+    # behind hands the customer a tunnel that outlives the month they paid for — the
+    # proxy goes and the WireGuard keeps working, indefinitely and invisibly.
+    await vpn_configs.revoke_all(session, access)
     now = _utcnow()
     access.status = "revoked"
     access.revoked_at = now

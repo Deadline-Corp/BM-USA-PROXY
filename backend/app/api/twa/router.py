@@ -18,6 +18,7 @@ from app.services import orders as orders_svc
 from app.services import payouts as payouts_svc
 from app.services import settings as settings_svc
 from app.services import users as users_svc
+from app.services import vpn_configs
 from app.services.notifications import enqueue
 from app.services.payments.invoice_links import invoice_pay_uri, invoice_qr_payload
 from app.services.provisioning.lifecycle import rotate_ip, swap_access
@@ -315,9 +316,22 @@ class ConfigBody(BaseModel):
 async def request_config(
     public_id: str, body: ConfigBody, user: CurrentUser, session: DbSession
 ) -> dict[str, str]:
-    if body.type not in ("ovpn", "wg"):
+    """Ask for the VPN config file; the outbox builds and delivers it.
+
+    Queued rather than done here on purpose. Issuing a config is two iproxy round-trips,
+    and running them while the customer's tap waits turns a slow provider into a button
+    that appears broken. In the outbox a failure is a retry.
+
+    Until 2026-08-12 this endpoint queued a notification that said "your config is on the
+    way" and nothing anywhere fetched a config — the buttons had never worked. What is
+    validated here is the part that must not wait: that the access is the caller's, and
+    that it is still live.
+    """
+    if body.type not in vpn_configs.KINDS:
         raise ValidationError("type must be 'ovpn' or 'wg'")
     access = await accesses_svc.get_owned(session, public_id, user.id)
+    if body.type not in vpn_configs.available_kinds(access):
+        raise ValidationError("this access is no longer active")
     await enqueue(
         session, user_id=user.id, template_code="config_delivered",
         payload={"access_public_id": str(access.public_id), "config_type": body.type},

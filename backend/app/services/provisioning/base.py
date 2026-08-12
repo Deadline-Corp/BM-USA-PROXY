@@ -22,3 +22,17 @@ class Provisioner(Protocol):
     async def rotate_ip(self, *, iproxy_connection_id: str) -> None: ...
 
     async def current_ip(self, *, iproxy_connection_id: str) -> str | None: ...
+
+    # VPN configs are a separate iproxy resource from the proxy access — see
+    # services/vpn_configs.py for why they must be revoked explicitly.
+    async def create_vpn_access(
+        self, *, iproxy_connection_id: str, kind: str, name: str
+    ) -> str: ...
+
+    async def vpn_config(
+        self, *, iproxy_connection_id: str, kind: str, vpn_access_id: str
+    ) -> bytes: ...
+
+    async def delete_vpn_access(
+        self, *, iproxy_connection_id: str, kind: str, vpn_access_id: str
+    ) -> None: ...
