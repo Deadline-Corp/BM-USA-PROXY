@@ -76,8 +76,6 @@ export const strings = {
     pendingReview: "Pending manual review",
     newRequests: "New requests",
     reviewQueue: "Review queue",
-    mapTitle: "Pool network — United States",
-    managePools: "Manage pools",
     needsAttention: "Needs attention",
     revenueTrend: "Revenue trend",
   },

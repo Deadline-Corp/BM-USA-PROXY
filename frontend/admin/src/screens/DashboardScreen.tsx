@@ -8,7 +8,6 @@ import { StatCard, StatClusterRow } from "@/shared/components/StatCard";
 import { StatHero } from "@/shared/components/StatHero";
 import { Num } from "@/shared/components/Num";
 import { EmptyState } from "@/shared/components/EmptyState";
-import { ErrorState } from "@/shared/components/ErrorState";
 import { Skeleton } from "@/shared/components/Skeleton";
 import {
   IconAlertTriangle,
@@ -20,16 +19,13 @@ import {
   IconWallet,
 } from "@/shared/components/icons";
 import { useDashboardRevenue, useDashboardSummary } from "@/shared/hooks/useDashboard";
-import { usePoolSummary } from "@/shared/hooks/usePool";
 import { strings } from "@/shared/strings";
-import { PoolMap } from "@/screens/dashboard/PoolMap";
 import { useQueryClient } from "@tanstack/react-query";
 
 export function DashboardScreen() {
   const qc = useQueryClient();
   const summaryQuery = useDashboardSummary();
   const revenueQuery = useDashboardRevenue(7);
-  const poolQuery = usePoolSummary();
 
   const summary = summaryQuery.data;
   const revenuePoints = revenueQuery.data ?? [];
@@ -123,49 +119,11 @@ export function DashboardScreen() {
         )}
       </div>
 
-      {/* Signature hero: USA pool map */}
-      <Panel className="relative overflow-hidden">
-        <Panel.Head
-          title={strings.dashboard.mapTitle}
-          subtitle="Real-device 5G nodes across US carriers"
-          actions={
-            <LinkButton variant="ghost" size="sm" to="/pools">
-              {strings.dashboard.managePools}
-            </LinkButton>
-          }
-        />
-        <div className="px-1.5 pt-1.5">
-          {poolQuery.isLoading ? (
-            <Skeleton className="h-[300px]" />
-          ) : poolQuery.isError ? (
-            <ErrorState onRetry={() => poolQuery.refetch()} />
-          ) : (
-            <PoolMap cities={poolQuery.data?.cities ?? []} />
-          )}
-        </div>
-        {/* A dot answers "can I sell in this city": yes, no because it is all sold, no
-            because there is nothing there. Same three words as the pool bar — the numbers
-            to the right are the same buckets, so the words have to be too. */}
-        <div className="flex items-center gap-[18px] flex-wrap px-[18px] py-3.5 border-t border-border">
-          <span className="flex items-center gap-1.5 text-[.78rem] text-text-2">
-            <span className="w-2 h-2 rounded-full bg-success inline-block" />
-            Free
-          </span>
-          <span className="flex items-center gap-1.5 text-[.78rem] text-text-2">
-            <span className="w-2 h-2 rounded-full bg-warning inline-block" />
-            Busy
-          </span>
-          <span className="flex items-center gap-1.5 text-[.78rem] text-text-2">
-            <span className="w-2 h-2 rounded-full bg-text-3 inline-block" />
-            Unavailable
-          </span>
-          <div className="ml-auto flex items-center gap-[18px]">
-            <TotalStat label="Slots" value={poolQuery.data?.slots_total ?? 0} />
-            <TotalStat label="Busy" value={poolQuery.data?.slots_used ?? 0} />
-            <TotalStat label="Free" value={poolQuery.data?.slots_free ?? 0} />
-          </div>
-        </div>
-      </Panel>
+      {/* The "Pool network — United States" hero used to sit here: a hand-drawn US
+          silhouette from the prototype with a dot per city. Removed on request — it was
+          decoration. The dots carried no information the operator could act on, and the
+          three numbers beside them (slots / busy / free) are on the Pools screen, which
+          also lets you do something about them. */}
 
       {/* Lower: needs attention + activity */}
       <div className="grid grid-cols-[1.1fr_1fr_1fr] gap-4 mt-4 max-[1180px]:grid-cols-1">
@@ -248,17 +206,6 @@ export function DashboardScreen() {
           </div>
         </Panel>
       </div>
-    </div>
-  );
-}
-
-function TotalStat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="flex flex-col items-end">
-      <span className="font-mono tabular-nums text-[1.05rem] font-semibold text-text leading-none">
-        <Num value={value} />
-      </span>
-      <span className="text-[.68rem] uppercase tracking-[.08em] text-text-3 mt-[3px]">{label}</span>
     </div>
   );
 }
