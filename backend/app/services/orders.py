@@ -21,6 +21,7 @@ from app.services import settings as settings_svc
 from app.services.catalog import trial_available
 from app.services.notifications import enqueue
 from app.services.payments.base import InvoiceDTO
+from app.services.payments.onchain.rails import refresh_rails
 from app.services.payments.registry import get_payment_provider
 from app.services.provisioning.allocator import count_available
 from app.services.provisioning.lifecycle import extend_access, provision_access
@@ -155,6 +156,9 @@ async def create_order(
         await _provision_or_review(session, order)
         return order, None
 
+    # Pick up whatever rail list the console last saved before quoting an address —
+    # otherwise this process keeps handing out the address an operator already replaced.
+    await refresh_rails(session)
     provider = get_payment_provider()
     ttl = int(await settings_svc.get(session, "invoice_ttl_minutes", 60))
     dto = await provider.create_invoice(
@@ -228,6 +232,9 @@ async def create_extension_order(
     session.add(order)
     await session.flush()
 
+    # Pick up whatever rail list the console last saved before quoting an address —
+    # otherwise this process keeps handing out the address an operator already replaced.
+    await refresh_rails(session)
     provider = get_payment_provider()
     ttl = int(await settings_svc.get(session, "invoice_ttl_minutes", 60))
     dto = await provider.create_invoice(

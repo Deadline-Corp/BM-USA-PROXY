@@ -1,49 +1,120 @@
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHead } from "@/shared/components/PageHead";
 import { Panel } from "@/shared/components/Panel";
-import { CopyInline } from "@/shared/components/CopyInline";
+import { Button } from "@/shared/components/Button";
+import { Input } from "@/shared/components/form/Input";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { Skeleton } from "@/shared/components/Skeleton";
 import { ErrorState } from "@/shared/components/ErrorState";
-import { EmptyState } from "@/shared/components/EmptyState";
-import { Num } from "@/shared/components/Num";
+import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { walletsApi } from "@/shared/api/endpoints";
+import { apiErrorMessage } from "@/shared/api/client";
+import { useToast } from "@/shared/components/Toast";
 import { formatChain, formatNetwork } from "@/shared/lib/format";
 import { strings } from "@/shared/strings";
 import type { PaymentRail } from "@/shared/api/types";
 
-/** Where customer money lands.
+const railKey = (r: { asset: string; network: string }) => `${r.asset}/${r.network}`;
+
+/** Where customer money lands, and the screen that decides it.
  *
- * One shared receiving address per rail — there is no per-order address, which is why the
- * watcher matches a deposit by its exact amount instead. Read-only by design: these come
- * from ONCHAIN_METHODS in the deploy environment, and an edit box here would be the most
- * valuable field in the console to anyone who got hold of a session.
+ * Every supported rail is listed, configured or not — one list rather than "accepting"
+ * plus a separate "supported but not configured", because an operator who wants to start
+ * taking Litecoin should find that switch on the row that says Litecoin. A rail with no
+ * address is simply not offered at checkout; clearing an address is how a wallet is
+ * removed.
+ *
+ * Saving here is the most consequential write in the console: from that moment every
+ * invoice quotes the new address. Hence the confirm step, which names exactly which rails
+ * change and what they change from.
  */
 export function WalletsScreen() {
+  const toast = useToast();
+  const qc = useQueryClient();
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["payment-rails"],
     queryFn: walletsApi.rails,
   });
 
+  const [draft, setDraft] = useState<PaymentRail[] | null>(null);
+  const [confirming, setConfirming] = useState(false);
+
+  useEffect(() => {
+    if (data) setDraft(data.rails);
+  }, [data]);
+
+  const saveMutation = useMutation({
+    mutationFn: (rails: PaymentRail[]) => walletsApi.saveRails(rails),
+    onSuccess: (saved) => {
+      qc.setQueryData(["payment-rails"], saved);
+      setDraft(saved.rails);
+      toast.success(strings.wallets.saved);
+      setConfirming(false);
+    },
+    onError: (err) => {
+      toast.error(apiErrorMessage(err));
+      setConfirming(false);
+    },
+  });
+
+  function patch(key: string, changes: Partial<PaymentRail>) {
+    setDraft((prev) =>
+      prev ? prev.map((r) => (railKey(r) === key ? { ...r, ...changes } : r)) : prev,
+    );
+  }
+
+  /** What the confirm dialog reads out: the rails whose address is about to change. */
+  const addressChanges = useMemo(() => {
+    if (!data || !draft) return [];
+    const before = new Map(data.rails.map((r) => [railKey(r), r.address]));
+    return draft
+      .filter((r) => (before.get(railKey(r)) ?? "") !== r.address)
+      .map((r) => ({ key: railKey(r), from: before.get(railKey(r)) ?? "", to: r.address }));
+  }, [data, draft]);
+
+  const isDirty = useMemo(() => {
+    if (!data || !draft) return false;
+    return JSON.stringify(data.rails) !== JSON.stringify(draft);
+  }, [data, draft]);
+
+  const accepting = draft?.filter((r) => r.address.trim()).length ?? 0;
+
   return (
     <div>
-      <PageHead title={strings.wallets.title} subtitle={strings.wallets.subtitle} />
+      <PageHead
+        title={strings.wallets.title}
+        subtitle={strings.wallets.subtitle}
+        actions={
+          isDirty && (
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={() => data && setDraft(data.rails)}>
+                {strings.common.cancel}
+              </Button>
+              <Button variant="primary" size="sm" onClick={() => setConfirming(true)}>
+                {strings.common.save}
+              </Button>
+            </div>
+          )
+        }
+      />
 
       {isLoading ? (
         <Skeleton className="h-64 rounded-lg" />
-      ) : isError ? (
+      ) : isError || !data || !draft ? (
         <ErrorState onRetry={refetch} />
-      ) : data ? (
+      ) : (
         <div className="flex flex-col gap-4">
-          {/* State first. An address list reads as "money is arriving here" — it is worth
-              one line to say whether anything is actually watching these. */}
           <div className="flex flex-wrap items-center gap-2.5 bg-surface border border-border rounded-lg px-[18px] py-3.5">
             <StatusBadge
               tone={data.watching ? "success" : "warning"}
               label={data.watching ? strings.wallets.watching : strings.wallets.notWatching}
             />
             <span className="text-[.8rem] text-text-3">
-              {strings.wallets.provider}: <span className="text-text-2 font-mono">{data.provider}</span>
+              {strings.wallets.accepting}:{" "}
+              <span className="text-text-2 font-mono">
+                {accepting} / {data.supported_count}
+              </span>
             </span>
             <span className="text-[.8rem] text-text-3">
               {strings.wallets.chainNetwork}:{" "}
@@ -52,6 +123,11 @@ export function WalletsScreen() {
             {!data.watching && (
               <span className="text-[.78rem] text-text-3 basis-full">
                 {strings.wallets.notWatchingHint}
+              </span>
+            )}
+            {!data.console_managed && (
+              <span className="text-[.78rem] text-text-3 basis-full">
+                {strings.wallets.fromEnvHint}
               </span>
             )}
           </div>
@@ -66,95 +142,88 @@ export function WalletsScreen() {
           )}
 
           <Panel>
-            <Panel.Head
-              title={strings.wallets.accepting}
-              subtitle={`${data.configured.length} ${data.configured.length === 1 ? "rail" : "rails"}`}
-            />
+            <Panel.Head title={strings.wallets.railsTitle} subtitle={strings.wallets.railsHint} />
             <div className="flex flex-col">
-              {data.configured.length === 0 ? (
-                <EmptyState
-                  title={strings.wallets.noneTitle}
-                  hint={strings.wallets.noneHint}
-                />
-              ) : (
-                data.configured.map((rail) => <RailRow key={`${rail.asset}-${rail.network}`} rail={rail} />)
-              )}
+              {draft.map((rail) => (
+                <RailRow key={railKey(rail)} rail={rail} onChange={(c) => patch(railKey(rail), c)} />
+              ))}
             </div>
           </Panel>
-
-          {data.missing.length > 0 && (
-            <Panel>
-              <Panel.Head
-                title={strings.wallets.notAccepting}
-                subtitle={strings.wallets.notAcceptingHint}
-              />
-              <div className="flex flex-wrap gap-2 p-[18px]">
-                {data.missing.map((rail) => (
-                  <span
-                    key={`${rail.asset}-${rail.network}`}
-                    className="inline-flex items-baseline gap-1.5 h-8 px-3 rounded-full border border-border bg-surface-2 text-[.78rem] text-text-2"
-                  >
-                    <span className="font-semibold text-text">{rail.asset}</span>
-                    <span className="text-text-3">
-                      {formatChain(rail.chain)} · {formatNetwork(rail.network)}
-                    </span>
-                  </span>
-                ))}
-              </div>
-            </Panel>
-          )}
         </div>
-      ) : null}
+      )}
+
+      <ConfirmDialog
+        open={confirming}
+        onClose={() => setConfirming(false)}
+        onConfirm={() => draft && saveMutation.mutate(draft)}
+        title={strings.wallets.confirmTitle}
+        description={
+          addressChanges.length === 0
+            ? strings.wallets.confirmNoAddressChange
+            : `${strings.wallets.confirmAddressChange}\n\n` +
+              addressChanges
+                .map((c) => `${c.key}: ${c.from || "—"} → ${c.to || "—"}`)
+                .join("\n")
+        }
+        confirmLabel={strings.common.save}
+        danger={addressChanges.length > 0}
+        isSubmitting={saveMutation.isPending}
+      />
     </div>
   );
 }
 
-function RailRow({ rail }: { rail: PaymentRail }) {
+function RailRow({
+  rail,
+  onChange,
+}: {
+  rail: PaymentRail;
+  onChange: (changes: Partial<PaymentRail>) => void;
+}) {
+  const on = Boolean(rail.address.trim());
   return (
-    <div className="flex items-start gap-4 px-[18px] py-4 border-b border-border last:border-b-0 flex-wrap">
-      <div className="min-w-[150px]">
-        <div className="text-[.92rem] font-semibold text-text">{rail.asset}</div>
-        <div className="text-[.78rem] text-text-3 mt-0.5">
-          {formatChain(rail.chain)} · {formatNetwork(rail.network)}
-        </div>
-      </div>
-
-      <div className="flex-1 min-w-[280px]">
-        <div className="text-[.7rem] uppercase tracking-[.06em] text-text-3 font-semibold">
-          {strings.wallets.receivingAddress}
-        </div>
-        <div className="mt-1">
-          {/* Full value, not truncated: this is the string an operator reads back to a
-              customer, and a shortened one cannot be checked against what they pasted. */}
-          <CopyInline value={rail.address} head={rail.address.length} />
-        </div>
-        {rail.token_contract && (
-          <div className="mt-1.5 text-[.74rem] text-text-3">
-            {strings.wallets.contract}: <span className="font-mono">{rail.token_contract}</span>
+    <div className="px-[18px] py-4 border-b border-border last:border-b-0">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="min-w-[170px]">
+          <div className="text-[.92rem] font-semibold text-text">{rail.asset}</div>
+          <div className="text-[.78rem] text-text-3 mt-0.5">
+            {formatChain(rail.chain)} · {formatNetwork(rail.network)}
           </div>
+        </div>
+        <StatusBadge
+          tone={on ? "success" : "neutral"}
+          label={on ? strings.wallets.railOn : strings.wallets.railOff}
+        />
+        {rail.token_contract && (
+          <span className="text-[.72rem] text-text-3 font-mono truncate max-w-[280px]">
+            {strings.wallets.contract}: {rail.token_contract}
+          </span>
         )}
       </div>
 
-      <div className="flex gap-6 flex-none">
-        <Fact label={strings.wallets.confirmations} value={<Num value={rail.confirmations} />} />
-        <Fact
-          label={strings.wallets.minAmount}
-          value={rail.min_amount_usd > 0 ? <Num value={rail.min_amount_usd} usd /> : <span className="text-text-3">—</span>}
-        />
-        <Fact
-          label={strings.wallets.tolerance}
-          value={rail.tolerance_pct > 0 ? <Num value={rail.tolerance_pct} percent /> : <span className="text-text-3">—</span>}
-        />
+      <div className="mt-3 flex items-end gap-3 flex-wrap">
+        <div className="flex-1 min-w-[320px]">
+          <Input
+            label={strings.wallets.receivingAddress}
+            value={rail.address}
+            onChange={(e) => onChange({ address: e.target.value })}
+            placeholder={strings.wallets.addressPlaceholder}
+            className="w-full font-mono text-[.82rem]"
+            size={1}
+          />
+        </div>
+        <div className="w-[110px]">
+          <Input
+            label={strings.wallets.confirmations}
+            type="number"
+            min={0}
+            value={rail.confirmations}
+            onChange={(e) => onChange({ confirmations: Number(e.target.value) })}
+            className="w-full"
+            size={1}
+          />
+        </div>
       </div>
-    </div>
-  );
-}
-
-function Fact({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="min-w-[76px]">
-      <div className="text-[.7rem] uppercase tracking-[.06em] text-text-3 font-semibold">{label}</div>
-      <div className="mt-1 text-[.9rem] text-text">{value}</div>
     </div>
   );
 }

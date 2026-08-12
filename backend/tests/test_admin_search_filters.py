@@ -199,29 +199,98 @@ async def test_referral_ledger_accepts_a_query(client: AsyncClient) -> None:
 
 
 # ── receiving wallets ────────────────────────────────────────────────────
-async def test_payment_rails_lists_configured_and_missing(client: AsyncClient) -> None:
-    """The page has to say which coins we take *and* which we merely support.
+async def test_payment_rails_lists_every_supported_rail(client: AsyncClient) -> None:
+    """One list, not "accepting" plus a separate "supported but not configured".
 
-    Without the second list it reads as "these are the coins we accept" while actually
-    showing "these are the coins someone configured" — and the gap is exactly the coin a
-    customer is asking about. Litecoin is the live example: fully implemented, no address.
+    An operator who wants to start taking Litecoin should find that switch on the row that
+    says Litecoin, not in a second panel that only says the coin exists.
     """
     r = await client.get("/api/admin/payment-rails")
     assert r.status_code == 200, r.text
     body = r.json()
-    assert "configured" in body and "missing" in body
     assert body["watching"] is (body["provider"] == "onchain")
+    assert len(body["rails"]) == body["supported_count"]
 
-    rails = {(x["asset"], x["network"]) for x in body["configured"] + body["missing"]}
-    # every supported rail is accounted for in exactly one of the two lists
+    rails = {(x["asset"], x["network"]) for x in body["rails"]}
     assert ("LTC", "native") in rails
     assert ("USDT", "trc20") in rails
-    configured = {(x["asset"], x["network"]) for x in body["configured"]}
-    missing = {(x["asset"], x["network"]) for x in body["missing"]}
-    assert not (configured & missing)
 
-    for rail in body["configured"]:
-        assert rail["address"], "a configured rail without an address is not configured"
+
+async def test_saving_rails_takes_over_from_the_env(client: AsyncClient) -> None:
+    tron = "TMtvQXAP2f6mqnjJgTLMVUMcFEhivJaRhq"
+    r = await client.put(
+        "/api/admin/payment-rails",
+        json={
+            "rails": [
+                {
+                    "asset": "USDT",
+                    "network": "trc20",
+                    "address": tron,
+                    "confirmations": 19,
+                    # sent, and deliberately not stored — see normalise_rails
+                    "min_amount_usd": 5,
+                    "tolerance_pct": 0.5,
+                }
+            ]
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["console_managed"] is True
+
+    saved = next(x for x in body["rails"] if (x["asset"], x["network"]) == ("USDT", "trc20"))
+    assert saved["address"] == tron
+    assert saved["confirmations"] == 19
+    # A minimum and an underpayment tolerance are not dials this business has. Sending
+    # them anyway must not quietly bring them back.
+    assert "min_amount_usd" not in saved
+    assert "tolerance_pct" not in saved
+
+    # …and it survives a fresh read rather than living only in this process's memory
+    again = (await client.get("/api/admin/payment-rails")).json()
+    assert next(
+        x for x in again["rails"] if (x["asset"], x["network"]) == ("USDT", "trc20")
+    )["address"] == tron
+
+    # clearing the address is how a wallet is removed — the rail stays listed, unaccepted
+    cleared = await client.put(
+        "/api/admin/payment-rails",
+        json={"rails": [{"asset": "USDT", "network": "trc20", "address": ""}]},
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert next(
+        x for x in cleared.json()["rails"] if (x["asset"], x["network"]) == ("USDT", "trc20")
+    )["address"] == ""
+
+
+async def test_an_address_from_the_wrong_chain_is_refused(client: AsyncClient) -> None:
+    """The mistake people actually make: the right address on the wrong rail.
+
+    It is a format check, not a checksum — it catches a Tron address pasted onto Ethereum,
+    not two transposed characters. That is the difference between "obviously wrong" and
+    "needs reading back against the wallet", and only the first one can be automated.
+    """
+    tron = "TMtvQXAP2f6mqnjJgTLMVUMcFEhivJaRhq"
+    r = await client.put(
+        "/api/admin/payment-rails",
+        json={"rails": [{"asset": "USDT", "network": "erc20", "address": tron}]},
+    )
+    assert r.status_code == 422, r.text
+    assert "ethereum" in r.text.lower()
+
+    # a truncated paste is caught too
+    short = await client.put(
+        "/api/admin/payment-rails",
+        json={"rails": [{"asset": "BTC", "network": "native", "address": "bc1qshort"}]},
+    )
+    assert short.status_code == 422, short.text
+
+    # and a rail the watcher has no engine for
+    unknown = await client.put(
+        "/api/admin/payment-rails",
+        json={"rails": [{"asset": "DOGE", "network": "native", "address": "D6hgd"}]},
+    )
+    assert unknown.status_code == 422, unknown.text
 
 
 # ── terms ────────────────────────────────────────────────────────────────

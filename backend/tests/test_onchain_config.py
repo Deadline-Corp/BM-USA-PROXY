@@ -138,7 +138,10 @@ def test_parse_methods_and_rpc() -> None:
     m = cfg.require_method("USDT", "trc20")
     assert m.address == "TX"
     assert m.confirmations == 21
-    assert m.tolerance_pct == Decimal("0.5")
+    # Ignored on purpose: an underpayment is never a payment here, so a tolerance in the
+    # config is not honoured rather than quietly obeyed. A short deposit goes to the
+    # ledger for a person to decide on.
+    assert m.tolerance_pct == Decimal(0)
     assert m.min_amount_usd == Decimal("1")
     assert m.chain == "tron"
     assert cfg.rpc.endpoint("tron") == "u"

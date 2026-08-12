@@ -107,8 +107,13 @@ async def watch_onchain_deposits(ctx: dict) -> dict[str, int] | None:
 
     from app.services.payments.onchain.clients import build_client, chain_max_scan
     from app.services.payments.onchain.config import get_onchain_config
+    from app.services.payments.onchain.rails import refresh_rails
     from app.services.payments.onchain.watcher import run_chain_tick
 
+    # The worker is its own process, so a rail saved in the console reaches it here —
+    # once a minute, on the tick that is about to use it.
+    async with SessionFactory() as s:
+        await refresh_rails(s)
     config = get_onchain_config()
 
     async def tick(chain: str) -> tuple[str, int] | None:

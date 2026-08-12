@@ -2707,30 +2707,27 @@ async def patch_notification_settings(
 
 
 # ── receiving wallets ────────────────────────────────────────────────────
-@router.get("/payment-rails")
-async def list_payment_rails(admin: CurrentAdmin) -> dict[str, Any]:
-    """Where customer money lands: one receiving address per rail we accept.
+async def _payment_rails_view(session: DbSession) -> dict[str, Any]:
+    """Every rail the watcher has an engine for, with whatever address it holds.
 
-    Read-only on purpose. These addresses come from ``ONCHAIN_METHODS`` in the deploy
-    environment, and an editable field here would be the single most valuable thing in
-    the console to an attacker who got one session — change the address, and every
-    payment from that moment on goes somewhere else while the watcher happily confirms
-    nothing. Changing a rail stays a deploy.
-
-    Rails we support but have no address for are listed too. Without them the page reads
-    as "these are the coins we take", when what it actually shows is "these are the coins
-    someone has configured" — and the difference is exactly the coin a customer is asking
-    about.
+    One list, not two. A separate "supported but not configured" section made the main
+    list read as "the coins we accept" while it actually showed "the coins someone
+    configured" — and an operator who wants to start taking Litecoin should not have to
+    work out that the way to do it is somewhere other than the row that says Litecoin.
+    A rail with no address is simply not offered at checkout.
     """
     from app.core.config import settings
-    from app.services.payments.onchain.assets import SPECS
+    from app.services.payments.onchain.assets import SPECS, get_spec
     from app.services.payments.onchain.config import (
         DEFAULT_CONFIRMATIONS,
         OnchainConfigError,
         get_onchain_config,
+        rails_are_console_managed,
     )
+    from app.services.payments.onchain.rails import refresh_rails, supported_rails
 
-    configured: list[dict[str, Any]] = []
+    await refresh_rails(session)
+
     error: str | None = None
     try:
         cfg = get_onchain_config()
@@ -2738,35 +2735,23 @@ async def list_payment_rails(admin: CurrentAdmin) -> dict[str, Any]:
         cfg = None
         error = str(exc)
 
-    seen: set[tuple[str, str]] = set()
-    if cfg is not None:
-        for method in sorted(cfg.enabled_methods(), key=lambda m: (m.chain, m.asset)):
-            seen.add((method.asset, method.network))
-            configured.append(
-                {
-                    "asset": method.asset,
-                    "network": method.network,
-                    "chain": method.chain,
-                    "address": method.address,
-                    "confirmations": method.confirmations,
-                    "min_amount_usd": float(method.min_amount_usd),
-                    "tolerance_pct": float(method.tolerance_pct),
-                    "token_contract": method.spec.token_contract or method.spec.token_mint,
-                    "is_stablecoin": method.spec.is_stable,
-                }
-            )
-
-    missing = [
-        {
-            "asset": spec.asset,
-            "network": spec.network,
-            "chain": spec.chain,
-            "default_confirmations": DEFAULT_CONFIRMATIONS.get(spec.chain, 12),
-            "is_stablecoin": spec.is_stable,
-        }
-        for key, spec in sorted(SPECS.items(), key=lambda kv: (kv[1].chain, kv[1].asset))
-        if key not in seen
-    ]
+    rails: list[dict[str, Any]] = []
+    for asset, network, chain in supported_rails():
+        method = cfg.method(asset, network) if cfg else None
+        spec = method.spec if method else get_spec(asset, network)
+        rails.append(
+            {
+                "asset": asset,
+                "network": network,
+                "chain": chain,
+                "address": method.address if method else "",
+                "confirmations": (
+                    method.confirmations if method else DEFAULT_CONFIRMATIONS.get(chain, 12)
+                ),
+                "token_contract": spec.token_contract or spec.token_mint,
+                "is_stablecoin": spec.is_stable,
+            }
+        )
 
     return {
         "provider": settings.payment_provider,
@@ -2774,10 +2759,92 @@ async def list_payment_rails(admin: CurrentAdmin) -> dict[str, Any]:
         # The rails are inert unless the provider is actually the on-chain one — worth
         # saying on the page, or the addresses read as live when nothing is watching them.
         "watching": settings.payment_provider == "onchain",
-        "configured": configured,
-        "missing": missing,
+        # False means these addresses still come from ONCHAIN_METHODS in the deploy
+        # environment and the first save here takes over from it — worth showing, because
+        # otherwise nobody can tell which of the two is actually in charge.
+        "console_managed": rails_are_console_managed(),
+        "supported_count": len(SPECS),
+        "rails": rails,
         "error": error,
     }
+
+
+@router.get("/payment-rails")
+async def list_payment_rails(admin: CurrentAdmin, session: DbSession) -> dict[str, Any]:
+    return await _payment_rails_view(session)
+
+
+class PaymentRailsBody(BaseModel):
+    rails: list[dict[str, Any]]
+
+
+@router.put("/payment-rails")
+async def put_payment_rails(
+    body: PaymentRailsBody, admin: CurrentAdmin, session: DbSession
+) -> dict[str, Any]:
+    """Replace the rail list — the addresses customer payments are sent to.
+
+    This is the most consequential write in the console: from the moment it lands, every
+    invoice quotes the new address, and money sent to the old one arrives somewhere the
+    watcher is no longer looking. Three things stand behind it.
+
+    Addresses are format-checked against the chain and the network they are being set on.
+    That catches the mistake people actually make — a Tron address pasted onto the
+    Ethereum rail, or a mainnet address while the deployment is on testnet. It is not a
+    checksum: two transposed characters in the middle still pass, so the address has to be
+    read back against the wallet before real money is pointed at it.
+
+    The change is audit-logged rail by rail, with the address that was there before, so
+    "when did this address change and who changed it" has an answer.
+
+    And nothing here can spend: the backend holds no key on any chain. A wrong address
+    means money lands where we do not watch, not that money leaves.
+    """
+    from app.services.payments.onchain.config import OnchainConfigError, get_onchain_config
+    from app.services.payments.onchain.rails import save_rails
+
+    before = {
+        (m.asset, m.network): m.address
+        for m in (get_onchain_config().enabled_methods() if _config_ok() else [])
+    }
+    try:
+        saved = await save_rails(
+            session, body.rails, admin_id=admin.id, network=_onchain_network()
+        )
+    except OnchainConfigError as exc:
+        raise ValidationError(str(exc)) from None
+
+    after = {(r["asset"], r["network"]): r["address"] for r in saved}
+    changes = {
+        f"{asset}/{network}": {"from": before.get((asset, network), ""), "to": address}
+        for (asset, network), address in after.items()
+        if before.get((asset, network), "") != address
+    }
+    for (asset, network), address in before.items():
+        if (asset, network) not in after:
+            changes[f"{asset}/{network}"] = {"from": address, "to": ""}
+
+    await audit.write(
+        session, admin_id=admin.id, action="payment_rails.update", entity="app_setting",
+        entity_id="onchain_rails", after=changes,
+    )
+    return await _payment_rails_view(session)
+
+
+def _config_ok() -> bool:
+    from app.services.payments.onchain.config import OnchainConfigError, get_onchain_config
+
+    try:
+        get_onchain_config()
+    except OnchainConfigError:
+        return False
+    return True
+
+
+def _onchain_network() -> str:
+    from app.core.config import settings
+
+    return settings.onchain_network
 
 
 # ── system ───────────────────────────────────────────────────────────────

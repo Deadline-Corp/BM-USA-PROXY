@@ -64,6 +64,21 @@ async def _ensure_test_db() -> bool:
     return True
 
 
+@pytest.fixture(autouse=True)
+def _isolate_onchain_config():
+    """Forget any console-saved rail list between tests.
+
+    The rails a rail list is loaded from is process-global (see onchain/rails.py), so a
+    test that saves one would otherwise change what every later test in the session sees
+    from `get_onchain_config()` — including the watcher tests, which build their own.
+    """
+    from app.services.payments.onchain.config import reset_config_cache
+
+    reset_config_cache()
+    yield
+    reset_config_cache()
+
+
 @pytest_asyncio.fixture
 async def engine():
     if not await _ensure_test_db():

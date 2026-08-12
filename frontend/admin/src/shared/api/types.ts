@@ -314,21 +314,11 @@ export interface PaymentRail {
   asset: string;
   network: string;
   chain: string;
-  /** The address a customer's payment lands on. Shared per rail, not per order. */
+  /** The address a customer's payment lands on. Empty = this coin is not accepted. */
   address: string;
   confirmations: number;
-  min_amount_usd: number;
-  tolerance_pct: number;
   /** Contract (EVM/Tron) or mint (Solana); null for native coins. */
   token_contract: string | null;
-  is_stablecoin: boolean;
-}
-
-export interface MissingPaymentRail {
-  asset: string;
-  network: string;
-  chain: string;
-  default_confirmations: number;
   is_stablecoin: boolean;
 }
 
@@ -338,9 +328,13 @@ export interface PaymentRails {
   /** False when PAYMENT_PROVIDER is not "onchain" — the addresses exist but nothing
    * is watching them, which the page has to say out loud. */
   watching: boolean;
-  configured: PaymentRail[];
-  missing: MissingPaymentRail[];
-  /** Set when ONCHAIN_METHODS itself is malformed. */
+  /** False while ONCHAIN_METHODS in the deploy environment is still in charge; the
+   * first save from this screen takes over from it. */
+  console_managed: boolean;
+  supported_count: number;
+  /** Every rail the watcher has an engine for, configured or not. */
+  rails: PaymentRail[];
+  /** Set when the stored rail list itself is malformed. */
   error: string | null;
 }
 

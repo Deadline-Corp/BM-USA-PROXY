@@ -183,7 +183,14 @@ def _parse_methods(methods_json: str | None) -> dict[tuple[str, str], MethodConf
         confirmations = int(
             entry.get("confirmations", DEFAULT_CONFIRMATIONS.get(spec.chain, 12))
         )
-        tolerance_pct = Decimal(str(entry.get("tolerance_pct", "0")))
+        # Pinned to zero, not read from the rail. There is no such thing here as an
+        # amount smaller than the one we quoted counting as paid — client decision,
+        # 2026-08-12. A short payment lands in the ledger as `underpaid` for a person to
+        # decide on, which is the only place that decision belongs. Every rail already
+        # had this unset, so nothing changes in behaviour; what changes is that it can no
+        # longer be set by accident. Overpayment is unaffected — the matcher accepts it
+        # up to its own cap regardless.
+        tolerance_pct = Decimal(0)
         min_amount_usd = Decimal(str(entry.get("min_amount_usd", "0")))
         # per-rail overrides — needed on testnet, where the token contract/mint (and
         # sometimes decimals) differ from the mainnet defaults pinned in assets.py.
@@ -389,13 +396,29 @@ def load_config(
     return config
 
 
+# The rail list the console has saved, as the same JSON string ``load_config`` parses.
+# ``None`` means nobody has saved one and ONCHAIN_METHODS is still in charge — which is
+# how every existing deploy keeps working until an operator presses Save for the first
+# time. Installed by ``rails.refresh_rails``; see that module for why it is a module
+# global rather than a lookup inside the parser.
+_rails_override: str | None = None
+
+
+def set_rails_override(methods_json: str | None) -> None:
+    """Install (or clear) the console-managed rail list for this process."""
+    global _rails_override
+    if methods_json != _rails_override:
+        _rails_override = methods_json
+        get_onchain_config.cache_clear()
+
+
 @lru_cache(maxsize=1)
 def get_onchain_config() -> OnchainConfig:
     """Cached config built from application settings."""
     from app.core.config import settings
 
     return load_config(
-        settings.onchain_methods,
+        settings.onchain_methods if _rails_override is None else _rails_override,
         settings.onchain_rpc,
         settings.onchain_network,
         settings.onchain_payout_sources,
@@ -403,6 +426,13 @@ def get_onchain_config() -> OnchainConfig:
     )
 
 
+def rails_are_console_managed() -> bool:
+    """True once a rail list has been saved from the console."""
+    return _rails_override is not None
+
+
 def reset_config_cache() -> None:
     """Drop the cached config (tests / settings reload)."""
+    global _rails_override
+    _rails_override = None
     get_onchain_config.cache_clear()
