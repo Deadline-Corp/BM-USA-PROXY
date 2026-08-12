@@ -12,6 +12,27 @@ import { strings } from "@/shared/strings";
 import { RequireRole } from "@/shared/auth/RequireRole";
 import type { AppSettings } from "@/shared/api/types";
 
+/** Names for the keys we know about. Everything else falls back to the key with its
+ * underscores knocked out, which is what keeps this panel useful when the backend grows a
+ * setting without a frontend deploy — the point of the free-form bag below.
+ *
+ * The referral three are named after the labels the Referrals screen used to show them
+ * under, because that screen no longer edits them: settings live in one place now, and a
+ * setting called "referral pct" in one and "Commission %" in another is how two screens
+ * end up disagreeing about which is authoritative.
+ */
+const SETTING_LABELS: Record<string, string> = {
+  referral_pct: strings.referrals.commissionPct,
+  referral_min_payout_usd: strings.referrals.minPayoutUsd,
+  referral_hold_days: strings.referrals.holdDays,
+  operator_refund_limit_usd: "Operator refund limit (USD)",
+  invoice_ttl_minutes: "Invoice lifetime (minutes)",
+  rotation_cooldown_sec: "IP rotation cooldown (seconds)",
+  pool_low_watermark: "Pool low-stock alert (free slots)",
+};
+
+const labelFor = (key: string) => SETTING_LABELS[key] ?? key.replace(/_/g, " ");
+
 /** App settings is a free-form key/value bag per the spec (`GET/PATCH
  * /settings` with no fixed schema given). We render every key as a text
  * input — good enough for an ops console where the shape is whatever the
@@ -82,11 +103,11 @@ export function AppSettingsPanel() {
                   key={key}
                   role="owner"
                   fallback={
-                    <Input label={key.replace(/_/g, " ")} value={String(value)} disabled />
+                    <Input label={labelFor(key)} value={String(value)} disabled />
                   }
                 >
                   <Input
-                    label={key.replace(/_/g, " ")}
+                    label={labelFor(key)}
                     value={String(value)}
                     onChange={(e) => setDraft((prev) => ({ ...(prev ?? data), [key]: e.target.value }))}
                   />

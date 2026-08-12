@@ -18,16 +18,14 @@ import {
   useMarkPayoutPaid,
   usePayouts,
   useReferralLedger,
-  useReferralSettings,
   useReferralSummary,
   useRejectPayout,
-  useUpdateReferralSettings,
 } from "@/shared/hooks/useReferrals";
 import { usePagination } from "@/shared/hooks/usePagination";
 import { useToast } from "@/shared/components/Toast";
 import { apiErrorMessage } from "@/shared/api/client";
 import { strings } from "@/shared/strings";
-import type { Payout, ReferralLedgerEntry, ReferralSettings } from "@/shared/api/types";
+import type { Payout, ReferralLedgerEntry } from "@/shared/api/types";
 import { IconClients, IconMail, IconReferrals, IconWallet } from "@/shared/components/icons";
 import { PayoutInstructionModal } from "@/screens/referrals/PayoutInstructionModal";
 
@@ -40,8 +38,6 @@ export function ReferralsScreen() {
   // no status → the API returns everything still open (requested + approved). Passing
   // "pending" here filtered on a status that doesn't exist, so the queue was always empty.
   const payoutsQuery = usePayouts();
-  const settingsQuery = useReferralSettings();
-  const updateSettingsMutation = useUpdateReferralSettings();
 
   const approveMutation = useApprovePayout();
   const rejectMutation = useRejectPayout();
@@ -52,8 +48,6 @@ export function ReferralsScreen() {
   const [sendTarget, setSendTarget] = useState<string | null>(null);
   const [txHash, setTxHash] = useState("");
 
-  const [settingsDraft, setSettingsDraft] = useState<Partial<ReferralSettings> | null>(null);
-  const settings = settingsDraft ?? settingsQuery.data;
 
   /** Authorise the payout (if it still needs it), then show the transfer instructions.
    *
@@ -91,17 +85,6 @@ export function ReferralsScreen() {
       toast.success("Payout marked paid");
       setMarkPaidTarget(null);
       setTxHash("");
-    } catch (err) {
-      toast.error(apiErrorMessage(err));
-    }
-  }
-
-  async function handleSaveSettings() {
-    if (!settingsDraft) return;
-    try {
-      await updateSettingsMutation.mutateAsync(settingsDraft);
-      toast.success("Referral settings saved");
-      setSettingsDraft(null);
     } catch (err) {
       toast.error(apiErrorMessage(err));
     }
@@ -152,55 +135,11 @@ export function ReferralsScreen() {
             />
           </Panel>
 
-          {/* Operator-editable: the referral percentage is a day-to-day commercial dial,
-              same tier as tariff pricing. */}
-          <Panel>
-            <Panel.Head title={strings.referrals.settings} />
-            <Panel.Body>
-                {settingsQuery.isLoading || !settings ? (
-                  <Skeleton className="h-24" />
-                ) : (
-                  <div className="flex flex-col gap-4">
-                    {/* items-end so the three fields line up even when a label wraps —
-                        "Hold before payout (days)" takes two lines at this width and was
-                        dropping its input below the other two. */}
-                    <div className="grid grid-cols-3 gap-3 items-end">
-                      <Input
-                        type="number"
-                        step="0.1"
-                        label={strings.referrals.commissionPct}
-                        value={settings.referral_pct ?? 0}
-                        onChange={(e) => setSettingsDraft({ ...settings, referral_pct: Number(e.target.value) })}
-                      />
-                      <Input
-                        type="number"
-                        step="0.01"
-                        label={strings.referrals.minPayoutUsd}
-                        value={settings.referral_min_payout_usd ?? 0}
-                        onChange={(e) =>
-                          setSettingsDraft({ ...settings, referral_min_payout_usd: Number(e.target.value) })
-                        }
-                      />
-                      <Input
-                        type="number"
-                        label={strings.referrals.holdDays}
-                        value={settings.referral_hold_days ?? 0}
-                        onChange={(e) =>
-                          setSettingsDraft({ ...settings, referral_hold_days: Number(e.target.value) })
-                        }
-                      />
-                    </div>
-                    {settingsDraft && (
-                      <div className="flex justify-end">
-                        <Button size="sm" variant="primary" onClick={handleSaveSettings} isLoading={updateSettingsMutation.isPending}>
-                          {strings.common.save}
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                )}
-            </Panel.Body>
-          </Panel>
+          {/* The referral settings panel used to sit here, editing the same three keys the
+              Settings screen already edits. Two editors for one value is how they end up
+              disagreeing about which one is authoritative — and the generic list there
+              showed them as "referral pct", so neither looked like the real one. Settings
+              owns them now, under these labels. */}
         </div>
 
         <Panel>

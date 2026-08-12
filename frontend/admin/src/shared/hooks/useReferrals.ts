@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { referralsApi } from "@/shared/api/endpoints";
-import type { ListParams, ReferralSettings } from "@/shared/api/types";
+import type { ListParams } from "@/shared/api/types";
 
 export function useReferralSummary() {
   return useQuery({ queryKey: ["referrals", "summary"], queryFn: referralsApi.summary });
@@ -61,14 +61,7 @@ export function useMarkPayoutPaid() {
   });
 }
 
-export function useReferralSettings() {
-  return useQuery({ queryKey: ["referrals", "settings"], queryFn: referralsApi.getSettings });
-}
-
-export function useUpdateReferralSettings() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (body: Partial<ReferralSettings>) => referralsApi.updateSettings(body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["referrals", "settings"] }),
-  });
-}
+// The referral-settings hooks lived here for the panel on the Referrals screen. Settings
+// owns those three keys now, through the generic /settings bag. The dedicated
+// GET/PATCH /settings/referral endpoints still exist — they are the operator-editable
+// route, kept for the day we decide the commission dial should not be owner-only.
