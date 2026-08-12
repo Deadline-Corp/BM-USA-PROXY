@@ -158,7 +158,7 @@ export function DashboardScreen() {
           </span>
           <div className="ml-auto flex items-center gap-[18px]">
             <TotalStat label="Slots" value={poolQuery.data?.slots_total ?? 0} />
-            <TotalStat label="Used" value={poolQuery.data?.slots_used ?? 0} />
+            <TotalStat label="Busy" value={poolQuery.data?.slots_used ?? 0} />
             <TotalStat label="Free" value={poolQuery.data?.slots_free ?? 0} />
           </div>
         </div>

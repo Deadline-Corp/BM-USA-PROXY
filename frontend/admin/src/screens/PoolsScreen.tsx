@@ -120,7 +120,7 @@ export function PoolsScreen() {
                 <span className="w-1.5 h-1.5 rounded-full bg-success" />Free {freeSlots}
               </span>
               <span className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-warning" />Used {usedSlots}
+                <span className="w-1.5 h-1.5 rounded-full bg-warning" />Busy {usedSlots}
               </span>
               <span className="flex items-center gap-1">
                 {/* Not "Offline": this bucket also holds phones reporting 'unknown' and

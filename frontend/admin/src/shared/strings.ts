@@ -124,7 +124,9 @@ export const strings = {
     filterSellable: "Sellable only",
     sellable: "Sellable",
     slots: "Slots",
-    used: "Used",
+    // "Busy" everywhere a slot is occupied, matching the chip on the device card. One word
+    // for one state across the screen, and it reads right about a phone as well as a slot.
+    used: "Busy",
     free: "Free",
     lastRotated: "Last rotated",
     never: "Never",
