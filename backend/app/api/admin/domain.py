@@ -203,6 +203,19 @@ async def _user_display_map(session: DbSession, user_ids: Sequence[int | None]) 
     return result
 
 
+async def _referral_code_map(
+    session: DbSession, user_ids: Sequence[int | None]
+) -> dict[int | None, str]:
+    """Bulk-resolve referral codes, same shape and reason as `_user_display_map`."""
+    ids = {uid for uid in user_ids if uid is not None}
+    if not ids:
+        return {}
+    rows = (
+        await session.execute(select(User.id, User.referral_code).where(User.id.in_(ids)))
+    ).all()
+    return dict(rows)  # type: ignore[arg-type]
+
+
 async def _admin_display_map(
     session: DbSession, admin_ids: Sequence[int | None]
 ) -> dict[int | None, str]:
@@ -532,10 +545,11 @@ async def client_dossier(client_id: int, admin: CurrentAdmin, session: DbSession
             for o in orders
         ],
         "referral": {
-            # No "clicks": it was hard-coded to 0 and nothing ever counted it. A link tap
-            # that never reaches Telegram's START is invisible to us, and one that does is
-            # the signup already counted in `attached`.
             "code": user.referral_code,
+            # Arrivals at the bot through this person's link. Beside `attached` it says
+            # whether their link is being opened and going nowhere, which is the difference
+            # between a referrer who needs a bigger audience and one who needs a better pitch.
+            "link_opens": int(user.referral_clicks or 0),
             "attached": referred_count,
             "balance_usd": referral_balances["available"],
         },
@@ -2099,13 +2113,19 @@ async def referrals_ledger(
     limit, offset = _page(limit, offset)
     total = int(await session.scalar(count_stmt) or 0)
     rows = (await session.execute(stmt.limit(limit).offset(offset))).scalars().all()
-    user_display_map = await _user_display_map(session, [entry.referrer_user_id for entry in rows])
+    referrer_ids = [entry.referrer_user_id for entry in rows]
+    user_display_map = await _user_display_map(session, referrer_ids)
+    # The search box has always accepted a referral code, but the table never showed one,
+    # so an operator could type a code and had no way to tell whether the rows that came
+    # back were the right ones. The column is the other half of that promise.
+    code_map = await _referral_code_map(session, referrer_ids)
     return {
         "items": [
             {
                 "id": str(entry.id),
                 "referrer_user_id": str(entry.referrer_user_id),
                 "referrer": user_display_map.get(entry.referrer_user_id, "—"),
+                "referral_code": code_map.get(entry.referrer_user_id, "—"),
                 "status": entry.status,
                 "amount_usd": float(entry.amount_usd),
                 "created_at": entry.created_at.isoformat(),
@@ -2225,6 +2245,10 @@ async def list_payouts(
             _sub(User.tg_username, User.id == Payout.referrer_user_id),
             _sub(User.first_name, User.id == Payout.referrer_user_id),
             _sub(cast(User.tg_user_id, String), User.id == Payout.referrer_user_id),
+            # Same code the ledger below accepts. An operator who copies a code out of a
+            # client's card is looking for that person's referral business, and their
+            # payout requests are half of it.
+            _sub(User.referral_code, User.id == Payout.referrer_user_id),
         ],
     )
     if search is not None:

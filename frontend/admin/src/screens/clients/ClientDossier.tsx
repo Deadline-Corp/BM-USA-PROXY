@@ -403,13 +403,19 @@ function DossierBody({
         {!data.referral ? (
           <EmptyRow text="Not a referrer" />
         ) : (
-          /* No Clicks tile: the backend hard-coded it to 0 and nothing ever counted it —
-             the same dead metric that was removed from the mini-app. A link tap that never
-             reaches Telegram's START is invisible to us, and one that does is the signup
-             already counted in Attached. */
-          <div className="grid grid-cols-2 gap-2">
-            <MiniStat label="Attached" value={data.referral.attached} />
-            <MiniStat label="Balance" value={data.referral.balance_usd} usd />
+          <div className="flex flex-col gap-2">
+            {/* The code is here because of what an operator does next with it: paste it into
+                the search on Referrals to pull up everything this person has earned and
+                every payout they have asked for. */}
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 px-3 py-2">
+              <span className="text-[.78rem] text-text-3">Referral code</span>
+              <CopyInline value={data.referral.code} />
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <MiniStat label="Link opens" value={data.referral.link_opens} />
+              <MiniStat label="Attached" value={data.referral.attached} />
+              <MiniStat label="Balance" value={data.referral.balance_usd} usd />
+            </div>
           </div>
         )}
       </Section>

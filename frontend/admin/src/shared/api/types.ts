@@ -104,6 +104,8 @@ export interface ClientOrder {
 
 export interface ClientReferral {
   code: string;
+  /** Arrivals at the bot through this person's link — see the mini-app tile of the same name. */
+  link_opens: number;
   attached: number;
   balance_usd: number;
 }
@@ -406,6 +408,8 @@ export interface ReferralLedgerEntry {
   id: string;
   referrer_user_id: string;
   referrer: string;
+  /** The referrer's code — the thing the search box accepts, now also visible. */
+  referral_code: string;
   status: string;
   amount_usd: number;
   created_at: string;

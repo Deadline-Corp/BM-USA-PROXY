@@ -9,6 +9,7 @@ import { FilterBar } from "@/shared/components/TableFilters";
 import { DateFilterPill, FilterPill } from "@/shared/components/FilterPill";
 import { Button } from "@/shared/components/Button";
 import { Num } from "@/shared/components/Num";
+import { CopyInline } from "@/shared/components/CopyInline";
 import { Input } from "@/shared/components/form/Input";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { Modal } from "@/shared/components/Modal";
@@ -151,6 +152,10 @@ export function ReferralsScreen() {
   const ledgerColumns = useMemo<ColumnDef<ReferralLedgerEntry, any>[]>(
     () => [
       { header: "Referrer", accessorKey: "referrer", cell: ({ row }) => <span className="font-mono text-[.8rem] text-text">{row.original.referrer}</span> },
+      // The search box has always accepted a referral code; without the column you could
+      // type one and had no way to see whether the rows that came back were the right ones.
+      // Copyable, because the next thing you do with a code is paste it somewhere.
+      { header: "Referral code", accessorKey: "referral_code", cell: ({ row }) => <CopyInline value={row.original.referral_code} /> },
       { header: strings.orders.colStatus, accessorKey: "status", cell: ({ row }) => <StatusBadge status={row.original.status} /> },
       { header: strings.orders.colAmount, accessorKey: "amount_usd", cell: ({ row }) => <Num value={row.original.amount_usd} usd className="text-text" /> },
       { header: "Date", accessorKey: "created_at", cell: ({ row }) => <span className="font-mono text-[.8rem]">{formatDateTime(row.original.created_at)}</span> },

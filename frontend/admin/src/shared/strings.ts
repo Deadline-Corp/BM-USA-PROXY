@@ -294,7 +294,7 @@ export const strings = {
     totalAttached: "Attached users",
     totalPaid: "Paid out",
     pendingPayouts: "Pending payouts",
-    payoutSearchPlaceholder: "Search referrer, network, wallet, tx hash…",
+    payoutSearchPlaceholder: "Search referrer, referral code, network, wallet, tx hash…",
     ledgerSearchPlaceholder: "Search referrer, status, referral code…",
     ledger: "Ledger",
     payoutsQueue: "Payouts queue",

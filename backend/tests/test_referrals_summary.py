@@ -221,6 +221,57 @@ async def test_the_referrer_sees_their_own_opens_not_everyones(ctx, engine) -> N
         app.dependency_overrides.pop(deps.twa_identity, None)
 
 
+async def test_a_code_copied_from_a_client_card_finds_both_tables(ctx) -> None:
+    """The operator's actual path: open a client, copy their referral code, paste it into
+    Referrals and expect that person's business. It has to work in the ledger *and* the
+    payouts queue — a code that silently matches nothing in one of them is worse than no
+    search at all, because an empty table reads as "this person has none"."""
+    boss, maker = ctx
+    async with maker() as s:
+        mine, theirs = _user(1), _user(2)
+        s.add_all([mine, theirs])
+        await s.flush()
+        buyer = _user(3, referrer_user_id=mine.id)
+        s.add(buyer)
+        tariff = Tariff(code="daily-code", name="Daily", kind="auto",
+                        duration_minutes=1440, price_usd="10")
+        s.add(tariff)
+        await s.flush()
+        order = Order(user_id=buyer.id, tariff_id=tariff.id, tariff_code=tariff.code,
+                      amount_usd=10, status="completed", referrer_user_id=mine.id,
+                      paid_at=datetime.now(UTC))
+        s.add(order)
+        await s.flush()
+        s.add_all([
+            ReferralLedger(referrer_user_id=mine.id, referee_user_id=buyer.id,
+                           order_id=order.id, kind="accrual", base_amount_usd=10,
+                           pct=23, amount_usd=2.3, status="available"),
+            Payout(referrer_user_id=mine.id, amount_usd=2.3, wallet_address="w1",
+                   network="trc20", status="requested"),
+            Payout(referrer_user_id=theirs.id, amount_usd=9, wallet_address="w2",
+                   network="trc20", status="requested"),
+        ])
+        await s.commit()
+
+    # The card hands the operator this exact string.
+    dossier = (await boss.get(f"/api/admin/clients/{ (await _id_of(maker, 'user1')) }")).json()
+    code = dossier["referral"]["code"]
+    assert code == "code1"
+
+    ledger = (await boss.get(f"/api/admin/referrals/ledger?q={code}")).json()
+    assert ledger["total"] == 1
+    assert ledger["items"][0]["referral_code"] == code  # …and the column shows what matched
+
+    payouts = (await boss.get(f"/api/admin/payouts?q={code}")).json()
+    assert payouts["total"] == 1, payouts
+    assert payouts["items"][0]["amount_usd"] == 2.3  # theirs, not the other referrer's
+
+
+async def _id_of(maker, username: str) -> int:
+    async with maker() as s:
+        return await s.scalar(select(User.id).where(User.tg_username == username))
+
+
 async def test_an_unknown_code_counts_for_nobody(ctx) -> None:
     boss, maker = ctx
     async with maker() as s:
