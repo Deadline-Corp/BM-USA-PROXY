@@ -1,0 +1,74 @@
+name: Uptime
+
+# Watches production from OUTSIDE Railway, which is the only place a check is worth
+# anything: Railway's own healthcheck cannot tell you that Railway is down, and the
+# admin console cannot tell you the console is unreachable.
+#
+# The endpoint that matters is /health/worker, not /health. The API stays perfectly
+# healthy while the worker is dead — and the worker is the only thing that sees a
+# customer's payment arrive, expires their access, and delivers their notifications.
+# A green /health next to a dead worker is exactly the failure this watches for.
+
+on:
+  schedule:
+    # Every five minutes — GitHub's minimum for cron. Note it is best-effort: under load
+    # a scheduled run can be delayed by several minutes or skipped. That is fine for
+    # "has the worker been dead for a while", which is what this answers; it is not a
+    # sub-minute pager and should not be sold as one.
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      # Override with a repository variable when the client moves to their own domain:
+      # Settings → Secrets and variables → Actions → Variables → BASE_URL
+      BASE_URL: ${{ vars.BASE_URL || 'https://api-production-9673.up.railway.app' }}
+    steps:
+      - name: API is answering
+        run: |
+          body=$(curl -sS --max-time 25 --retry 2 --retry-delay 5 "$BASE_URL/health") || {
+            echo "::error::API unreachable at $BASE_URL/health"; exit 1; }
+          echo "$body"
+          echo "$body" | grep -q '"ok":true' || {
+            echo "::error::API reports unhealthy: $body"; exit 1; }
+
+      - name: Worker is doing its work
+        id: worker
+        run: |
+          # A single slow response is not an outage: retry before crying. The heartbeats
+          # this reads have a 180s expiry, so a real stall is still caught within one run.
+          body=$(curl -sS --max-time 25 --retry 2 --retry-delay 5 "$BASE_URL/health/worker") || {
+            echo "::error::worker health unreachable"; exit 1; }
+          echo "$body"
+          echo "body=$body" >> "$GITHUB_OUTPUT"
+          echo "$body" | grep -q '"ok":true' || {
+            echo "::error::worker has stalled jobs: $body"; exit 1; }
+
+      - name: Tell someone
+        # Optional. Without the two secrets this step is skipped and the only signal is
+        # GitHub's own e-mail on a failed scheduled run — which is real, just slower.
+        # To turn it on: Settings → Secrets and variables → Actions →
+        #   ALERT_BOT_TOKEN  (a Telegram bot token — the production bot's will do)
+        #   ALERT_CHAT_ID    (whoever should be woken up)
+        if: failure() && env.ALERT_BOT_TOKEN != '' && env.ALERT_CHAT_ID != ''
+        env:
+          ALERT_BOT_TOKEN: ${{ secrets.ALERT_BOT_TOKEN }}
+          ALERT_CHAT_ID: ${{ secrets.ALERT_CHAT_ID }}
+        run: |
+          curl -sS --max-time 20 \
+            "https://api.telegram.org/bot${ALERT_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${ALERT_CHAT_ID}" \
+            --data-urlencode "text=BM USA Proxy: health check failed.
+          ${{ steps.worker.outputs.body }}
+          ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            >/dev/null
