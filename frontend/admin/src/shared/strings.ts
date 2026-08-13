@@ -257,7 +257,7 @@ export const strings = {
     reopen: "Reopen",
     resolveTitle: "Resolve deposit",
     attachLabel: "Credit it to an order",
-    attachPlaceholder: "…or type an order number, e.g. #412",
+    attachPlaceholder: "…or type an order number, e.g. 412",
     candidateExact: "exact match",
     candidatesEmpty: "No open orders on this rail — check the write-off option below.",
     attachAction: "Attach & issue access",

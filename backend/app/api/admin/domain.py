@@ -108,10 +108,9 @@ def _search_terms(q: str) -> list[str]:
     as typed — chopping two characters off a transaction id to guess at grammar would be
     absurd.
     """
-    # "#" survives tokenising: it is how an operator says "this number is an order number
-    # and nothing else", and the console prints every order that way, so it is what gets
-    # copied and pasted back in.
-    words = [w for w in re.split(r"[^0-9A-Za-z@._#-]+", q.strip().lower()) if w]
+    # "#" is a separator, not a character: nobody says "hash forty-five", but somebody
+    # pasting from elsewhere may still type it, and it should not turn into a search term.
+    words = [w for w in re.split(r"[^0-9A-Za-z@._-]+", q.strip().lower()) if w]
     terms: list[str] = []
     for word in words:
         if word.isalpha() and len(word) <= 12:
@@ -144,6 +143,7 @@ def _search_condition(
     columns: Sequence[ColumnOperators],
     *,
     number_columns: Sequence[ColumnOperators] = (),
+    opaque_columns: Sequence[ColumnOperators] = (),
 ) -> ColumnElement[bool] | None:
     """Every word of the query somewhere in the row; each word may land in any column.
 
@@ -152,10 +152,20 @@ def _search_condition(
     across words is what makes a second word narrow rather than widen, which is the whole
     reason for typing it.
 
-    `number_columns` are matched whole, never as substrings — a counter searched with LIKE
-    buries order 12 under 120 and 512, and "1" matches the lot. Written with the leading
-    "#" the console prints, the query means *only* that number; written bare it still
-    searches the text columns too, so a telegram id typed from memory keeps working.
+    Three kinds of column, because they answer to different questions:
+
+    * `columns` — text. Substring, always. Half a handle or half a city is how people
+      search, and "nnic" has to find @NNick777.
+    * `number_columns` — counters. Equality, always: LIKE on them buries order 12 under
+      120 and 512, and "1" matches the lot. Equality is *added to* the text search, not
+      substituted for it, so nothing a screen used to find stops being findable.
+    * `opaque_columns` — UUIDs, wallet addresses, transaction hashes. Substring, but only
+      for a term that is not all digits. They are pasted whole and they contain digits
+      everywhere, so against "45" they match nearly every row and drown the real answer.
+
+    A term of digits therefore searches the counters *and* the text — 777 finds @NNick777,
+    0000 finds the account whose telegram id contains it, 12 finds order 12 without
+    dragging in 120 — while leaving the hashes and UUIDs alone.
     """
     if not q or not q.strip():
         return None
@@ -167,18 +177,18 @@ def _search_condition(
         # `.ilike()` is declared on ColumnOperators as returning ColumnOperators, while at
         # runtime it is the boolean BinaryExpression `or_` needs. The stub is looser than
         # the reality, so the narrowing happens once, here, rather than at every call site.
-        exact = [
-            typing.cast("ColumnElement[bool]", col == int(term.lstrip("#")))
-            for col in number_columns
-        ] if term.lstrip("#").isdigit() else []
-        if term.startswith("#") and exact:
-            # "#412" means one order. Left to also match substrings it would drag in every
-            # row whose telegram id happens to contain 412 — which, with one buyer on the
-            # screen, can be all of them.
-            return exact
-        return [
-            typing.cast("ColumnElement[bool]", col.ilike(f"%{term}%")) for col in columns
-        ] + exact
+        digits = term.isdigit()
+        found = [typing.cast("ColumnElement[bool]", col.ilike(f"%{term}%")) for col in columns]
+        if not digits:
+            found += [
+                typing.cast("ColumnElement[bool]", col.ilike(f"%{term}%"))
+                for col in opaque_columns
+            ]
+        if digits:
+            found += [
+                typing.cast("ColumnElement[bool]", col == int(term)) for col in number_columns
+            ]
+        return found
 
     return and_(*[or_(*matches(term)) for term in terms])
 
@@ -380,6 +390,7 @@ async def list_clients(
             User.referral_code,
             cast(User.tg_user_id, String),
         ],
+        number_columns=[User.tg_user_id],
     )
     if cond is not None:
         stmt = stmt.where(cond)
@@ -1172,21 +1183,28 @@ async def list_admin_accesses(
         [
             Access.status,
             Access.tariff_code,
-            # The order id is what a customer quotes when something is wrong, so pasting
-            # it here has to find the access it paid for.
-            _sub(cast(Order.public_id, String), Order.id == Access.order_id),
             _sub(User.tg_username, User.id == Access.user_id),
             _sub(User.first_name, User.id == Access.user_id),
             _sub(cast(User.tg_user_id, String), User.id == Access.user_id),
             _sub(Connection.carrier, Connection.id == Access.connection_id),
-            _sub(
-                Location.city,
-                Location.id == _sub(Connection.location_id, Connection.id == Access.connection_id),
-            ),
+            # Two tables away, so one subquery that joins rather than two that nest.
+            # Nesting `_sub` inside `_sub` reads correctly and is not: the inner query
+            # correlates against the subquery immediately around it, `accesses` is not in
+            # scope there, and SQLAlchemy quietly adds it to the inner FROM. That returns
+            # one row per access — invisible with a single record on the page, and
+            # "more than one row returned by a subquery" the moment there are two.
+            select(Location.city)
+            .select_from(Connection)
+            .join(Location, Location.id == Connection.location_id)
+            .where(Connection.id == Access.connection_id)
+            .scalar_subquery(),
         ],
-        # The order number as shown in the Order column — matched whole, so #12 does not
-        # drag in 120.
-        number_columns=[Access.order_id],
+        # The two numbers on this screen, both matched whole: the order number the Order
+        # column shows, and a telegram id when somebody pastes a full one.
+        number_columns=[Access.order_id, _sub(User.tg_user_id, User.id == Access.user_id)],
+        # A customer quoting their order id pastes the whole thing, so it still has to find
+        # the access it paid for — but never as a fragment of digits.
+        opaque_columns=[_sub(cast(Order.public_id, String), Order.id == Access.order_id)],
     )
     if search is not None:
         stmt = stmt.where(search)
@@ -2140,6 +2158,7 @@ async def referrals_ledger(
             _sub(cast(User.tg_user_id, String), User.id == ReferralLedger.referrer_user_id),
             _sub(User.referral_code, User.id == ReferralLedger.referrer_user_id),
         ],
+        number_columns=[_sub(User.tg_user_id, User.id == ReferralLedger.referrer_user_id)],
     )
     if search is not None:
         stmt = stmt.where(search)
@@ -2282,8 +2301,6 @@ async def list_payouts(
         [
             Payout.status,
             Payout.network,
-            Payout.wallet_address,
-            func.coalesce(Payout.tx_hash, ""),
             _sub(User.tg_username, User.id == Payout.referrer_user_id),
             _sub(User.first_name, User.id == Payout.referrer_user_id),
             _sub(cast(User.tg_user_id, String), User.id == Payout.referrer_user_id),
@@ -2292,6 +2309,10 @@ async def list_payouts(
             # payout requests are half of it.
             _sub(User.referral_code, User.id == Payout.referrer_user_id),
         ],
+        number_columns=[_sub(User.tg_user_id, User.id == Payout.referrer_user_id)],
+        # "Did we already send this one" is answered by pasting the hash or the address,
+        # never by typing four digits out of either.
+        opaque_columns=[Payout.wallet_address, func.coalesce(Payout.tx_hash, "")],
     )
     if search is not None:
         stmt = stmt.where(search)

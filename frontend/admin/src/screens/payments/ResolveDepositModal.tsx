@@ -89,7 +89,7 @@ export function ResolveDepositModal({
               >
                 <span className="min-w-0">
                   <span className="block truncate text-[.82rem] text-text">
-                    #{c.order_number} · {c.user}
+                    {c.order_number} · {c.user}
                   </span>
                   <span className="block truncate text-[.72rem] text-text-3">
                     {c.order_status} · {c.invoice_status}

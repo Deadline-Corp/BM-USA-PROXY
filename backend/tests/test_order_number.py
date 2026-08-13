@@ -59,7 +59,7 @@ async def ctx(engine):
 async def _make_orders(maker, count: int = 3) -> list[tuple[int, str]]:
     """`count` paid-pending orders. Returns (number, public_id) for each."""
     async with maker() as s:
-        buyer = User(tg_user_id=880_001, tg_username="numbuyer", referral_code="numcode")
+        buyer = User(tg_user_id=777_777_777, tg_username="numbuyer", referral_code="numcode")
         tariff = Tariff(code="daily-num", name="Daily", kind="auto",
                         duration_minutes=1440, price_usd="10")
         s.add_all([buyer, tariff])
@@ -113,7 +113,7 @@ async def test_attach_accepts_the_number_the_console_shows(ctx) -> None:
         await s.commit()
 
     r = await boss.post(
-        f"/api/admin/payments/ledger/{deposit_id}/attach", json={"order_public_id": f"#{number}"}
+        f"/api/admin/payments/ledger/{deposit_id}/attach", json={"order_public_id": str(number)}
     )
     # Either it attached, or it failed for a reason that is not "no such order" — what is
     # being pinned here is that the number resolved to a real order at all.
@@ -136,7 +136,7 @@ async def test_a_number_that_belongs_to_nobody_is_a_clean_404(ctx) -> None:
         await s.commit()
 
     r = await boss.post(
-        f"/api/admin/payments/ledger/{deposit_id}/attach", json={"order_public_id": "#999999"}
+        f"/api/admin/payments/ledger/{deposit_id}/attach", json={"order_public_id": "999999"}
     )
     assert r.status_code == 404, r.text
     # …and so is a value that is neither a number nor an id, rather than a 500.
@@ -168,14 +168,85 @@ async def test_searching_a_number_finds_that_order_only(ctx) -> None:
                          expires_at=datetime.now(UTC)))
         await s.commit()
 
-    first_number = made[0][0]
-    # "#N" — the form the console prints and CopyInline hands over — means that order and
-    # nothing else, even though every row here shares a buyer whose telegram id contains
-    # the same digits.
-    rows = (await boss.get(f"/api/admin/accesses?q=%23{first_number}")).json()["items"]
-    assert [r["order_number"] for r in rows] == [first_number], rows
+    # Orders 1..12 exist. What the equality match buys is that order 1 is not buried under
+    # 10, 11 and 12 — the failure that made the number useless as a way to find one row.
+    for query in (str(made[0][0]), f"%23{made[0][0]}"):  # a pasted "#" is just a separator
+        rows = (await boss.get(f"/api/admin/accesses?q={query}")).json()["items"]
+        found = [r["order_number"] for r in rows]
+        assert made[0][0] in found, found
+        assert not {10, 11, 12} & set(found), found
 
-    # Bare digits stay broad on purpose — a telegram id typed from memory still works —
-    # but the exact order is in there rather than lost.
-    rows = (await boss.get(f"/api/admin/accesses?q={first_number}")).json()["items"]
-    assert first_number in [r["order_number"] for r in rows]
+    # A whole telegram id still finds that buyer's rows, and so does a fragment of one:
+    # the equality match is added to the text search, never substituted for it.
+    for query in ("777777777", "7777"):
+        rows = (await boss.get(f"/api/admin/accesses?q={query}")).json()["items"]
+        assert len(rows) == len(made), (query, rows)
+
+
+async def test_digits_inside_a_handle_are_still_findable(ctx) -> None:
+    """The regression this nearly shipped: a term of digits went only to the counters, so
+    typing 777 stopped finding @NNick777. Part of a handle is how people search, and that
+    a fragment happens to be numeric does not make it something else."""
+    boss, maker = ctx
+    async with maker() as s:
+        from app.models import Access, Connection, Location, Tariff
+
+        buyer = User(tg_user_id=326_361_915, tg_username="NNick777", referral_code="nrc")
+        tariff = Tariff(code="daily-h", name="Daily", kind="auto",
+                        duration_minutes=1440, price_usd="10")
+        loc = Location(city="Boston", state_code="MA")
+        s.add_all([buyer, tariff, loc])
+        await s.flush()
+        order = Order(user_id=buyer.id, tariff_id=tariff.id, tariff_code=tariff.code,
+                      amount_usd=10, status="completed", created_at=datetime.now(UTC))
+        conn = Connection(iproxy_connection_id="ch1", name="phone-h",
+                          location_id=loc.id, carrier="Verizon")
+        s.add_all([order, conn])
+        await s.flush()
+        s.add(Access(user_id=buyer.id, order_id=order.id, connection_id=conn.id,
+                     tariff_code=tariff.code, status="active",
+                     expires_at=datetime.now(UTC)))
+        await s.commit()
+
+    for query in ("777", "nnic", "NNick777"):
+        rows = (await boss.get(f"/api/admin/accesses?q={query}")).json()["items"]
+        assert len(rows) == 1, f"{query!r} found {rows}"
+
+
+async def test_searching_the_packages_screen_survives_more_than_one_row(ctx) -> None:
+    """A search that reaches the city column used to 500 as soon as two accesses existed.
+
+    City sits two tables from an access — access → connection → location — and it was
+    fetched by nesting one correlated subquery inside another. The inner one correlates
+    against the subquery around it, where `accesses` is not in scope, so SQLAlchemy put
+    `accesses` in its own FROM: one row per access, which Postgres accepts silently when
+    there is exactly one and rejects outright when there are two. With a single fixture
+    row nothing looked wrong; on production, with orders in the dozens, every search on
+    this screen would have failed.
+    """
+    boss, maker = ctx
+    made = await _make_orders(maker, count=4)
+    async with maker() as s:
+        from app.models import Access, Connection, Location, Order
+
+        for i, (number, _pub) in enumerate(made):
+            loc = Location(city=f"City{i}", state_code="MA")
+            s.add(loc)
+            await s.flush()
+            conn = Connection(iproxy_connection_id=f"cc{number}", name=f"ph-{number}",
+                              location_id=loc.id, carrier="Verizon")
+            s.add(conn)
+            await s.flush()
+            s.add(Access(user_id=(await s.get(Order, number)).user_id, order_id=number,
+                         connection_id=conn.id, tariff_code="daily-num", status="active",
+                         expires_at=datetime.now(UTC)))
+        await s.commit()
+
+    r = await boss.get("/api/admin/accesses?q=City2")
+    assert r.status_code == 200, r.text
+    assert [row["city"] for row in r.json()["items"]] == ["City2"]
+
+    # And the carrier every one of them shares still returns every one of them.
+    r = await boss.get("/api/admin/accesses?q=Verizon")
+    assert r.status_code == 200, r.text
+    assert len(r.json()["items"]) == len(made)

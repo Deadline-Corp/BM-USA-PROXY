@@ -1,6 +1,6 @@
 import { CopyInline } from "@/shared/components/CopyInline";
 
-/** An order as an operator refers to it: `#412`.
+/** An order as an operator refers to it: `412`.
  *
  * The order's real identifier is a UUID, and it stays one — `/pay/{public_id}` is opened
  * from an external browser with no session to check, so its only protection is being
@@ -22,7 +22,8 @@ export function OrderNumber({
   if (value === null || value === undefined || value === "") {
     return <span className="text-text-3">—</span>;
   }
-  // Copyable because the next move is pasting it into a search box, which accepts the
-  // leading "#" the same as it accepts the bare digits.
-  return <CopyInline value={`#${value}`} className={className} />;
+  // No "#": nobody says "hash forty-five", they say "order forty-five". The search does
+  // not need the marker either — a term that is all digits is matched against the counted
+  // columns by equality, so 45 already means order 45 and not every row containing "45".
+  return <CopyInline value={String(value)} className={className} />;
 }
