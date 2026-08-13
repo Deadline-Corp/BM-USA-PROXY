@@ -211,6 +211,26 @@ async def test_a_bad_handle_is_refused_at_the_door(ctx) -> None:
     assert r.status_code == 422, r.text
 
 
+async def test_a_short_password_is_refused_by_the_api_too(ctx) -> None:
+    """The console asks for ten characters. If only the console asks, the rule is decoration
+    — anything talking to the API directly, including a future script of ours, walks past it."""
+    boss, _ = ctx
+    r = await boss.post(
+        "/api/admin/admins",
+        json={
+            "email": "shortpw@test.local",
+            "password": "short",
+            "display_name": "Short",
+            "telegram_username": "short_pw_op",
+        },
+    )
+    assert r.status_code == 422, r.text
+
+    created = await _create(boss, email="pwfloor@test.local", telegram_username="pw_floor_op")
+    r = await boss.patch(f"/api/admin/admins/{created['id']}", json={"password": "abc"})
+    assert r.status_code == 422, r.text
+
+
 async def test_an_account_without_a_handle_still_works(ctx) -> None:
     """Nothing about this is required yet — the field is optional until the code is."""
     boss, _ = ctx

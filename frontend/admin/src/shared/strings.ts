@@ -379,7 +379,17 @@ export const strings = {
     publish: "Publish new version",
     addQuestion: "Add question",
     admins: "Admins",
-    newPassword: "New password (leave blank to keep current)",
+    password: "Password",
+    newPassword: "New password",
+    repeatPassword: "Repeat new password",
+    changePassword: "Change password",
+    passwordsDiffer: "The two do not match.",
+    passwordChanged: "Password changed — that account is now signed out everywhere.",
+    generatePassword: "Generate a strong one",
+    // Says the thing the interface would otherwise have to be asked about: there is no
+    // screen anywhere that can show an existing password, and this is why.
+    passwordNotStored:
+      "Only a hash of the password is stored, so it can never be shown again — reveal it here and copy it now if you need to pass it on.",
     newPasswordHint:
       "Changing it signs this account out everywhere immediately — including you, if it is your own. Use it when someone leaves: their open session ends at once rather than lasting until the login cookie expires.",
     addAdmin: "Add admin",

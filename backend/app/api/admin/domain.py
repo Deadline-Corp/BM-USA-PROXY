@@ -25,6 +25,7 @@ from sqlalchemy import (
     and_,
     cast,
     distinct,
+    false,
     func,
     or_,
     select,
@@ -108,12 +109,18 @@ def _search_terms(q: str) -> list[str]:
     as typed — chopping two characters off a transaction id to guess at grammar would be
     absurd.
     """
-    # "#" is a separator, not a character: nobody says "hash forty-five", but somebody
-    # pasting from elsewhere may still type it, and it should not turn into a search term.
-    words = [w for w in re.split(r"[^0-9A-Za-z@._-]+", q.strip().lower()) if w]
+    # Split on punctuation and spaces, keep letters — any letters. The old pattern listed
+    # A-Za-z and therefore treated every Cyrillic character as a separator: "сл" tokenised
+    # to nothing at all, and a query of nothing filters nothing, so typing it returned the
+    # entire table. The same silence hid a real gap — Telegram first names are frequently
+    # Cyrillic, and searching one never worked. "#" stays a separator on purpose: somebody
+    # pasting "#45" means order 45.
+    words = [w for w in re.split(r"[^\w@.-]+", q.strip().lower(), flags=re.UNICODE) if w]
     terms: list[str] = []
     for word in words:
-        if word.isalpha() and len(word) <= 12:
+        # Stemming is English grammar, so it is only applied to words made of ASCII
+        # letters. "-ed" means nothing to a Russian name and chopping it would corrupt one.
+        if word.isascii() and word.isalpha() and len(word) <= 12:
             # Only "-ed". A bare trailing "d" would eat the last letter of names — "fred"
             # became "fre", which then matched every row with "free" or "frequency" in it.
             # Nothing needs it: "approved" and "revoked" both end in "ed" already.
@@ -171,7 +178,11 @@ def _search_condition(
         return None
     terms = _search_terms(q)
     if not terms:
-        return None
+        # Somebody typed something — punctuation, an emoji, a stray keystroke — and it
+        # reduced to no searchable word. Returning None here means "no filter", which
+        # answers a search that found nothing with every row in the table. Nothing found
+        # has to look like nothing found.
+        return false()
 
     def matches(term: str) -> list[ColumnElement[bool]]:
         # `.ilike()` is declared on ColumnOperators as returning ColumnOperators, while at
@@ -3185,9 +3196,14 @@ async def list_admins(admin: CurrentAdmin, session: DbSession) -> list[dict[str,
     return [_admin_user_view(a) for a in rows]
 
 
+# The console asks for at least this much; the API has to agree, or the rule is a
+# suggestion that any direct request ignores.
+MIN_PASSWORD_LENGTH = 10
+
+
 class AdminCreateBody(BaseModel):
     email: str
-    password: str
+    password: str = Field(min_length=MIN_PASSWORD_LENGTH)
     display_name: str
     telegram_username: str | None = None
 
@@ -3218,7 +3234,7 @@ async def create_admin(
 class AdminPatchBody(BaseModel):
     display_name: str | None = None
     is_active: bool | None = None
-    password: str | None = None
+    password: str | None = Field(default=None, min_length=MIN_PASSWORD_LENGTH)
     telegram_username: str | None = None
 
 

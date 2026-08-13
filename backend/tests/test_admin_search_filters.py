@@ -417,3 +417,47 @@ async def test_accesses_carry_and_are_found_by_their_order(engine, client: Async
     found = await client.get("/api/admin/accesses", params={"q": order_public})
     assert found.status_code == 200, found.text
     assert [r["order_public_id"] for r in found.json()["items"]] == [order_public]
+
+
+# ── a query that matches nothing must show nothing ───────────────────────
+async def test_a_query_that_matches_nothing_returns_nothing(client: AsyncClient) -> None:
+    """Typing into the box and getting the whole table back is the worst answer available.
+
+    It reads as "everything matches" when it means "your query fell through". The path
+    here: the tokeniser listed A-Za-z, so two Cyrillic characters were two separators and
+    reduced to no words, an empty term list meant no WHERE clause, and no WHERE clause is
+    every row. Somebody with the wrong keyboard layout would have taken the table at face
+    value.
+    """
+    everything = (await client.get("/api/admin/clients")).json()["total"]
+    assert everything > 0
+
+    for q in ("сл", "!!!", "…", "🙂"):
+        r = await client.get("/api/admin/clients", params={"q": q})
+        assert r.status_code == 200, r.text
+        assert r.json()["total"] == 0, f"{q!r} returned {r.json()['total']} of {everything}"
+
+    # The same rule on the other screens that share the helper.
+    for path in ("/api/admin/accesses", "/api/admin/connections", "/api/admin/audit"):
+        r = await client.get(path, params={"q": "щщ"})
+        assert r.status_code == 200, r.text
+        assert r.json()["total"] == 0, path
+
+
+async def test_cyrillic_names_are_searchable(engine, client: AsyncClient) -> None:
+    """Telegram first names are often Cyrillic, and the console lists them. Dropping those
+    characters at the tokeniser made the whole column unsearchable — silently, because the
+    answer was "here is everyone" rather than an error."""
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with maker() as s:
+        s.add(User(tg_user_id=444_111, tg_username="ru_client", first_name="Николай",
+                   referral_code="rucode"))
+        await s.commit()
+
+    for q in ("Николай", "никол", "НИКОЛ"):
+        r = await client.get("/api/admin/clients", params={"q": q})
+        assert r.status_code == 200, r.text
+        assert r.json()["total"] == 1, f"{q!r} → {r.json()['total']}"
+
+    # …and a Cyrillic word that is in nobody's name still finds nobody.
+    assert (await client.get("/api/admin/clients", params={"q": "Пётр"})).json()["total"] == 0

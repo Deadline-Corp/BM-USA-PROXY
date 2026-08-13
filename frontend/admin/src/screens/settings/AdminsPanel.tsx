@@ -4,6 +4,8 @@ import { Button } from "@/shared/components/Button";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { Modal } from "@/shared/components/Modal";
 import { Input } from "@/shared/components/form/Input";
+import { PasswordInput } from "@/shared/components/form/PasswordInput";
+import { ChangePasswordModal } from "@/screens/settings/ChangePasswordModal";
 import { Skeleton } from "@/shared/components/Skeleton";
 import { ErrorState } from "@/shared/components/ErrorState";
 import { EmptyState } from "@/shared/components/EmptyState";
@@ -29,6 +31,9 @@ export function AdminsPanel() {
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
   const [telegram, setTelegram] = useState("");
+  // A separate dialog, not a field on this form: setting a password ends every session
+  // that account holds, which is not something to do as a side effect of renaming somebody.
+  const [changingFor, setChangingFor] = useState<AdminAccount | null>(null);
 
   function openCreate() {
     setEditing(null);
@@ -57,7 +62,6 @@ export function AdminsPanel() {
             email,
             display_name: displayName,
             telegram_username: telegram.trim() || null,
-            ...(password ? { password } : {}),
           },
         });
         toast.success("Admin updated");
@@ -170,19 +174,39 @@ export function AdminsPanel() {
             value={telegram}
             onChange={(e) => setTelegram(e.target.value)}
           />
-          <Input
-            label={editing ? strings.settings.newPassword : strings.auth.passwordLabel}
-            // Says what the action does before it is taken: a changed password ends every
-            // session that account holds, right now — including your own if it is yours.
-            // Before this it ended nothing until the 14-day refresh cookie ran out, which
-            // is the whole reason the field is worth explaining.
-            hint={editing ? strings.settings.newPasswordHint : undefined}
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
+          {editing ? (
+            /* No password field here. An existing one cannot be displayed — only its
+               argon2id hash is kept — and setting a new one signs that account out
+               everywhere, which deserves its own confirmation rather than riding along
+               with a change of display name. */
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 px-3 py-2.5">
+              <div className="min-w-0">
+                <div className="text-[.82rem] text-text">{strings.settings.password}</div>
+                <div className="text-[.74rem] text-text-3 mt-0.5">
+                  {strings.settings.passwordNotStored}
+                </div>
+              </div>
+              <Button
+                variant="quiet"
+                size="sm"
+                className="flex-none"
+                onClick={() => setChangingFor(editing)}
+              >
+                {strings.settings.changePassword}
+              </Button>
+            </div>
+          ) : (
+            <PasswordInput
+              label={strings.auth.passwordLabel}
+              value={password}
+              onChange={setPassword}
+              hint={strings.settings.passwordNotStored}
+            />
+          )}
         </div>
       </Modal>
+
+      <ChangePasswordModal admin={changingFor} onClose={() => setChangingFor(null)} />
     </Panel>
   );
 }
