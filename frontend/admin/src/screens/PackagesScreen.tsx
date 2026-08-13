@@ -10,6 +10,7 @@ import { FilterBar } from "@/shared/components/TableFilters";
 import { DateFilterPill, FilterPill } from "@/shared/components/FilterPill";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { Modal } from "@/shared/components/Modal";
+import { CopyInline } from "@/shared/components/CopyInline";
 import { formatDate } from "@/shared/lib/format";
 import { useAccessesList, useExtendAccess, useReissueAccess, useRevokeAccess, useRotateIp } from "@/shared/hooks/useAccesses";
 import { useDebouncedValue } from "@/shared/hooks/useDebouncedValue";
@@ -153,6 +154,15 @@ export function PackagesScreen() {
       {
         header: "Tariff",
         accessorKey: "tariff_code",
+      },
+      {
+        // Which purchase paid for this proxy. Next to the tariff on purpose: together
+        // they answer "what did they buy and on which order", which is the question a
+        // support conversation opens with.
+        header: strings.packages.colOrder,
+        accessorKey: "order_public_id",
+        enableSorting: false,
+        cell: ({ row }) => <CopyInline value={row.original.order_public_id} />,
       },
       {
         header: "Expires",

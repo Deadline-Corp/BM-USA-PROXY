@@ -275,8 +275,10 @@ class IproxyProvisioner(Provisioner):
     ) -> str:
         raw = await self._client.create_vpn_access(iproxy_connection_id, kind=kind, name=name)
         # The response nests under the resource name on some shapes and is flat on others;
-        # take whichever carries the id rather than assuming.
-        inner = raw.get(f"{kind}_access") if isinstance(raw.get(f"{kind}_access"), dict) else raw
+        # take whichever carries the id rather than assuming. `raw` is {} on an empty body,
+        # so both branches are dicts and neither can be None.
+        nested = raw.get(f"{kind}_access")
+        inner: dict[str, Any] = nested if isinstance(nested, dict) else raw
         vpn_id = str(inner.get("id") or "")
         if not vpn_id:
             raise ProvisioningError(f"iproxy {kind} create returned no id: {sorted(raw)[:6]}")

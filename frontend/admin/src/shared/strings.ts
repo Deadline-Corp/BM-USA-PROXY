@@ -100,8 +100,7 @@ export const strings = {
     payoutOn: "Watched",
     payoutOff: "Not set",
     confirmTitle: "Save receiving wallets",
-    confirmNoAddressChange:
-      "No address changes — only confirmations, minimums or tolerances. Save?",
+    confirmNoAddressChange: "No address changes — only confirmation counts. Save?",
     confirmAddressChange:
       "From now on every new invoice quotes these addresses. Money sent to a replaced address will not be credited automatically. Check each one against the wallet before saving.",
   },
@@ -179,7 +178,8 @@ export const strings = {
     filterCity: "City",
     filterUser: "User",
     filterExpiring: "Expiring soon",
-    searchPlaceholder: "Search user, status, city, carrier, tariff…",
+    colOrder: "Order",
+    searchPlaceholder: "Search user, status, city, carrier, tariff, order…",
     revoke: "Revoke",
     revokeConfirm: "Revoke this access immediately? The client loses connectivity right away.",
     extend: "Extend",

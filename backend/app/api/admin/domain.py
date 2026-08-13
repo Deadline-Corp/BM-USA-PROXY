@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 import secrets
+import typing
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -19,6 +20,14 @@ from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import ColumnElement, Select, String, and_, cast, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+# A model attribute (`User.email`) is an InstrumentedAttribute, not a ColumnElement, even
+# though both answer .ilike(). ColumnOperators is the common ancestor that actually
+# declares ilike, so it is the honest type for "something this can search on"; select()
+# and .where() want their own broader aliases, which is why the two helpers below are
+# annotated differently rather than sharing one type.
+from sqlalchemy.sql._typing import _ColumnExpressionArgument, _ColumnsClauseArgument
+from sqlalchemy.sql.operators import ColumnOperators
 
 from app.api.deps import CurrentAdmin, DbSession
 from app.core.errors import Conflict, NotFound, ValidationError
@@ -103,7 +112,9 @@ def _search_terms(q: str) -> list[str]:
     return terms
 
 
-def _sub(column: ColumnElement[Any], where: ColumnElement[bool]) -> ColumnElement[Any]:
+def _sub(
+    column: _ColumnsClauseArgument[Any], where: _ColumnExpressionArgument[bool]
+) -> ColumnElement[Any]:
     """One column of a related row, usable as a search column on the row being listed.
 
     A correlated scalar subquery rather than a join: the search on some of these screens
@@ -115,7 +126,7 @@ def _sub(column: ColumnElement[Any], where: ColumnElement[bool]) -> ColumnElemen
 
 
 def _search_condition(
-    q: str | None, columns: Sequence[ColumnElement[Any]]
+    q: str | None, columns: Sequence[ColumnOperators]
 ) -> ColumnElement[bool] | None:
     """Every word of the query somewhere in the row; each word may land in any column.
 
@@ -129,7 +140,14 @@ def _search_condition(
     terms = _search_terms(q)
     if not terms:
         return None
-    return and_(*[or_(*[col.ilike(f"%{term}%") for col in columns]) for term in terms])
+
+    def matches(term: str) -> list[ColumnElement[bool]]:
+        # `.ilike()` is declared on ColumnOperators as returning ColumnOperators, while at
+        # runtime it is the boolean BinaryExpression `or_` needs. The stub is looser than
+        # the reality, so the narrowing happens once, here, rather than at every call site.
+        return [typing.cast("ColumnElement[bool]", col.ilike(f"%{term}%")) for col in columns]
+
+    return and_(*[or_(*matches(term)) for term in terms])
 
 
 async def _paginated(
@@ -995,7 +1013,12 @@ async def pool_summary(admin: CurrentAdmin, session: DbSession) -> dict[str, Any
 
 # ── accesses (packages) ─────────────────────────────────────────────────
 def _access_view(
-    a: Access, *, user_display: str, city: str | None, carrier: str | None
+    a: Access,
+    *,
+    user_display: str,
+    city: str | None,
+    carrier: str | None,
+    order_public_id: str | None = None,
 ) -> dict[str, Any]:
     return {
         "id": str(a.public_id),
@@ -1005,14 +1028,22 @@ def _access_view(
         "carrier": carrier,
         "ip": None,
         "tariff_code": a.tariff_code,
+        # The order this access was bought with. `order_id` is an internal key nobody can
+        # quote; the public id is what the customer has, what the payments ledger shows,
+        # and what a refund conversation starts from — so the row that says "this proxy
+        # is live until Thursday" can now also say which purchase paid for it.
+        "order_public_id": order_public_id,
         "expires_at": a.expires_at.isoformat() if a.expires_at else None,
         "created_at": a.created_at.isoformat(),
     }
 
 
-async def _access_extras(session: DbSession, a: Access) -> tuple[str, str | None, str | None]:
-    """Resolve (user_display, city, carrier) for a single access row (used by the
-    single-object mutation endpoints below; list_admin_accesses bulk-joins instead)."""
+async def _access_extras(
+    session: DbSession, a: Access
+) -> tuple[str, str | None, str | None, str | None]:
+    """Resolve (user_display, city, carrier, order_public_id) for a single access row
+    (used by the single-object mutation endpoints below; list_admin_accesses
+    bulk-joins instead)."""
     user = await session.get(User, a.user_id)
     conn = await session.get(Connection, a.connection_id)
     city: str | None = None
@@ -1020,7 +1051,8 @@ async def _access_extras(session: DbSession, a: Access) -> tuple[str, str | None
     if conn is not None and conn.location_id is not None:
         loc = await session.get(Location, conn.location_id)
         city = loc.city if loc else None
-    return _user_display(user), city, carrier
+    order = await session.get(Order, a.order_id)
+    return _user_display(user), city, carrier, (str(order.public_id) if order else None)
 
 
 @router.get("/accesses")
@@ -1084,6 +1116,9 @@ async def list_admin_accesses(
         [
             Access.status,
             Access.tariff_code,
+            # The order id is what a customer quotes when something is wrong, so pasting
+            # it here has to find the access it paid for.
+            _sub(cast(Order.public_id, String), Order.id == Access.order_id),
             _sub(User.tg_username, User.id == Access.user_id),
             _sub(User.first_name, User.id == Access.user_id),
             _sub(cast(User.tg_user_id, String), User.id == Access.user_id),
@@ -1125,12 +1160,27 @@ async def list_admin_accesses(
         for cid, carrier, city_val in conn_rows:
             conn_lookup[cid] = (city_val, carrier)
 
+    # One query for the page's orders rather than one per row — the same shape as the
+    # connection lookup above.
+    order_lookup: dict[int, str] = {}
+    order_ids = {a.order_id for a in rows}
+    if order_ids:
+        order_lookup = {
+            oid: str(pub)
+            for oid, pub in (
+                await session.execute(
+                    select(Order.id, Order.public_id).where(Order.id.in_(order_ids))
+                )
+            ).all()
+        }
+
     items = [
         _access_view(
             a,
             user_display=user_display_map.get(a.user_id, "—"),
             city=conn_lookup.get(a.connection_id, (None, None))[0],
             carrier=conn_lookup.get(a.connection_id, (None, None))[1],
+            order_public_id=order_lookup.get(a.order_id),
         )
         for a in rows
     ]
@@ -1156,8 +1206,11 @@ async def admin_revoke_access(
     await revoke_access(session, access=access, reason=body.reason, actor=f"admin:{admin.id}")
     await audit.write(session, admin_id=admin.id, action="access.revoke", entity="access",
                        entity_id=access.id, after={"reason": body.reason})
-    user_display, city, carrier = await _access_extras(session, access)
-    return _access_view(access, user_display=user_display, city=city, carrier=carrier)
+    user_display, city, carrier, order_public_id = await _access_extras(session, access)
+    return _access_view(
+        access, user_display=user_display, city=city, carrier=carrier,
+        order_public_id=order_public_id,
+    )
 
 
 class ExtendAdminBody(BaseModel):
@@ -1172,8 +1225,11 @@ async def admin_extend_access(
     await extend_access(session, access=access, minutes=body.minutes)
     await audit.write(session, admin_id=admin.id, action="access.extend", entity="access",
                        entity_id=access.id, after={"minutes": body.minutes})
-    user_display, city, carrier = await _access_extras(session, access)
-    return _access_view(access, user_display=user_display, city=city, carrier=carrier)
+    user_display, city, carrier, order_public_id = await _access_extras(session, access)
+    return _access_view(
+        access, user_display=user_display, city=city, carrier=carrier,
+        order_public_id=order_public_id,
+    )
 
 
 @router.post("/accesses/{access_id}/rotate-ip")
@@ -1184,8 +1240,11 @@ async def admin_rotate_ip(
     await rotate_ip(session, access=access, actor=f"admin:{admin.id}")
     await audit.write(session, admin_id=admin.id, action="access.rotate_ip", entity="access",
                        entity_id=access.id)
-    user_display, city, carrier = await _access_extras(session, access)
-    return _access_view(access, user_display=user_display, city=city, carrier=carrier)
+    user_display, city, carrier, order_public_id = await _access_extras(session, access)
+    return _access_view(
+        access, user_display=user_display, city=city, carrier=carrier,
+        order_public_id=order_public_id,
+    )
 
 
 class ReissueBody(BaseModel):
@@ -1204,8 +1263,11 @@ async def admin_reissue_access(
     )
     await audit.write(session, admin_id=admin.id, action="access.reissue", entity="access",
                        entity_id=access.id)
-    user_display, city, carrier = await _access_extras(session, access)
-    return _access_view(access, user_display=user_display, city=city, carrier=carrier)
+    user_display, city, carrier, order_public_id = await _access_extras(session, access)
+    return _access_view(
+        access, user_display=user_display, city=city, carrier=carrier,
+        order_public_id=order_public_id,
+    )
 
 
 # ── orders / payments ────────────────────────────────────────────────────

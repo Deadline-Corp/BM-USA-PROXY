@@ -373,3 +373,47 @@ async def test_an_address_for_the_other_network_says_so(client: AsyncClient) -> 
     body = r.text.lower()
     assert "testnet bitcoin address" in body
     assert "onchain_network" in body
+
+
+async def test_accesses_carry_and_are_found_by_their_order(engine, client: AsyncClient) -> None:
+    """A package row has to say which purchase paid for it.
+
+    The internal order_id is a key nobody can quote; the public one is what the customer
+    reads off their receipt, what the payments ledger shows, and what a refund
+    conversation opens with. Pasting it here must find the access it bought.
+    """
+    from app.models import Access, Connection, Order, Tariff
+
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with maker() as s:
+        user_id = await s.scalar(select(User.id).where(User.tg_username == "dev_user"))
+        conn_id = await s.scalar(select(Connection.id).limit(1))
+        tariff = Tariff(
+            code="probe-daily", name="Probe", kind="auto",
+            duration_minutes=1440, price_usd=10, auto_issue=True,
+        )
+        s.add(tariff)
+        await s.flush()
+        order = Order(
+            user_id=user_id, tariff_id=tariff.id, tariff_code=tariff.code,
+            duration_minutes=1440, amount_usd=10, status="paid",
+        )
+        s.add(order)
+        await s.flush()
+        s.add(
+            Access(
+                user_id=user_id, order_id=order.id, connection_id=conn_id,
+                tariff_code=tariff.code, status="active",
+                expires_at=datetime.now(UTC) + timedelta(days=1),
+            )
+        )
+        await s.commit()
+        order_public = str(order.public_id)
+
+    listed = (await client.get("/api/admin/accesses")).json()
+    row = next(r for r in listed["items"] if r["tariff_code"] == "probe-daily")
+    assert row["order_public_id"] == order_public
+
+    found = await client.get("/api/admin/accesses", params={"q": order_public})
+    assert found.status_code == 200, found.text
+    assert [r["order_public_id"] for r in found.json()["items"]] == [order_public]

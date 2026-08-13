@@ -203,6 +203,9 @@ export interface AccessRow {
   carrier: string | null;
   ip: string | null;
   tariff_code: string;
+  /** The order this access was bought with — what the customer quotes and what the
+   * payments ledger shows. Null only if the order row is somehow gone. */
+  order_public_id: string | null;
   expires_at: string | null;
   created_at: string;
 }
