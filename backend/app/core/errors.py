@@ -98,6 +98,13 @@ class ProvisioningError(DomainError):
     status = 502
 
 
+class ServiceUnavailable(DomainError):
+    """A dependency we need for this request is not answering — try again shortly."""
+
+    code = "service_unavailable"
+    status = 503
+
+
 async def domain_error_handler(_request: Request, exc: DomainError) -> JSONResponse:
     headers: dict[str, str] = {}
     if isinstance(exc, RateLimited) and exc.retry_after is not None:

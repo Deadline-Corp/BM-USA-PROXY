@@ -17,6 +17,12 @@ export const strings = {
     genericError: "Could not sign in. Check your credentials and try again.",
     lockoutFallback: "Too many attempts. Try again later.",
     logout: "Sign out",
+    otpTitle: "Confirm it's you",
+    otpLabel: "Sign-in code",
+    otpSubmit: "Confirm",
+    otpSubmitting: "Checking…",
+    otpBack: "Use a different account",
+    otpError: "Wrong or expired code. Check the latest message, or start again.",
   },
   common: {
     loading: "Loading…",

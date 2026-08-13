@@ -82,7 +82,15 @@ apiClient.interceptors.response.use(
  * case explicitly since the spec calls it out. */
 export function apiErrorMessage(error: unknown, fallback = "Something went wrong."): string {
   if (axios.isAxiosError(error)) {
-    const data = error.response?.data as { detail?: unknown; message?: unknown } | undefined;
+    const data = error.response?.data as
+      | { error?: { message?: unknown }; detail?: unknown; message?: unknown }
+      | undefined;
+    // Every deliberate error this API raises comes back as {"error": {code, message}} —
+    // the one shape this function did not read, so all of them arrived as the caller's
+    // generic fallback. "Another account already uses this handle" read as "something
+    // went wrong", and the reason you could not save was on the wire the whole time.
+    const enveloped = data?.error?.message;
+    if (typeof enveloped === "string" && enveloped) return enveloped;
     const detail = data?.detail ?? data?.message;
     if (typeof detail === "string") return detail;
     if (Array.isArray(detail) && detail.length > 0) {

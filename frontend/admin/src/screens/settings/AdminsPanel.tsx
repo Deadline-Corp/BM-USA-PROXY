@@ -100,16 +100,21 @@ export function AdminsPanel() {
               <div className="min-w-0 flex-1">
                 <div className="text-[.86rem] text-text font-medium">{a.display_name}</div>
                 <div className="text-[.78rem] text-text-3 mt-0.5">{a.email}</div>
-                {a.telegram_username ? (
-                  <div className="text-[.78rem] text-text-3 mt-0.5">
-                    @{a.telegram_username}
-                    {/* Says whether a code could reach them. A handle on its own cannot be
-                     * written to — the bot needs that person to have opened it first. */}
-                    <span className={a.telegram_linked ? "text-success ml-1.5" : "text-warning-text ml-1.5"}>
-                      {a.telegram_linked ? "· linked" : "· waiting for /start"}
-                    </span>
-                  </div>
-                ) : null}
+                {/* Which of the three states this account is in, said plainly. A code is
+                  * required from the moment a chat is bound, so "waiting" and "none" are
+                  * both accounts a password alone still opens. */}
+                <div className="text-[.78rem] text-text-3 mt-0.5">
+                  {a.telegram_username ? (
+                    <>
+                      @{a.telegram_username}
+                      <span className={a.telegram_linked ? "text-success ml-1.5" : "text-warning-text ml-1.5"}>
+                        {a.telegram_linked ? "· sign-in code on" : "· waiting for them to open the bot"}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-warning-text">No Telegram · password only</span>
+                  )}
+                </div>
               </div>
               <StatusBadge tone={a.is_active ? "success" : "neutral"} label={a.is_active ? strings.common.active : strings.common.inactive} />
               <Button variant="quiet" size="sm" onClick={() => openEdit(a)}>
@@ -132,7 +137,13 @@ export function AdminsPanel() {
             <Button
               variant="primary"
               onClick={handleSave}
-              disabled={!email.trim() || !displayName.trim() || (!editing && !password.trim())}
+              // A new account gets a Telegram handle from the start — that is what makes
+              // the sign-in code required for it rather than optional.
+              disabled={
+                !email.trim() ||
+                !displayName.trim() ||
+                (!editing && (!password.trim() || !telegram.trim()))
+              }
               isLoading={createMutation.isPending || updateMutation.isPending}
             >
               {editing ? strings.common.save : strings.common.create}
@@ -150,9 +161,11 @@ export function AdminsPanel() {
             // cannot write first, so it is bound to a real chat when that person opens the
             // bot. Replacing the handle un-binds the old one — a new handle is a new person.
             hint={
-              editing && editing.telegram_username && !editing.telegram_linked
-                ? "Not linked yet — ask them to open the bot and press Start."
-                : "Sign-in codes go here. They must open the bot once for it to work."
+              editing?.telegram_linked
+                ? "Linked. A sign-in code is required for this account. Changing the handle undoes that."
+                : editing?.telegram_username
+                  ? "Not linked yet — ask them to open the bot and press Start."
+                  : "Sign-in codes go here. They must open the bot once for it to work."
             }
             value={telegram}
             onChange={(e) => setTelegram(e.target.value)}

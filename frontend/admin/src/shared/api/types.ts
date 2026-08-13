@@ -23,7 +23,19 @@ export interface LoginRequest {
   password: string;
 }
 
-export interface LoginResponse {
+/** Step one either signs you in or asks for the code that was just sent to Telegram.
+ *  Which of the two comes back depends on whether that account has a Telegram chat
+ *  bound — the console never has to be told, and there is no setting to get wrong. */
+export type LoginResponse =
+  | { otp_required?: false; access_token: string; admin: Admin }
+  | { otp_required: true; ticket: string; expires_in: number; sent_to: string | null };
+
+export interface OtpRequest {
+  ticket: string;
+  code: string;
+}
+
+export interface SignedIn {
   access_token: string;
   admin: Admin;
 }

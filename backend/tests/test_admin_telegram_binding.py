@@ -13,7 +13,6 @@ import pytest_asyncio
 from app.api import deps
 from app.core.config import settings
 from app.core.redis import redis_client
-from app.core.security import hash_password
 from app.main import app
 from app.models import AdminUser
 from app.services.admin_telegram import InvalidHandle, bind_from_start, normalise_handle

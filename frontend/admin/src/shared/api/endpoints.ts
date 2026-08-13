@@ -49,6 +49,8 @@ import type {
   Terms,
   TermsInput,
   AccessRow,
+  OtpRequest,
+  SignedIn,
 } from "@/shared/api/types";
 
 // Thin, typed wrappers around every endpoint in the task spec. Grouped by
@@ -60,6 +62,8 @@ import type {
 export const authApi = {
   login: (body: LoginRequest) =>
     apiClient.post<LoginResponse>("/auth/login", body).then((r) => r.data),
+  loginOtp: (body: OtpRequest) =>
+    apiClient.post<SignedIn>("/auth/login/otp", body).then((r) => r.data),
   refresh: () =>
     apiClient.post<RefreshResponse>("/auth/refresh").then((r) => r.data),
   logout: () => apiClient.post<void>("/auth/logout").then((r) => r.data),

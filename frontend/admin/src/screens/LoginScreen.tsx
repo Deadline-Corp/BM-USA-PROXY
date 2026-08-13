@@ -10,6 +10,7 @@ import { Button } from "@/shared/components/Button";
 import { Input } from "@/shared/components/form/Input";
 import { isSafeInternalPath } from "@/shared/lib/safePath";
 import { strings } from "@/shared/strings";
+import type { Admin } from "@/shared/api/types";
 
 const loginSchema = z.object({
   email: z.string().email("Enter a valid email"),
@@ -18,11 +19,20 @@ const loginSchema = z.object({
 
 type LoginForm = z.infer<typeof loginSchema>;
 
+/** What step one came back with when it asked for a code instead of signing us in. */
+interface PendingCode {
+  ticket: string;
+  sentTo: string | null;
+}
+
 export function LoginScreen() {
   const navigate = useNavigate();
   const location = useLocation();
   const setSession = useAuthStore((s) => s.setSession);
   const [formError, setFormError] = useState<string | null>(null);
+  const [pending, setPending] = useState<PendingCode | null>(null);
+  const [code, setCode] = useState("");
+  const [checking, setChecking] = useState(false);
 
   const {
     register,
@@ -30,18 +40,45 @@ export function LoginScreen() {
     formState: { errors, isSubmitting },
   } = useForm<LoginForm>({ resolver: zodResolver(loginSchema) });
 
+  function enter(access_token: string, admin: Admin) {
+    setSession(access_token, admin);
+    // `from` comes from the address bar via AuthGate — only follow it if it is a
+    // real internal path, never a protocol-relative/backslash-smuggled absolute URL.
+    const requested = (location.state as { from?: string } | null)?.from;
+    const from = requested && isSafeInternalPath(requested) ? requested : "/";
+    navigate(from, { replace: true });
+  }
+
   async function onSubmit(values: LoginForm) {
     setFormError(null);
     try {
-      const { access_token, admin } = await authApi.login(values);
-      setSession(access_token, admin);
-      // `from` comes from the address bar via AuthGate — only follow it if it is a
-      // real internal path, never a protocol-relative/backslash-smuggled absolute URL.
-      const requested = (location.state as { from?: string } | null)?.from;
-      const from = requested && isSafeInternalPath(requested) ? requested : "/";
-      navigate(from, { replace: true });
+      const result = await authApi.login(values);
+      // Accounts with a Telegram chat bound get a code instead of a session. The password
+      // on its own has bought nothing at this point — the ticket only opens the code box.
+      if (result.otp_required) {
+        setCode("");
+        setPending({ ticket: result.ticket, sentTo: result.sent_to });
+        return;
+      }
+      enter(result.access_token, result.admin);
     } catch (err) {
       setFormError(apiErrorMessage(err, strings.auth.genericError));
+    }
+  }
+
+  async function onSubmitCode(e: React.FormEvent) {
+    e.preventDefault();
+    if (!pending) return;
+    setFormError(null);
+    setChecking(true);
+    try {
+      const { access_token, admin } = await authApi.loginOtp({ ticket: pending.ticket, code });
+      enter(access_token, admin);
+    } catch (err) {
+      setFormError(apiErrorMessage(err, strings.auth.otpError));
+      setCode("");
+    } finally {
+      setChecking(false);
     }
   }
 
@@ -67,6 +104,57 @@ export function LoginScreen() {
           </div>
         </div>
 
+        {pending ? (
+          <div className="bg-surface border border-border rounded-lg shadow-lg p-7">
+            <h1 className="text-[1.35rem] mb-1">{strings.auth.otpTitle}</h1>
+            <p className="text-[.86rem] text-text-2 mb-6">
+              {pending.sentTo
+                ? `We sent a six-digit code to ${pending.sentTo} on Telegram. It expires in 5 minutes.`
+                : "We sent a six-digit code to your Telegram. It expires in 5 minutes."}
+            </p>
+
+            <form onSubmit={onSubmitCode} className="flex flex-col gap-4" noValidate>
+              <Input
+                id="code"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                autoFocus
+                maxLength={6}
+                label={strings.auth.otpLabel}
+                placeholder="000000"
+                className="tracking-[.4em] text-center font-mono"
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+              />
+
+              {formError && (
+                <div className="text-[.82rem] text-danger bg-danger-soft border border-danger-line rounded-lg px-3 py-2.5">
+                  {formError}
+                </div>
+              )}
+
+              <Button
+                type="submit"
+                variant="primary"
+                isLoading={checking}
+                disabled={code.length < 6}
+                className="mt-1 w-full"
+              >
+                {checking ? strings.auth.otpSubmitting : strings.auth.otpSubmit}
+              </Button>
+              <button
+                type="button"
+                className="text-[.82rem] text-text-3 hover:text-text-2 transition-colors"
+                onClick={() => {
+                  setPending(null);
+                  setFormError(null);
+                }}
+              >
+                {strings.auth.otpBack}
+              </button>
+            </form>
+          </div>
+        ) : (
         <div className="bg-surface border border-border rounded-lg shadow-lg p-7">
           <h1 className="text-[1.35rem] mb-1">{strings.auth.loginTitle}</h1>
           <p className="text-[.86rem] text-text-2 mb-6">{strings.auth.loginSubtitle}</p>
@@ -102,6 +190,7 @@ export function LoginScreen() {
             </Button>
           </form>
         </div>
+        )}
       </div>
     </div>
   );
