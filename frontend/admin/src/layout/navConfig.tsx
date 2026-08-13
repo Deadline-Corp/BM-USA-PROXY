@@ -21,8 +21,8 @@ export interface NavItemConfig {
   to: string;
   label: string;
   icon: ReactNode;
-  /** "badge" shows a count pill, "dot" shows a small live-activity dot. */
-  accessory?: "badge" | "dot";
+  /** "badge" shows a count pill fed by badgeKey below. */
+  accessory?: "badge";
   /** Which dashboard-summary field drives the count when accessory === "badge". */
   badgeKey?: "new_requests" | "unread_messages";
 }
@@ -52,7 +52,7 @@ export const navGroups: NavGroupConfig[] = [
         accessory: "badge",
         badgeKey: "new_requests",
       },
-      { to: "/pools", label: strings.nav.pools, icon: <IconPools />, accessory: "dot" },
+      { to: "/pools", label: strings.nav.pools, icon: <IconPools /> },
       { to: "/tariffs", label: strings.nav.tariffs, icon: <IconTariffs /> },
       { to: "/referrals", label: strings.nav.referrals, icon: <IconReferrals /> },
       { to: "/ledger", label: strings.nav.ledger, icon: <IconLedger /> },

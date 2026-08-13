@@ -77,9 +77,6 @@ export function Sidebar() {
                     {summary[item.badgeKey]}
                   </span>
                 ) : null}
-                {item.accessory === "dot" && (
-                  <span className="w-[7px] h-[7px] rounded-full bg-accent shadow-[0_0_0_3px_rgba(25,80,121,.09)]" />
-                )}
               </NavLink>
             ))}
           </div>
