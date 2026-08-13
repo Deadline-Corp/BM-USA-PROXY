@@ -18,7 +18,18 @@ from typing import Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import ColumnElement, Select, String, and_, cast, func, or_, select, text
+from sqlalchemy import (
+    ColumnElement,
+    Select,
+    String,
+    and_,
+    cast,
+    distinct,
+    func,
+    or_,
+    select,
+    text,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # A model attribute (`User.email`) is an InstrumentedAttribute, not a ColumnElement, even
@@ -2011,11 +2022,35 @@ async def get_request(
 # ── referrals ────────────────────────────────────────────────────────────
 @router.get("/referrals/summary")
 async def referrals_summary(admin: CurrentAdmin, session: DbSession) -> dict[str, Any]:
-    rows = await session.execute(
-        select(ReferralLedger.status, func.coalesce(func.sum(ReferralLedger.amount_usd), 0))
-        .group_by(ReferralLedger.status)
+    """The five numbers above the referrals screen.
+
+    It used to return the ledger grouped by status — `{"paid": 1.84}` — while the screen
+    read `total_referrers`, `total_clicks` and three more that were never in there. Every
+    card therefore showed zero, including "Paid out" on a day when money had been paid.
+    """
+    referred = User.referrer_user_id.is_not(None)
+    # People who have actually brought somebody, not everyone holding a code — every user
+    # gets a code the moment they open the bot, so counting codes would count the userbase.
+    referrers = select(func.count(distinct(User.referrer_user_id))).where(referred)
+    attached = select(func.count()).select_from(User).where(referred)
+    clicks = select(func.coalesce(func.sum(User.referral_clicks), 0))
+    paid = select(func.coalesce(func.sum(ReferralLedger.amount_usd), 0)).where(
+        ReferralLedger.status == "paid"
     )
-    return {status: float(total) for status, total in rows}
+    # The same two states the payouts queue lists, so the card and the table under it
+    # cannot disagree about how much work is waiting.
+    pending = (
+        select(func.count())
+        .select_from(Payout)
+        .where(Payout.status.in_(("requested", "approved")))
+    )
+    return {
+        "total_referrers": int(await session.scalar(referrers) or 0),
+        "total_clicks": int(await session.scalar(clicks) or 0),
+        "total_attached": int(await session.scalar(attached) or 0),
+        "total_paid_usd": float(await session.scalar(paid) or 0),
+        "pending_payouts": int(await session.scalar(pending) or 0),
+    }
 
 
 @router.get("/referrals/ledger")

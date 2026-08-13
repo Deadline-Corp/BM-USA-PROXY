@@ -229,6 +229,9 @@ export interface PayoutRail {
 
 export interface Referral {
   code: string;
+  /** Arrivals at the bot through this link — including people we could not bind, which is
+   *  exactly what makes it different from `signups`. */
+  link_opens: number;
   signups: number;
   balances: ReferralBalances;
   min_payout_usd: number;

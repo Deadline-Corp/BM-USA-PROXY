@@ -259,6 +259,7 @@ export const strings = {
     coin: "Coin",
     payoutBelowMin: "Minimum payout is",
     payoutSent: "Payout request sent.",
+    opensLabel: "Opened",
     signupsLabel: "Signups",
     earnedLabel: "Earned",
   },

@@ -4,7 +4,15 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, ForeignKey, Index, Text
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    Integer,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import CITEXT
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import DateTime
@@ -27,6 +35,11 @@ class User(Base):
     referral_code: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     referrer_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     referral_bound_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Times somebody opened THIS person's referral link. Counted on the referrer, and
+    # counted even when the visitor cannot be bound — already has a referrer, or is just
+    # coming back — because that is the difference between "nobody clicks" and "they click
+    # and do not sign up", which are opposite problems.
+    referral_clicks: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     source_post_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("posts.id", use_alter=True, name="fk_users_source_post_id_posts")
     )

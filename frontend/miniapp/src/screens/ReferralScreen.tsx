@@ -139,19 +139,23 @@ export function ReferralScreen() {
             </small>
           </div>
         </div>
-        {/* Two tiles, not three. The third was a literal `0` in the markup labelled
-            "clicks" — no such field exists in the API or anywhere in the backend, so it
-            read zero for everyone forever. A dead number next to real money makes the
-            real ones look doubtful too. A truthful click count is not available either:
-            the link goes to Telegram, and we only learn of a person when they press
-            START, which is the signup event already counted beside it. */}
-        <div className="grid grid-cols-2 gap-2">
+        {/* The third tile is back, and this time it counts something. It used to be a
+            literal `0` in the markup labelled "clicks", backed by no field anywhere, so it
+            read zero for everyone forever — a dead number beside real money makes the real
+            ones look doubtful too. What it shows now is arrivals at the bot through this
+            link, not clicks on it: somebody who opens the link and never presses START
+            stays invisible to us, so the label says "Opened" and does not promise more. */}
+        <div className="grid grid-cols-3 gap-2">
           <div className="flex flex-col items-center gap-0.5 rounded border border-border bg-surface-2 px-2 pb-2 pt-2.5">
-            <Num className="text-[18px] leading-none text-text">{r.signups}</Num>
+            <Num className="text-[17px] leading-none text-text">{r.link_opens}</Num>
+            <span className="text-[10px] uppercase tracking-wide text-text-3">{strings.referral.opensLabel}</span>
+          </div>
+          <div className="flex flex-col items-center gap-0.5 rounded border border-border bg-surface-2 px-2 pb-2 pt-2.5">
+            <Num className="text-[17px] leading-none text-text">{r.signups}</Num>
             <span className="text-[10px] uppercase tracking-wide text-text-3">{strings.referral.signupsLabel}</span>
           </div>
           <div className="flex flex-col items-center gap-0.5 rounded border border-border bg-surface-2 px-2 pb-2 pt-2.5">
-            <Num className="text-[18px] leading-none text-accent">{formatUsd(r.balances.available + r.balances.hold)}</Num>
+            <Num className="text-[17px] leading-none text-accent">{formatUsd(r.balances.available + r.balances.hold)}</Num>
             <span className="text-[10px] uppercase tracking-wide text-text-3">{strings.referral.earnedLabel}</span>
           </div>
         </div>

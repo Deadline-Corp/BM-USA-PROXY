@@ -290,7 +290,7 @@ export const strings = {
     title: "Referrals",
     subtitle: "Affiliate performance and payouts.",
     totalReferrers: "Referrers",
-    totalClicks: "Total clicks",
+    totalClicks: "Link opens",
     totalAttached: "Attached users",
     totalPaid: "Paid out",
     pendingPayouts: "Pending payouts",

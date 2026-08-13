@@ -358,6 +358,10 @@ async def referral(user: CurrentUser, session: DbSession) -> dict[str, Any]:
     )
     return {
         "code": user.referral_code,
+        # Arrivals through this person's link, counted whether or not the visitor could be
+        # bound. Next to `signups` it answers the question the referrer actually has: is
+        # nobody coming, or are they coming and not staying? Those need opposite fixes.
+        "link_opens": int(user.referral_clicks or 0),
         "signups": int(signups or 0),
         "balances": balances,
         "min_payout_usd": float(await settings_svc.get(session, "referral_min_payout_usd", 0)),

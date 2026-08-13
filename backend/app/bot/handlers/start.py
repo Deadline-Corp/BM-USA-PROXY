@@ -78,6 +78,10 @@ async def cmd_start(message: Message, command: CommandObject) -> None:
         user = await upsert_from_telegram(session, _identity(message))
         code = referral_code_from(payload)
         if code:
+            # The click is counted first and separately: try_bind refuses a visitor who
+            # already has a referrer, and refusing to bind them is not a reason to pretend
+            # they never arrived.
+            await referral.record_click(session, code=code, visitor=user)
             await referral.try_bind(session, referee=user, code=code)
         elif payload and payload.startswith(_POST_PREFIX):
             await content.record_click(

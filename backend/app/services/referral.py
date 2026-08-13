@@ -34,6 +34,29 @@ def _q(v: Decimal) -> Decimal:
 
 
 # ── binding (called from the bot /start) ────────────────────────────────
+async def record_click(session: AsyncSession, *, code: str, visitor: User) -> None:
+    """Somebody opened a referral link. Count it against whoever owns the code.
+
+    Deliberately separate from binding and deliberately looser: a click counts even when
+    the visitor cannot be bound — they already have a referrer, or they are simply coming
+    back. Otherwise the number would only ever equal the number of sign-ups, and the whole
+    question the card answers ("do people click and then not sign up?") could not be asked.
+
+    Opening your own link is not a click. It costs nothing to check and it stops the one
+    number a referrer can trivially inflate by hand.
+    """
+    referrer_id = await session.scalar(
+        select(User.id).where(User.referral_code == code, User.id != visitor.id)
+    )
+    if referrer_id is None:
+        return
+    await session.execute(
+        update(User)
+        .where(User.id == referrer_id)
+        .values(referral_clicks=User.referral_clicks + 1)
+    )
+
+
 async def try_bind(session: AsyncSession, *, referee: User, code: str) -> bool:
     if referee.referrer_user_id is not None:
         return False
