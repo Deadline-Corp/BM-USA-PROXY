@@ -27,6 +27,7 @@ import { strings } from "@/shared/strings";
 import clsx from "clsx";
 import { IconChevronRight, IconMail, IconPlus } from "@/shared/components/icons";
 import { CopyInline } from "@/shared/components/CopyInline";
+import { OrderNumber } from "@/shared/components/OrderNumber";
 import type { ClientDossier as ClientDossierData, ConversationMessage } from "@/shared/api/types";
 
 interface ClientDossierProps {
@@ -387,7 +388,7 @@ function DossierBody({
                    search by — so it is copyable, not just printed. */
                 sub={
                   <span className="inline-flex items-center gap-1.5">
-                    <CopyInline value={o.id} head={8} />
+                    <OrderNumber value={o.number} />
                     <span>· {o.provider} · {formatDateTime(o.created_at)}</span>
                   </span>
                 }

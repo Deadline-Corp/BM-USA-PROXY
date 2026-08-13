@@ -88,7 +88,9 @@ export function ResolveDepositModal({
                 onClick={() => setOrderId(c.order_public_id)}
               >
                 <span className="min-w-0">
-                  <span className="block truncate text-[.82rem] text-text">{c.user}</span>
+                  <span className="block truncate text-[.82rem] text-text">
+                    #{c.order_number} · {c.user}
+                  </span>
                   <span className="block truncate text-[.72rem] text-text-3">
                     {c.order_status} · {c.invoice_status}
                     {c.created_at ? ` · ${formatDateTime(c.created_at)}` : ""}
@@ -123,7 +125,9 @@ export function ResolveDepositModal({
       <Button
         variant="primary"
         className="w-full"
-        disabled={busy || orderId.trim().length < 8}
+        // A number is short — the old floor of eight characters was there for the UUID and
+        // would now block exactly what the console tells the operator to type.
+        disabled={busy || orderId.trim().replace(/^#/, "").length < 1}
         onClick={async () => {
           setError(null);
           try {

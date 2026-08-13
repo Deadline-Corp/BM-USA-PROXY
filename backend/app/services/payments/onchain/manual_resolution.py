@@ -13,6 +13,7 @@ the stuck deposit and offered nothing to do about it, so the money simply sat th
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -71,6 +72,27 @@ def _as_transfer(row: OnchainDepositLedger) -> IncomingTransfer:
     )
 
 
+async def _find_order(session: AsyncSession, reference: str) -> Order | None:
+    """The order behind whatever the operator pasted: its number or its id.
+
+    The console shows orders as `#412` everywhere, so `#412` is what gets pasted here. The
+    id is still accepted because the candidate list and older notes carry it, and because
+    it is what the customer's own payment link is built from.
+    """
+    reference = reference.strip()
+    number = reference.lstrip("#")
+    found: Order | None
+    if number.isdigit():
+        found = await session.scalar(select(Order).where(Order.id == int(number)))
+        return found
+    try:
+        uuid.UUID(reference)
+    except ValueError:
+        return None  # neither a number nor an id — nothing to look up
+    found = await session.scalar(select(Order).where(Order.public_id == reference))
+    return found
+
+
 async def attach_to_order(
     session: AsyncSession,
     *,
@@ -92,7 +114,7 @@ async def attach_to_order(
     if row.status not in _RESOLVABLE:
         raise Conflict(f"deposit is in state '{row.status}' and needs no resolution")
 
-    order = await session.scalar(select(Order).where(Order.public_id == order_public_id))
+    order = await _find_order(session, order_public_id)
     if order is None:
         raise NotFound("order not found")
     invoice = await session.scalar(select(Invoice).where(Invoice.order_id == order.id))

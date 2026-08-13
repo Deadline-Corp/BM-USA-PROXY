@@ -10,7 +10,7 @@ import { FilterBar } from "@/shared/components/TableFilters";
 import { DateFilterPill, FilterPill } from "@/shared/components/FilterPill";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { Modal } from "@/shared/components/Modal";
-import { CopyInline } from "@/shared/components/CopyInline";
+import { OrderNumber } from "@/shared/components/OrderNumber";
 import { formatDate } from "@/shared/lib/format";
 import { useAccessesList, useExtendAccess, useReissueAccess, useRevokeAccess, useRotateIp } from "@/shared/hooks/useAccesses";
 import { useDebouncedValue } from "@/shared/hooks/useDebouncedValue";
@@ -160,9 +160,9 @@ export function PackagesScreen() {
         // they answer "what did they buy and on which order", which is the question a
         // support conversation opens with.
         header: strings.packages.colOrder,
-        accessorKey: "order_public_id",
+        accessorKey: "order_number",
         enableSorting: false,
-        cell: ({ row }) => <CopyInline value={row.original.order_public_id} />,
+        cell: ({ row }) => <OrderNumber value={row.original.order_number} />,
       },
       {
         header: "Expires",

@@ -10,6 +10,7 @@ import { formatDateTime } from "@/shared/lib/format";
 import { useManualReviewOrders, useOrdersList } from "@/shared/hooks/useOrders";
 import { usePagination } from "@/shared/hooks/usePagination";
 import { strings } from "@/shared/strings";
+import { OrderNumber } from "@/shared/components/OrderNumber";
 import type { Order } from "@/shared/api/types";
 import { OrderDetail } from "@/screens/orders/OrderDetail";
 
@@ -34,8 +35,8 @@ export function OrdersScreen() {
     () => [
       {
         header: strings.orders.colOrder,
-        accessorKey: "id",
-        cell: ({ row }) => <span className="font-mono text-[.8rem] text-text">{row.original.id.slice(0, 10)}</span>,
+        accessorKey: "number",
+        cell: ({ row }) => <OrderNumber value={row.original.number} />,
       },
       {
         header: strings.orders.colUser,

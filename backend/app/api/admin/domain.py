@@ -108,7 +108,10 @@ def _search_terms(q: str) -> list[str]:
     as typed — chopping two characters off a transaction id to guess at grammar would be
     absurd.
     """
-    words = [w for w in re.split(r"[^0-9A-Za-z@._-]+", q.strip().lower()) if w]
+    # "#" survives tokenising: it is how an operator says "this number is an order number
+    # and nothing else", and the console prints every order that way, so it is what gets
+    # copied and pasted back in.
+    words = [w for w in re.split(r"[^0-9A-Za-z@._#-]+", q.strip().lower()) if w]
     terms: list[str] = []
     for word in words:
         if word.isalpha() and len(word) <= 12:
@@ -137,7 +140,10 @@ def _sub(
 
 
 def _search_condition(
-    q: str | None, columns: Sequence[ColumnOperators]
+    q: str | None,
+    columns: Sequence[ColumnOperators],
+    *,
+    number_columns: Sequence[ColumnOperators] = (),
 ) -> ColumnElement[bool] | None:
     """Every word of the query somewhere in the row; each word may land in any column.
 
@@ -145,6 +151,11 @@ def _search_condition(
     a handle, a city, a status — and usually cannot say which column it belongs to. AND
     across words is what makes a second word narrow rather than widen, which is the whole
     reason for typing it.
+
+    `number_columns` are matched whole, never as substrings — a counter searched with LIKE
+    buries order 12 under 120 and 512, and "1" matches the lot. Written with the leading
+    "#" the console prints, the query means *only* that number; written bare it still
+    searches the text columns too, so a telegram id typed from memory keeps working.
     """
     if not q or not q.strip():
         return None
@@ -156,7 +167,18 @@ def _search_condition(
         # `.ilike()` is declared on ColumnOperators as returning ColumnOperators, while at
         # runtime it is the boolean BinaryExpression `or_` needs. The stub is looser than
         # the reality, so the narrowing happens once, here, rather than at every call site.
-        return [typing.cast("ColumnElement[bool]", col.ilike(f"%{term}%")) for col in columns]
+        exact = [
+            typing.cast("ColumnElement[bool]", col == int(term.lstrip("#")))
+            for col in number_columns
+        ] if term.lstrip("#").isdigit() else []
+        if term.startswith("#") and exact:
+            # "#412" means one order. Left to also match substrings it would drag in every
+            # row whose telegram id happens to contain 412 — which, with one buyer on the
+            # screen, can be all of them.
+            return exact
+        return [
+            typing.cast("ColumnElement[bool]", col.ilike(f"%{term}%")) for col in columns
+        ] + exact
 
     return and_(*[or_(*matches(term)) for term in terms])
 
@@ -537,6 +559,7 @@ async def client_dossier(client_id: int, admin: CurrentAdmin, session: DbSession
         "orders": [
             {
                 "id": str(o.public_id),
+                "number": o.id,
                 "status": o.status,
                 "provider": provider_by_order.get(o.id),
                 "amount_usd": float(o.amount_usd),
@@ -1044,6 +1067,7 @@ def _access_view(
     city: str | None,
     carrier: str | None,
     order_public_id: str | None = None,
+    order_number: int | None = None,
 ) -> dict[str, Any]:
     return {
         "id": str(a.public_id),
@@ -1053,22 +1077,23 @@ def _access_view(
         "carrier": carrier,
         "ip": None,
         "tariff_code": a.tariff_code,
-        # The order this access was bought with. `order_id` is an internal key nobody can
-        # quote; the public id is what the customer has, what the payments ledger shows,
-        # and what a refund conversation starts from — so the row that says "this proxy
-        # is live until Thursday" can now also say which purchase paid for it.
+        # The order this access was bought with, twice over. The number is what an operator
+        # reads out loud and types into a search; the public id is what every action takes,
+        # and it stays a random UUID because /pay/{public_id} is an unauthenticated link
+        # whose whole defence is being unguessable.
+        "order_number": order_number,
         "order_public_id": order_public_id,
         "expires_at": a.expires_at.isoformat() if a.expires_at else None,
         "created_at": a.created_at.isoformat(),
     }
 
 
-async def _access_extras(
-    session: DbSession, a: Access
-) -> tuple[str, str | None, str | None, str | None]:
-    """Resolve (user_display, city, carrier, order_public_id) for a single access row
-    (used by the single-object mutation endpoints below; list_admin_accesses
-    bulk-joins instead)."""
+async def _access_extras(session: DbSession, a: Access) -> dict[str, Any]:
+    """The `_access_view` keyword arguments that need a lookup, for the single-object
+    mutation endpoints below (list_admin_accesses bulk-joins instead).
+
+    Returned as kwargs rather than a tuple: it has grown twice now, and a positional
+    5-tuple unpacked at four call sites is one reordering away from a silent bug."""
     user = await session.get(User, a.user_id)
     conn = await session.get(Connection, a.connection_id)
     city: str | None = None
@@ -1077,7 +1102,13 @@ async def _access_extras(
         loc = await session.get(Location, conn.location_id)
         city = loc.city if loc else None
     order = await session.get(Order, a.order_id)
-    return _user_display(user), city, carrier, (str(order.public_id) if order else None)
+    return {
+        "user_display": _user_display(user),
+        "city": city,
+        "carrier": carrier,
+        "order_public_id": str(order.public_id) if order else None,
+        "order_number": order.id if order else None,
+    }
 
 
 @router.get("/accesses")
@@ -1153,6 +1184,9 @@ async def list_admin_accesses(
                 Location.id == _sub(Connection.location_id, Connection.id == Access.connection_id),
             ),
         ],
+        # The order number as shown in the Order column — matched whole, so #12 does not
+        # drag in 120.
+        number_columns=[Access.order_id],
     )
     if search is not None:
         stmt = stmt.where(search)
@@ -1206,6 +1240,8 @@ async def list_admin_accesses(
             city=conn_lookup.get(a.connection_id, (None, None))[0],
             carrier=conn_lookup.get(a.connection_id, (None, None))[1],
             order_public_id=order_lookup.get(a.order_id),
+            # The order's own key is the sequential number — no second lookup for it.
+            order_number=a.order_id,
         )
         for a in rows
     ]
@@ -1231,11 +1267,8 @@ async def admin_revoke_access(
     await revoke_access(session, access=access, reason=body.reason, actor=f"admin:{admin.id}")
     await audit.write(session, admin_id=admin.id, action="access.revoke", entity="access",
                        entity_id=access.id, after={"reason": body.reason})
-    user_display, city, carrier, order_public_id = await _access_extras(session, access)
-    return _access_view(
-        access, user_display=user_display, city=city, carrier=carrier,
-        order_public_id=order_public_id,
-    )
+    extras = await _access_extras(session, access)
+    return _access_view(access, **extras)
 
 
 class ExtendAdminBody(BaseModel):
@@ -1250,11 +1283,8 @@ async def admin_extend_access(
     await extend_access(session, access=access, minutes=body.minutes)
     await audit.write(session, admin_id=admin.id, action="access.extend", entity="access",
                        entity_id=access.id, after={"minutes": body.minutes})
-    user_display, city, carrier, order_public_id = await _access_extras(session, access)
-    return _access_view(
-        access, user_display=user_display, city=city, carrier=carrier,
-        order_public_id=order_public_id,
-    )
+    extras = await _access_extras(session, access)
+    return _access_view(access, **extras)
 
 
 @router.post("/accesses/{access_id}/rotate-ip")
@@ -1265,11 +1295,8 @@ async def admin_rotate_ip(
     await rotate_ip(session, access=access, actor=f"admin:{admin.id}")
     await audit.write(session, admin_id=admin.id, action="access.rotate_ip", entity="access",
                        entity_id=access.id)
-    user_display, city, carrier, order_public_id = await _access_extras(session, access)
-    return _access_view(
-        access, user_display=user_display, city=city, carrier=carrier,
-        order_public_id=order_public_id,
-    )
+    extras = await _access_extras(session, access)
+    return _access_view(access, **extras)
 
 
 class ReissueBody(BaseModel):
@@ -1288,17 +1315,18 @@ async def admin_reissue_access(
     )
     await audit.write(session, admin_id=admin.id, action="access.reissue", entity="access",
                        entity_id=access.id)
-    user_display, city, carrier, order_public_id = await _access_extras(session, access)
-    return _access_view(
-        access, user_display=user_display, city=city, carrier=carrier,
-        order_public_id=order_public_id,
-    )
+    extras = await _access_extras(session, access)
+    return _access_view(access, **extras)
 
 
 # ── orders / payments ────────────────────────────────────────────────────
 def _order_view(o: Order, *, user_display: str, provider: str | None) -> dict[str, Any]:
     return {
         "id": str(o.public_id),
+        # What the operator sees and says. The id stays the UUID because every action takes
+        # it and /pay/{public_id} is unauthenticated — a countable number there would let
+        # anyone walk the orders.
+        "number": o.id,
         "user": user_display,
         "status": o.status,
         "provider": provider,
@@ -1498,6 +1526,7 @@ def _ledger_view(
     user_display: str | None,
     is_current: bool = True,
     order_public_id: str | None = None,
+    order_number: int | None = None,
 ) -> dict[str, Any]:
     return {
         "id": str(row.id),
@@ -1519,9 +1548,10 @@ def _ledger_view(
         "confirmations": row.confirmations,
         "block_number": row.block_number,
         "invoice_id": str(row.invoice_id) if row.invoice_id is not None else None,
-        # The identifier an operator can actually act on: the buyer sees it, the Orders
-        # screen finds it, and the resolve dialog takes it. `invoice_id` is an internal
-        # primary key with nowhere to look it up.
+        # The identifier an operator can actually act on: the Orders screen finds it and
+        # the resolve dialog takes it. `invoice_id` is an internal primary key with nowhere
+        # to look it up. The number beside it is the readable half.
+        "order_number": order_number,
         "order_public_id": order_public_id,
         "user": user_display,
         "user_id": str(row.user_id) if row.user_id is not None else None,
@@ -1591,6 +1621,16 @@ async def list_deposit_ledger(
             conds.append(OnchainDepositLedger.chain == needle_raw.lower())
         elif needle_raw.upper() in {spec.asset for spec in SPECS.values()}:
             conds.append(OnchainDepositLedger.asset == needle_raw.upper())
+        elif needle_raw.lstrip("#").isdigit():
+            # The order number shown in this table's own Order column. Matched whole and
+            # through the invoice, because that is the only link a deposit has to an order.
+            # It wins over the substring branch below: nobody hunts a transaction hash by
+            # typing four digits of it, and plenty of people paste an order number.
+            conds.append(
+                OnchainDepositLedger.invoice_id.in_(
+                    select(Invoice.id).where(Invoice.order_id == int(needle_raw.lstrip("#")))
+                )
+            )
         else:
             # Otherwise it is one of the three things anyone actually pastes: a transaction
             # hash, the address it came from, or the address it went to. Separate inputs per
@@ -1639,21 +1679,22 @@ async def list_deposit_ledger(
     # invoice id -> the order's public id, in one query for the whole page. The ledger
     # stores the invoice, but the invoice number means nothing to anyone: the buyer quotes
     # an order id, the Orders screen searches by it, and the resolve dialog accepts it.
-    order_ids: dict[int, str] = {}
+    order_ids: dict[int, tuple[str, int]] = {}
     invoice_ids = {r.invoice_id for r in rows if r.invoice_id is not None}
     if invoice_ids:
         pairs = await session.execute(
-            select(Invoice.id, Order.public_id)
+            select(Invoice.id, Order.public_id, Order.id)
             .join(Order, Order.id == Invoice.order_id)
             .where(Invoice.id.in_(invoice_ids))
         )
-        order_ids = {int(inv_id): str(pub) for inv_id, pub in pairs}
+        order_ids = {int(inv_id): (str(pub), num) for inv_id, pub, num in pairs}
     items = [
         _ledger_view(
             r,
             user_display=user_display_map.get(r.user_id),
             is_current=r.id in current_ids,
-            order_public_id=order_ids.get(r.invoice_id) if r.invoice_id else None,
+            order_public_id=order_ids.get(r.invoice_id, (None, None))[0] if r.invoice_id else None,
+            order_number=order_ids.get(r.invoice_id, (None, None))[1] if r.invoice_id else None,
         )
         for r in rows
     ]
@@ -1708,6 +1749,7 @@ async def deposit_candidates(
         out.append(
             {
                 "order_public_id": str(order.public_id),
+                "order_number": order.id,
                 "order_status": order.status,
                 "invoice_status": inv.status,
                 "user": _user_display(user),

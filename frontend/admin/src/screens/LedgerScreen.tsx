@@ -6,6 +6,7 @@ import { DataTable } from "@/shared/components/DataTable";
 import { StatusBadge, formatStatusLabel } from "@/shared/components/StatusBadge";
 import { Num } from "@/shared/components/Num";
 import { CopyInline } from "@/shared/components/CopyInline";
+import { OrderNumber } from "@/shared/components/OrderNumber";
 import { DateFilterPill, FilterPill } from "@/shared/components/FilterPill";
 import { FilterBar } from "@/shared/components/TableFilters";
 import { formatChain, formatCryptoAmount, formatDateTime, formatNetwork } from "@/shared/lib/format";
@@ -174,9 +175,9 @@ export function LedgerScreen() {
         // this console or in the buyer's app can be looked up by it, so as a column it
         // was a reference to nowhere. The order id is what the customer quotes.
         header: strings.ledger.colOrder,
-        accessorKey: "order_public_id",
+        accessorKey: "order_number",
         enableSorting: false,
-        cell: ({ row }) => <CopyInline value={row.original.order_public_id} />,
+        cell: ({ row }) => <OrderNumber value={row.original.order_number} />,
       },
       {
         // Without this column the ledger reported stuck money and offered nothing to do

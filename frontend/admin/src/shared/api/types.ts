@@ -96,6 +96,7 @@ export interface ClientAccess {
 
 export interface ClientOrder {
   id: string;
+  number: number;
   status: string;
   provider: string;
   amount_usd: number;
@@ -217,8 +218,9 @@ export interface AccessRow {
   carrier: string | null;
   ip: string | null;
   tariff_code: string;
-  /** The order this access was bought with — what the customer quotes and what the
-   * payments ledger shows. Null only if the order row is somehow gone. */
+  /** The order this access was bought with. The number is what an operator reads and
+   * types; the id is what actions take. Null only if the order row is somehow gone. */
+  order_number: number | null;
   order_public_id: string | null;
   expires_at: string | null;
   created_at: string;
@@ -243,6 +245,8 @@ export interface OrderEvent {
 
 export interface Order {
   id: string;
+  /** Sequential, human-quotable. `id` stays the UUID every action takes. */
+  number: number;
   user: string;
   status: string;
   provider: string;
@@ -270,6 +274,7 @@ export interface MarkPaidRequest {
 // ---------- On-chain deposit ledger (append-only) ----------
 
 export interface DepositCandidate {
+  order_number: number;
   order_public_id: string;
   order_status: string;
   invoice_status: string;
@@ -315,6 +320,8 @@ export interface DepositLedgerEntry {
    * dialog accepts.
    */
   order_public_id: string | null;
+  /** The same order, as an operator refers to it. */
+  order_number: number | null;
   user: string | null;
   user_id: string | null;
 }

@@ -89,7 +89,7 @@ export function OrderDetail({ orderId, onClose }: OrderDetailProps) {
       <SlideOver
         open={orderId !== null}
         onClose={onClose}
-        title={order ? `Order ${order.id.slice(0, 8)}` : "Order"}
+        title={order ? `Order #${order.number}` : "Order"}
         subtitle={order ? `${order.user} · ${order.provider}` : undefined}
         footer={
           order && (
