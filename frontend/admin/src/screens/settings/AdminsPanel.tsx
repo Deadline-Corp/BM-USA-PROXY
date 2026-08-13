@@ -6,11 +6,12 @@ import { Modal } from "@/shared/components/Modal";
 import { Input } from "@/shared/components/form/Input";
 import { PasswordInput } from "@/shared/components/form/PasswordInput";
 import { ChangePasswordModal } from "@/screens/settings/ChangePasswordModal";
+import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { Skeleton } from "@/shared/components/Skeleton";
 import { ErrorState } from "@/shared/components/ErrorState";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { IconPlus } from "@/shared/components/icons";
-import { useAdmins, useCreateAdmin, useUpdateAdmin } from "@/shared/hooks/useSystem";
+import { useAdmins, useCreateAdmin, useDeleteAdmin, useUpdateAdmin } from "@/shared/hooks/useSystem";
 import { useToast } from "@/shared/components/Toast";
 import { apiErrorMessage } from "@/shared/api/client";
 import { strings } from "@/shared/strings";
@@ -24,6 +25,7 @@ export function AdminsPanel() {
   const { data, isLoading, isError, refetch } = useAdmins();
   const createMutation = useCreateAdmin();
   const updateMutation = useUpdateAdmin();
+  const deleteMutation = useDeleteAdmin();
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<AdminAccount | null>(null);
@@ -34,6 +36,7 @@ export function AdminsPanel() {
   // A separate dialog, not a field on this form: setting a password ends every session
   // that account holds, which is not something to do as a side effect of renaming somebody.
   const [changingFor, setChangingFor] = useState<AdminAccount | null>(null);
+  const [deleting, setDeleting] = useState<AdminAccount | null>(null);
 
   function openCreate() {
     setEditing(null);
@@ -135,6 +138,20 @@ export function AdminsPanel() {
         title={editing ? "Edit admin" : strings.settings.addAdmin}
         footer={
           <>
+            {/* Left of the divider, away from Save: the two buttons next to each other is
+                how a stray click deletes the account somebody meant to rename. */}
+            {editing && (
+              <Button
+                variant="ghost"
+                className="mr-auto text-danger hover:bg-danger-soft"
+                onClick={() => {
+                  setDeleting(editing);
+                  setFormOpen(false);
+                }}
+              >
+                {strings.settings.deleteAdmin}
+              </Button>
+            )}
             <Button variant="ghost" onClick={() => setFormOpen(false)}>
               {strings.common.cancel}
             </Button>
@@ -207,6 +224,32 @@ export function AdminsPanel() {
       </Modal>
 
       <ChangePasswordModal admin={changingFor} onClose={() => setChangingFor(null)} />
+
+      <ConfirmDialog
+        open={deleting !== null}
+        onClose={() => setDeleting(null)}
+        danger
+        title={strings.settings.deleteAdminConfirm}
+        description={
+          deleting
+            ? `${deleting.display_name} · ${deleting.email}
+
+${strings.settings.deleteAdminBody}`
+            : undefined
+        }
+        confirmLabel={strings.settings.deleteAdmin}
+        isSubmitting={deleteMutation.isPending}
+        onConfirm={async () => {
+          if (!deleting) return;
+          try {
+            await deleteMutation.mutateAsync(deleting.id);
+            toast.success(strings.settings.adminDeleted);
+            setDeleting(null);
+          } catch (err) {
+            toast.error(apiErrorMessage(err));
+          }
+        }}
+      />
     </Panel>
   );
 }

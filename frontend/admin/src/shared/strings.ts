@@ -396,6 +396,11 @@ export const strings = {
     newPasswordHint:
       "Changing it signs this account out everywhere immediately — including you, if it is your own. Use it when someone leaves: their open session ends at once rather than lasting until the login cookie expires.",
     addAdmin: "Add admin",
+    deleteAdmin: "Delete account",
+    deleteAdminConfirm: "Delete this account?",
+    deleteAdminBody:
+      "The account and its sign-in are gone for good. Anything it did — refunds, payouts, audit entries — stays, but stops carrying a name. The deletion itself is recorded with the email, so there is still an answer to who this was.",
+    adminDeleted: "Account deleted",
     audit: "Audit log",
     auditSearchPlaceholder: "Search admin, entity, action…",
   },

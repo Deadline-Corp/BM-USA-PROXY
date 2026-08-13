@@ -46,6 +46,14 @@ export function useUpdateAdmin() {
   });
 }
 
+export function useDeleteAdmin() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => systemApi.deleteAdmin(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["system", "admins"] }),
+  });
+}
+
 export function useAuditLog(params: ListParams) {
   return useQuery({ queryKey: ["system", "audit", params], queryFn: () => systemApi.audit(params) });
 }

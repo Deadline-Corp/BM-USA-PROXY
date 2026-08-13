@@ -325,6 +325,7 @@ export const systemApi = {
     apiClient.post<AdminAccount>("/admins", body).then((r) => r.data),
   updateAdmin: (id: string, body: Partial<AdminAccountInput>) =>
     apiClient.patch<AdminAccount>(`/admins/${id}`, body).then((r) => r.data),
+  deleteAdmin: (id: string) => apiClient.delete<void>(`/admins/${id}`).then((r) => r.data),
   audit: (params: ListParams) =>
     apiClient
       .get<Paginated<AuditLogEntry>>("/audit", { params })

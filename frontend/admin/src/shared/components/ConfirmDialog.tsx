@@ -64,7 +64,13 @@ export function ConfirmDialog({
       }
     >
       <div className="flex flex-col gap-4">
-        {description && <p className="text-[.88rem] text-text-2 leading-relaxed">{description}</p>}
+        {/* pre-line so a caller can put the thing being acted on on its own line above the
+            explanation. Without it the two run together into one paragraph. */}
+        {description && (
+          <p className="text-[.88rem] text-text-2 leading-relaxed whitespace-pre-line">
+            {description}
+          </p>
+        )}
         {requireReason && (
           <div className="flex flex-col gap-1.5">
             <label className="text-[.74rem] uppercase tracking-[.06em] text-text-3 font-semibold">

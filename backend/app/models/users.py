@@ -82,6 +82,10 @@ class AdminUser(Base):
     # new person, and their codes must not keep going to the old inbox.
     telegram_username: Mapped[str | None] = mapped_column(Text)
     telegram_user_id: Mapped[int | None] = mapped_column(BigInteger)
+    # Set when the account is deleted. The row outlives the account on purpose: the audit
+    # log, the client conversation and publication comments all print this person's name,
+    # and those entries were written before anybody decided to remove them.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = created_at_col()
 
     __table_args__ = (

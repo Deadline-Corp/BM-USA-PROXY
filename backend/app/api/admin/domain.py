@@ -3192,7 +3192,15 @@ async def _set_handle(session: AsyncSession, target: AdminUser, raw: str | None)
 
 @router.get("/admins")
 async def list_admins(admin: CurrentAdmin, session: DbSession) -> list[dict[str, Any]]:
-    rows = (await session.execute(select(AdminUser).order_by(AdminUser.created_at))).scalars().all()
+    # Deleted accounts stay in the table so old audit entries can still name them, and are
+    # not accounts any more — so they do not belong on the list of accounts.
+    rows = (
+        await session.execute(
+            select(AdminUser)
+            .where(AdminUser.deleted_at.is_(None))
+            .order_by(AdminUser.created_at)
+        )
+    ).scalars().all()
     return [_admin_user_view(a) for a in rows]
 
 
@@ -3274,6 +3282,51 @@ async def patch_admin(
     await audit.write(session, admin_id=admin.id, action="admin.update", entity="admin_user",
                        entity_id=target.id, after=updates)
     return _admin_user_view(target)
+
+
+@router.delete("/admins/{admin_id}", status_code=200)
+async def delete_admin(
+    admin_id: int, admin: CurrentAdmin, session: DbSession
+) -> dict[str, Any]:
+    """Delete an account: gone from the list, cannot sign in, email and handle released.
+
+    The row itself stays, and that is the whole design rather than a shortcut. Three screens
+    print an admin's name from this table — the audit log, the client conversation, and
+    publication comments — so dropping the row turns "who revoked this access" into "—" at
+    the exact moment somebody is asking. Keeping the name is the point; keeping the account
+    is not, so everything that makes it an account is taken away:
+
+    * the password is replaced with a value nothing can match, so the old one is dead;
+    * the email is stamped `deleted-{id}-…` and the Telegram handle cleared, which frees
+      both for the replacement person — recreating an account with the same address is the
+      usual next step after deleting one made by mistake;
+    * `is_active` goes false and `sessions_valid_from` moves to now, which ends any session
+      the account is holding this second rather than at cookie expiry;
+    * `deleted_at` hides it from the list.
+    """
+    target = await session.get(AdminUser, admin_id)
+    if target is None or target.deleted_at is not None:
+        raise NotFound("admin not found")
+    if target.id == admin.id:
+        # Signing yourself out permanently, with no way back in, is never the intent.
+        raise Conflict("cannot delete the account you are signed in with")
+
+    view = _admin_user_view(target)
+    now = _utcnow()
+    target.deleted_at = now
+    target.is_active = False
+    target.sessions_valid_from = now
+    # Not a hash of anything: `hash_password(token_urlsafe())` would still be a hash of a
+    # password that exists somewhere for an instant. This one matches nothing, ever.
+    target.password_hash = "deleted"  # noqa: S105  a value no verifier can accept
+    target.email = f"deleted-{target.id}-{target.email}"
+    target.telegram_username = None
+    target.telegram_user_id = None
+
+    await audit.write(session, admin_id=admin.id, action="admin.delete", entity="admin_user",
+                       entity_id=target.id,
+                       before={"email": view["email"], "display_name": view["display_name"]})
+    return {"deleted": True, "admin": view}
 
 
 @router.get("/audit")
