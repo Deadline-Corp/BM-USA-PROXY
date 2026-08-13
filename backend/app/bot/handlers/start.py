@@ -17,7 +17,7 @@ from aiogram.types import (
 
 from app.core.config import settings
 from app.core.db import SessionFactory
-from app.services import content, referral
+from app.services import admin_telegram, content, referral
 from app.services.users import is_tos_accepted, upsert_from_telegram
 
 router = Router(name="start")
@@ -84,7 +84,21 @@ async def cmd_start(message: Message, command: CommandObject) -> None:
                 session, code=payload[len(_POST_PREFIX) :], user=user
             )
         accepted = await is_tos_accepted(session, user)
+        # If the console is waiting on this handle, this is the moment it gets an address
+        # to send login codes to. Silent for everyone else — the overwhelming majority of
+        # people pressing Start are customers, not operators.
+        linked = await admin_telegram.bind_from_start(
+            session,
+            handle=(message.from_user.username if message.from_user else None),
+            tg_user_id=user.tg_user_id,
+        )
         await session.commit()
+
+    if linked:
+        await message.answer(
+            "Your admin console account is now linked to this chat — "
+            "sign-in codes will arrive here."
+        )
 
     await message.answer(
         "Welcome to <b>BM USA Proxy</b> — premium USA mobile proxies.\n\n"

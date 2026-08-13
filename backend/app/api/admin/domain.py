@@ -58,7 +58,7 @@ from app.models import (
     User,
 )
 from app.models.access import Access
-from app.services import audit, content, referral
+from app.services import admin_telegram, audit, content, referral
 from app.services import settings as settings_svc
 from app.services.notifications import enqueue
 from app.services.provisioning import allocator
@@ -3032,7 +3032,29 @@ def _admin_user_view(a: AdminUser) -> dict[str, Any]:
         "is_active": a.is_active,
         "last_login_at": a.last_login_at.isoformat() if a.last_login_at else None,
         "created_at": a.created_at.isoformat(),
+        "telegram_username": a.telegram_username,
+        # The console shows the handle either way; this says whether a code can actually be
+        # delivered yet, which is only true once that person has opened the bot.
+        "telegram_linked": a.telegram_user_id is not None,
     }
+
+
+async def _set_handle(session: AsyncSession, target: AdminUser, raw: str | None) -> str | None:
+    """Write a handle onto an account, dropping any binding that belonged to the old one."""
+    try:
+        handle = admin_telegram.normalise_handle(raw)
+    except admin_telegram.InvalidHandle as exc:
+        raise ValidationError(str(exc)) from exc
+    if handle is not None:
+        clash = await admin_telegram.handle_taken_by(session, handle, excluding=target.id)
+        if clash is not None:
+            raise Conflict("another account already uses this Telegram handle")
+    if handle != target.telegram_username:
+        # A different handle means a different person: their codes must stop going to the
+        # inbox the old handle was bound to. The new one binds on their first Start.
+        target.telegram_user_id = None
+    target.telegram_username = handle
+    return handle
 
 
 @router.get("/admins")
@@ -3045,6 +3067,7 @@ class AdminCreateBody(BaseModel):
     email: str
     password: str
     display_name: str
+    telegram_username: str | None = None
 
 
 @router.post("/admins", status_code=201)
@@ -3063,8 +3086,10 @@ async def create_admin(
     )
     session.add(new_admin)
     await session.flush()
+    handle = await _set_handle(session, new_admin, body.telegram_username)
     await audit.write(session, admin_id=admin.id, action="admin.create", entity="admin_user",
-                       entity_id=new_admin.id, after={"email": body.email})
+                       entity_id=new_admin.id,
+                       after={"email": body.email, "telegram_username": handle})
     return _admin_user_view(new_admin)
 
 
@@ -3072,6 +3097,7 @@ class AdminPatchBody(BaseModel):
     display_name: str | None = None
     is_active: bool | None = None
     password: str | None = None
+    telegram_username: str | None = None
 
 
 @router.patch("/admins/{admin_id}")
@@ -3085,9 +3111,11 @@ async def patch_admin(
     # no way back in. Nothing to do with tiers — it is true of the last admin standing.
     if admin.id == admin_id and body.is_active is False:
         raise Conflict("cannot deactivate yourself")
-    updates = body.model_dump(exclude_unset=True, exclude={"password"})
+    updates = body.model_dump(exclude_unset=True, exclude={"password", "telegram_username"})
     for field, value in updates.items():
         setattr(target, field, value)
+    if "telegram_username" in body.model_fields_set:
+        updates["telegram_username"] = await _set_handle(session, target, body.telegram_username)
     if body.password is not None:
         target.password_hash = hash_password(body.password)
         updates["password"] = "***"  # noqa: S105  redaction marker, not a real secret

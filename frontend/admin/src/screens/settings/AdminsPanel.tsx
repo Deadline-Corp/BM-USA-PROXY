@@ -28,12 +28,14 @@ export function AdminsPanel() {
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
+  const [telegram, setTelegram] = useState("");
 
   function openCreate() {
     setEditing(null);
     setEmail("");
     setDisplayName("");
     setPassword("");
+    setTelegram("");
     setFormOpen(true);
   }
 
@@ -42,6 +44,7 @@ export function AdminsPanel() {
     setEmail(a.email);
     setDisplayName(a.display_name);
     setPassword("");
+    setTelegram(a.telegram_username ? `@${a.telegram_username}` : "");
     setFormOpen(true);
   }
 
@@ -50,11 +53,21 @@ export function AdminsPanel() {
       if (editing) {
         await updateMutation.mutateAsync({
           id: editing.id,
-          body: { email, display_name: displayName, ...(password ? { password } : {}) },
+          body: {
+            email,
+            display_name: displayName,
+            telegram_username: telegram.trim() || null,
+            ...(password ? { password } : {}),
+          },
         });
         toast.success("Admin updated");
       } else {
-        await createMutation.mutateAsync({ email, display_name: displayName, password });
+        await createMutation.mutateAsync({
+          email,
+          display_name: displayName,
+          password,
+          telegram_username: telegram.trim() || null,
+        });
         toast.success("Admin created");
       }
       setFormOpen(false);
@@ -87,6 +100,16 @@ export function AdminsPanel() {
               <div className="min-w-0 flex-1">
                 <div className="text-[.86rem] text-text font-medium">{a.display_name}</div>
                 <div className="text-[.78rem] text-text-3 mt-0.5">{a.email}</div>
+                {a.telegram_username ? (
+                  <div className="text-[.78rem] text-text-3 mt-0.5">
+                    @{a.telegram_username}
+                    {/* Says whether a code could reach them. A handle on its own cannot be
+                     * written to — the bot needs that person to have opened it first. */}
+                    <span className={a.telegram_linked ? "text-success ml-1.5" : "text-warning-text ml-1.5"}>
+                      {a.telegram_linked ? "· linked" : "· waiting for /start"}
+                    </span>
+                  </div>
+                ) : null}
               </div>
               <StatusBadge tone={a.is_active ? "success" : "neutral"} label={a.is_active ? strings.common.active : strings.common.inactive} />
               <Button variant="quiet" size="sm" onClick={() => openEdit(a)}>
@@ -120,6 +143,20 @@ export function AdminsPanel() {
         <div className="flex flex-col gap-4">
           <Input label={strings.auth.emailLabel} type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
           <Input label="Display name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+          <Input
+            label="Telegram"
+            placeholder="@operator"
+            // Where their sign-in code is sent. A handle alone is not an address: the bot
+            // cannot write first, so it is bound to a real chat when that person opens the
+            // bot. Replacing the handle un-binds the old one — a new handle is a new person.
+            hint={
+              editing && editing.telegram_username && !editing.telegram_linked
+                ? "Not linked yet — ask them to open the bot and press Start."
+                : "Sign-in codes go here. They must open the bot once for it to work."
+            }
+            value={telegram}
+            onChange={(e) => setTelegram(e.target.value)}
+          />
           <Input
             label={editing ? strings.settings.newPassword : strings.auth.passwordLabel}
             // Says what the action does before it is taken: a changed password ends every

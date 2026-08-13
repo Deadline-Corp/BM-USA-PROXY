@@ -558,12 +558,18 @@ export interface AdminAccount {
   email: string;
   display_name: string;
   is_active: boolean;
+  /** The handle the owner wrote down. Where sign-in codes are meant to go. */
+  telegram_username: string | null;
+  /** Whether that handle has an inbox behind it yet — true only once the person has
+   * opened the bot, which is the only way a bot may write to a private user. */
+  telegram_linked: boolean;
 }
 
 export interface AdminAccountInput {
   email: string;
   display_name: string;
   password?: string;
+  telegram_username?: string | null;
 }
 
 export interface AuditLogEntry {

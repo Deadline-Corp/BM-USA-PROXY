@@ -63,6 +63,12 @@ class AdminUser(Base):
     # changes or the account is deactivated, which is what makes either of those actually
     # end the sessions the person already has rather than only the next login.
     sessions_valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Where the login code is sent. The handle is what the owner knows and types; the
+    # numeric id is the only thing a bot can actually message, and it is bound when that
+    # person first opens the bot. Editing the handle clears the id — a new handle means a
+    # new person, and their codes must not keep going to the old inbox.
+    telegram_username: Mapped[str | None] = mapped_column(Text)
+    telegram_user_id: Mapped[int | None] = mapped_column(BigInteger)
     created_at: Mapped[datetime] = created_at_col()
 
     __table_args__ = (
