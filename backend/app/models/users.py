@@ -59,6 +59,10 @@ class AdminUser(Base):
     failed_logins: Mapped[int] = mapped_column(nullable=False, server_default="0")
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Tokens issued before this are refused — see api/deps.py. Set when the password
+    # changes or the account is deactivated, which is what makes either of those actually
+    # end the sessions the person already has rather than only the next login.
+    sessions_valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = created_at_col()
 
     __table_args__ = (

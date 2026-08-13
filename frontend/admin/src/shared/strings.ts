@@ -373,6 +373,9 @@ export const strings = {
     publish: "Publish new version",
     addQuestion: "Add question",
     admins: "Admins",
+    newPassword: "New password (leave blank to keep current)",
+    newPasswordHint:
+      "Changing it signs this account out everywhere immediately — including you, if it is your own. Use it when someone leaves: their open session ends at once rather than lasting until the login cookie expires.",
     addAdmin: "Add admin",
     audit: "Audit log",
     auditSearchPlaceholder: "Search admin, entity, action…",

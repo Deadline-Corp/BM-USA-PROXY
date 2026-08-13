@@ -121,7 +121,12 @@ export function AdminsPanel() {
           <Input label={strings.auth.emailLabel} type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
           <Input label="Display name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
           <Input
-            label={editing ? "New password (leave blank to keep current)" : strings.auth.passwordLabel}
+            label={editing ? strings.settings.newPassword : strings.auth.passwordLabel}
+            // Says what the action does before it is taken: a changed password ends every
+            // session that account holds, right now — including your own if it is yours.
+            // Before this it ended nothing until the 14-day refresh cookie ran out, which
+            // is the whole reason the field is worth explaining.
+            hint={editing ? strings.settings.newPasswordHint : undefined}
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}

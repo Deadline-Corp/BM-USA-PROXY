@@ -3091,6 +3091,20 @@ async def patch_admin(
     if body.password is not None:
         target.password_hash = hash_password(body.password)
         updates["password"] = "***"  # noqa: S105  redaction marker, not a real secret
+
+    # Changing a password or switching an account off has to end the sessions that account
+    # already holds, not merely the next login. The refresh cookie lives 14 days and
+    # rotates itself, so before this an operator who had left kept a working console —
+    # one that can move where customer payments are received — for a fortnight after
+    # their password was changed. Applies to your own account too: you will be signed out
+    # and sign back in with the new password, which is the honest reading of "changed".
+    if body.password is not None or body.is_active is False:
+        # Full precision, compared against the token's own millisecond stamp. At second
+        # resolution this had to choose between keeping a revoked session alive and
+        # refusing a legitimate login made in the same second — the full suite caught
+        # both, one after the other. Measuring finely removes the choice.
+        target.sessions_valid_from = _utcnow()
+        updates["sessions_ended"] = True
     await audit.write(session, admin_id=admin.id, action="admin.update", entity="admin_user",
                        entity_id=target.id, after=updates)
     return _admin_user_view(target)

@@ -51,6 +51,14 @@ def create_access_token(admin_id: int, role: str) -> str:
         "iss": _JWT_ISS,
         "aud": _JWT_AUD,
         "iat": int(_now().timestamp()),
+        # Milliseconds as well as seconds. Session revocation compares the issue time
+        # against a stamp on the account, and `iat` is whole seconds truncated down — so
+        # at second resolution a token minted in the same second as a revocation is
+        # indistinguishable from one minted just before it. One of the two has to lose,
+        # and either choice is wrong: keep it and a revoked session survives, drop it and
+        # a legitimate login is refused. Both ends of this token are ours, so measure
+        # finely enough that the question does not arise.
+        "iat_ms": int(_now().timestamp() * 1000),
         "exp": int((_now() + timedelta(minutes=settings.admin_jwt_ttl_min)).timestamp()),
     }
     return jwt.encode(payload, settings.admin_jwt_secret, algorithm="HS256")
@@ -64,6 +72,14 @@ def create_refresh_token(admin_id: int) -> str:
         "iss": _JWT_ISS,
         "aud": _JWT_AUD,
         "iat": int(_now().timestamp()),
+        # Milliseconds as well as seconds. Session revocation compares the issue time
+        # against a stamp on the account, and `iat` is whole seconds truncated down — so
+        # at second resolution a token minted in the same second as a revocation is
+        # indistinguishable from one minted just before it. One of the two has to lose,
+        # and either choice is wrong: keep it and a revoked session survives, drop it and
+        # a legitimate login is refused. Both ends of this token are ours, so measure
+        # finely enough that the question does not arise.
+        "iat_ms": int(_now().timestamp() * 1000),
         "exp": int((_now() + timedelta(days=settings.admin_refresh_ttl_days)).timestamp()),
     }
     return jwt.encode(payload, settings.admin_jwt_secret, algorithm="HS256")

@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel
 
-from app.api.deps import CurrentAdmin, DbSession
+from app.api.deps import CurrentAdmin, DbSession, reject_revoked_session
 from app.core.config import settings
 from app.core.errors import Unauthorized
 from app.core.security import blacklist_token, decode_token, is_blacklisted
@@ -68,6 +68,10 @@ async def refresh(request: Request, response: Response, session: DbSession) -> d
     admin = await session.get(AdminUser, int(claims["sub"]))
     if admin is None or not admin.is_active:
         raise Unauthorized("admin not found or inactive")
+    # The same revocation check as on the access token. Without it here the whole thing is
+    # decorative: an old refresh cookie would simply mint a new access token and the
+    # revoked session would carry on rotating itself indefinitely.
+    reject_revoked_session(admin, claims)
     # Single-use rotation: burn the just-used refresh token so a captured copy
     # (incl. one replayed after logout) can never mint another session.
     if jti and exp:

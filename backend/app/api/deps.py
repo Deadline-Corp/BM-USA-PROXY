@@ -67,12 +67,37 @@ async def admin_claims(authorization: str | None = Header(default=None)) -> dict
     return claims
 
 
+def reject_revoked_session(admin: AdminUser, claims: dict) -> None:
+    """Refuse a token minted before this account's sessions were last revoked.
+
+    Without it, changing an operator's password ended nothing: the refresh cookie lives
+    14 days and rotates itself, so someone who had left kept a working session — and the
+    console it opens can move where customer money is received.
+
+    Compared on `iat`, which every token carries. NULL means the account has never been
+    revoked, so nothing existing is affected until someone changes a password.
+    """
+    revoked_at = admin.sessions_valid_from
+    if revoked_at is None:
+        return
+    revoked_ms = revoked_at.timestamp() * 1000
+    issued_ms = claims.get("iat_ms")
+    if issued_ms is None:
+        # A token minted before this claim existed. Fall back to whole seconds; the only
+        # tokens in that state are ones issued before the deploy that added it.
+        seconds = claims.get("iat")
+        issued_ms = int(seconds) * 1000 if seconds is not None else 0
+    if float(issued_ms) < revoked_ms:
+        raise Unauthorized("session ended — sign in again")
+
+
 async def get_current_admin(
     session: DbSession, claims: Annotated[dict, Depends(admin_claims)]
 ) -> AdminUser:
     admin = await session.get(AdminUser, int(claims["sub"]))
     if admin is None or not admin.is_active:
         raise Forbidden("admin not found or inactive")
+    reject_revoked_session(admin, claims)
     return admin
 
 
