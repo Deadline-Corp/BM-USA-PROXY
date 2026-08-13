@@ -332,7 +332,7 @@ export interface DepositLedgerSummary {
   unmatched_total: number;
 }
 
-// ---------- Receiving wallets ----------
+// ---------- Wallets ----------
 
 export interface PaymentRail {
   asset: string;

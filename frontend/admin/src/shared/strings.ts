@@ -71,7 +71,7 @@ export const strings = {
     tariffs: "Tariffs",
     referrals: "Referrals",
     ledger: "Payments ledger",
-    wallets: "Receiving wallets",
+    wallets: "Wallets",
     broadcasts: "Broadcasts",
     publications: "Publications",
     faq: "FAQ content",
@@ -79,8 +79,11 @@ export const strings = {
     settings: "Settings",
   },
   wallets: {
-    title: "Receiving wallets",
-    subtitle: "Where customer payments land. Editing an address changes where the next payment goes.",
+    // "Wallets", not "Receiving wallets": the page grew a payout section, so the narrower
+    // name described the top half and quietly denied the bottom one.
+    title: "Wallets",
+    subtitle:
+      "Where customer payments land, and which wallets referral payouts go out from. Editing an address changes where the next payment goes.",
     railsTitle: "Rails",
     railsHint: "Every coin the watcher can handle. Leave an address empty to stop accepting that coin.",
     accepting: "Accepting",
