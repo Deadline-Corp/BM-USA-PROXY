@@ -57,6 +57,30 @@ uv run uvicorn app.main:app --reload
 uv run pytest -q && uv run ruff check . && uv run mypy app
 ```
 
+## Deploying
+
+Two Railway services run the same image, told apart by `ROLE`: **api** (web + migrations +
+both SPAs) and **worker** (ARQ crons). Deploy each by name:
+
+```sh
+railway up --ci --service api      # migrations run here, on startup
+railway up --ci --service worker
+```
+
+**Always pass `--service`.** Without it `railway up` targets whatever the CLI happens to be
+linked to, and it reports "Deploy complete" either way — on 2026-08-13 a console change went
+to the worker and looked deployed for half an hour, while the api kept serving the previous
+image. Only the api runs `alembic upgrade head`, so a misdirected deploy leaves new code in
+front of an old schema.
+
+Worth checking after any deploy that changes the console or the schema:
+
+```sh
+railway status --json | grep -A2 '"serviceName": "api"'   # is it the deploy you just made?
+railway logs --service api --deployment | grep -i "Running upgrade"
+curl -s https://<host>/health
+```
+
 ## Key invariants (enforced in the schema + tests)
 
 1. **One phone, one sale** — partial unique index `uq_connection_active_access`.
