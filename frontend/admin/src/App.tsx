@@ -6,6 +6,7 @@ import { DashboardScreen } from "@/screens/DashboardScreen";
 import { ClientsScreen } from "@/screens/ClientsScreen";
 import { RequestsScreen } from "@/screens/RequestsScreen";
 import { PoolsScreen } from "@/screens/PoolsScreen";
+import { LocationsScreen } from "@/screens/LocationsScreen";
 import { PackagesScreen } from "@/screens/PackagesScreen";
 import { TariffsScreen } from "@/screens/TariffsScreen";
 import { OrdersScreen } from "@/screens/OrdersScreen";
@@ -35,6 +36,7 @@ export function App() {
         <Route path="/clients" element={<ClientsScreen />} />
         <Route path="/requests" element={<RequestsScreen />} />
         <Route path="/pools" element={<PoolsScreen />} />
+        <Route path="/locations" element={<LocationsScreen />} />
         <Route path="/packages" element={<PackagesScreen />} />
         <Route path="/tariffs" element={<TariffsScreen />} />
         <Route path="/orders" element={<OrdersScreen />} />

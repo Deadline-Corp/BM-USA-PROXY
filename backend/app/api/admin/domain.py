@@ -866,6 +866,156 @@ async def toggle_tariff(
     return _tariff_view(tariff)
 
 
+# ── locations ────────────────────────────────────────────────────────────
+def _location_view(loc: Location, *, connections_count: int) -> dict[str, Any]:
+    return {
+        "id": str(loc.id),
+        "city": loc.city,
+        "state_code": loc.state_code,
+        "is_active": loc.is_active,
+        "sort_order": loc.sort_order,
+        "connections_count": connections_count,
+    }
+
+
+async def _location_connections_count(session: DbSession, location_id: int) -> int:
+    return int(
+        await session.scalar(
+            select(func.count())
+            .select_from(Connection)
+            .where(Connection.location_id == location_id)
+        )
+        or 0
+    )
+
+
+async def _get_location(session: DbSession, location_id: int) -> Location:
+    location = await session.get(Location, location_id)
+    if location is None:
+        raise NotFound("location not found")
+    return location
+
+
+@router.get("/locations")
+async def list_locations(admin: CurrentAdmin, session: DbSession) -> list[dict[str, Any]]:
+    rows = (
+        (await session.execute(select(Location).order_by(Location.sort_order))).scalars().all()
+    )
+    # One GROUP BY for the whole list rather than a query per row — same shape as the
+    # slots_used bulk-resolve in list_connections below.
+    count_rows = (
+        await session.execute(
+            select(Connection.location_id, func.count())
+            .where(Connection.location_id.is_not(None))
+            .group_by(Connection.location_id)
+        )
+    ).all()
+    counts = {loc_id: int(count) for loc_id, count in count_rows}
+    return [_location_view(loc, connections_count=counts.get(loc.id, 0)) for loc in rows]
+
+
+class LocationBody(BaseModel):
+    city: str
+    state_code: str
+    is_active: bool = True
+    sort_order: int = 100
+
+
+@router.post("/locations", status_code=201)
+async def create_location(
+    body: LocationBody, admin: CurrentAdmin, session: DbSession
+) -> dict[str, Any]:
+    city = body.city.strip()
+    state_code = body.state_code.strip().upper()
+    existing = await session.scalar(
+        select(Location.id).where(Location.city == city, Location.state_code == state_code)
+    )
+    if existing is not None:
+        raise Conflict("a location with this city and state already exists")
+    location = Location(
+        city=city, state_code=state_code, is_active=body.is_active, sort_order=body.sort_order
+    )
+    session.add(location)
+    await session.flush()
+    await audit.write(session, admin_id=admin.id, action="location.create", entity="location",
+                       entity_id=location.id,
+                       after={"city": city, "state_code": state_code,
+                              "is_active": body.is_active, "sort_order": body.sort_order})
+    return _location_view(location, connections_count=0)
+
+
+class LocationPatch(BaseModel):
+    city: str | None = None
+    state_code: str | None = None
+    is_active: bool | None = None
+    sort_order: int | None = None
+
+
+@router.patch("/locations/{location_id}")
+async def patch_location(
+    location_id: int, body: LocationPatch, admin: CurrentAdmin, session: DbSession
+) -> dict[str, Any]:
+    location = await _get_location(session, location_id)
+    updates = body.model_dump(exclude_unset=True)
+    if updates.get("city") is not None:
+        updates["city"] = updates["city"].strip()
+    if updates.get("state_code") is not None:
+        updates["state_code"] = updates["state_code"].strip().upper()
+    if "city" in updates or "state_code" in updates:
+        new_city = updates.get("city", location.city)
+        new_state = updates.get("state_code", location.state_code)
+        existing = await session.scalar(
+            select(Location.id).where(
+                Location.city == new_city,
+                Location.state_code == new_state,
+                Location.id != location_id,
+            )
+        )
+        if existing is not None:
+            raise Conflict("a location with this city and state already exists")
+    for field, value in updates.items():
+        setattr(location, field, value)
+    await audit.write(session, admin_id=admin.id, action="location.update", entity="location",
+                       entity_id=location.id, after=updates)
+    connections_count = await _location_connections_count(session, location.id)
+    return _location_view(location, connections_count=connections_count)
+
+
+@router.post("/locations/{location_id}/toggle")
+async def toggle_location(
+    location_id: int, admin: CurrentAdmin, session: DbSession
+) -> dict[str, Any]:
+    location = await _get_location(session, location_id)
+    location.is_active = not location.is_active
+    await audit.write(session, admin_id=admin.id, action="location.toggle", entity="location",
+                       entity_id=location.id, after={"is_active": location.is_active})
+    connections_count = await _location_connections_count(session, location.id)
+    return _location_view(location, connections_count=connections_count)
+
+
+@router.delete("/locations/{location_id}")
+async def delete_location(
+    location_id: int, admin: CurrentAdmin, session: DbSession
+) -> dict[str, bool]:
+    location = await _get_location(session, location_id)
+    connections_count = await _location_connections_count(session, location.id)
+    if connections_count > 0:
+        # Connection.location_id is a nullable FK with no ON DELETE CASCADE — a hard delete
+        # here would either violate it or silently orphan devices onto no city at all.
+        # is_active already does what an operator actually wants (hide it from the mini-app
+        # without touching the phones sitting on it), so point at that instead of just
+        # refusing outright.
+        raise Conflict(
+            f"{connections_count} connection(s) are assigned to this location — "
+            "deactivate it instead of deleting it"
+        )
+    before = {"city": location.city, "state_code": location.state_code}
+    await session.delete(location)
+    await audit.write(session, admin_id=admin.id, action="location.delete", entity="location",
+                       entity_id=location_id, before=before)
+    return {"deleted": True}
+
+
 # ── connections / pool ──────────────────────────────────────────────────
 def _connection_view(
     c: Connection, *, city: str | None, state: str | None, slots_used: int

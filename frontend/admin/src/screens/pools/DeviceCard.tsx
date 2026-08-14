@@ -24,6 +24,21 @@ export function DeviceCard({ connection: c, onEdit }: DeviceCardProps) {
   const isFull = c.online && c.slots_used >= c.slots_total;
   const status: "online" | "offline" | "full" = !c.online ? "offline" : isFull ? "full" : "online";
 
+  // What GeoIP resolved from the phone's actual exit IP vs. the city it is sold as (c.city,
+  // via location_id — an operator edit). The two are allowed to disagree — e.g. a suburb
+  // sold under the name of the nearest major city — so a mismatch is flagged, not treated
+  // as an error.
+  const geoChecked = Boolean(c.geo_resolved_at);
+  const geoLabel = c.geo_city && c.geo_state ? `${c.geo_city}, ${c.geo_state}` : null;
+  const geoMismatch =
+    geoChecked &&
+    geoLabel !== null &&
+    ((c.city ?? "").toLowerCase() !== (c.geo_city ?? "").toLowerCase() ||
+      (c.state ?? "").toLowerCase() !== (c.geo_state ?? "").toLowerCase());
+  const geoHint = geoChecked
+    ? `GeoIP checked ${formatRelative(c.geo_resolved_at)}${c.geo_ip ? ` · exit IP ${c.geo_ip}` : ""}`
+    : undefined;
+
   const statusStyle = {
     online: "bg-success-soft text-success",
     offline: "bg-[rgba(147,167,181,.16)] text-text-3",
@@ -53,6 +68,24 @@ export function DeviceCard({ connection: c, onEdit }: DeviceCardProps) {
           <div className="font-mono text-[.72rem] text-text-3 tracking-[.04em] mb-0.5">{c.external_id}</div>
           <div className="font-head text-[.97rem] font-semibold tracking-[-0.02em] text-text leading-tight">{c.city}</div>
           <div className="text-[.75rem] text-text-2 mt-px">{c.state}</div>
+          {geoMismatch && geoLabel && (
+            <div
+              className="flex items-center gap-1.5 text-[.68rem] text-warning-text mt-1 leading-snug"
+              title={geoHint}
+            >
+              <span className="w-[5px] h-[5px] rounded-full bg-warning flex-none" />
+              <span>
+                {c.city ? `Sold as ${c.city} · ` : "No city assigned · "}
+                GeoIP says {geoLabel}
+              </span>
+            </div>
+          )}
+          {!geoChecked && (
+            <div className="flex items-center gap-1.5 text-[.68rem] text-text-3 mt-1 leading-snug">
+              <span className="w-[5px] h-[5px] rounded-full bg-text-3 flex-none" />
+              {strings.pools.geoNotChecked}
+            </div>
+          )}
         </div>
         <span className={clsx("flex items-center gap-1.5 text-[.7rem] px-[9px] py-[3px] rounded-full flex-none leading-none", statusStyle)}>
           <span className="w-[5px] h-[5px] rounded-full bg-current flex-none" />

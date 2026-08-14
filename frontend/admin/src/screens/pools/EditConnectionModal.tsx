@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { Modal } from "@/shared/components/Modal";
 import { Button } from "@/shared/components/Button";
 import { Input } from "@/shared/components/form/Input";
+import { Select } from "@/shared/components/form/Select";
 import { Textarea } from "@/shared/components/form/Textarea";
 import { useUpdateConnection } from "@/shared/hooks/usePool";
+import { useLocations } from "@/shared/hooks/useLocations";
 import { useToast } from "@/shared/components/Toast";
 import { apiErrorMessage } from "@/shared/api/client";
 import { strings } from "@/shared/strings";
@@ -17,6 +19,7 @@ interface EditConnectionModalProps {
 export function EditConnectionModal({ connection, onClose }: EditConnectionModalProps) {
   const toast = useToast();
   const updateMutation = useUpdateConnection();
+  const locationsQuery = useLocations();
   const [tier, setTier] = useState("");
   const [locationId, setLocationId] = useState("");
   const [carrier, setCarrier] = useState("");
@@ -36,7 +39,7 @@ export function EditConnectionModal({ connection, onClose }: EditConnectionModal
     try {
       await updateMutation.mutateAsync({
         id: connection.id,
-        body: { tier, location_id: locationId, carrier, health_note: healthNote },
+        body: { tier, location_id: locationId || null, carrier, health_note: healthNote },
       });
       toast.success("Connection updated");
       onClose();
@@ -44,6 +47,8 @@ export function EditConnectionModal({ connection, onClose }: EditConnectionModal
       toast.error(apiErrorMessage(err));
     }
   }
+
+  const locations = locationsQuery.data ?? [];
 
   return (
     <Modal
@@ -64,7 +69,20 @@ export function EditConnectionModal({ connection, onClose }: EditConnectionModal
     >
       <div className="flex flex-col gap-4">
         <Input label="Tier" value={tier} onChange={(e) => setTier(e.target.value)} placeholder="e.g. standard, premium" />
-        <Input label="Location ID" value={locationId} onChange={(e) => setLocationId(e.target.value)} placeholder="city/location identifier" />
+        <Select
+          label={strings.pools.locationLabel}
+          value={locationId}
+          onChange={(e) => setLocationId(e.target.value)}
+          disabled={locationsQuery.isLoading}
+        >
+          <option value="">{strings.pools.noLocation}</option>
+          {locations.map((loc) => (
+            <option key={loc.id} value={loc.id}>
+              {loc.city}, {loc.state_code}
+              {loc.is_active ? "" : ` (${strings.pools.inactiveLocation})`}
+            </option>
+          ))}
+        </Select>
         <Input label="Carrier" value={carrier} onChange={(e) => setCarrier(e.target.value)} placeholder="T-Mobile, Verizon, AT&T" />
         <Textarea label="Health note" value={healthNote} onChange={(e) => setHealthNote(e.target.value)} placeholder="Operator notes about this device's health…" rows={3} />
       </div>

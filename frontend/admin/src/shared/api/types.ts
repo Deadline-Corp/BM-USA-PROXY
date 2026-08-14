@@ -166,6 +166,21 @@ export interface Tariff {
 
 export type TariffInput = Omit<Tariff, "id">;
 
+// ---------- Locations (cities) ----------
+
+export interface Location {
+  id: string;
+  city: string;
+  state_code: string;
+  is_active: boolean;
+  sort_order: number;
+  /** How many connections currently have this location assigned — drives the delete guard:
+   *  a location with any connections on it can only be deactivated, not deleted. */
+  connections_count: number;
+}
+
+export type LocationInput = Omit<Location, "id" | "connections_count">;
+
 // ---------- Pool / Connections ----------
 
 export interface Connection {
@@ -173,6 +188,14 @@ export interface Connection {
   external_id: string;
   city: string;
   state: string;
+  /** What our own GeoIP lookup says about the phone's actual exit IP right now — separate
+   *  from city/state above, which is what it is sold as. The two can legitimately disagree
+   *  (e.g. a suburb sold under the name of the nearest major city). Null until sync_pool has
+   *  resolved it at least once. */
+  geo_city: string | null;
+  geo_state: string | null;
+  geo_ip: string | null;
+  geo_resolved_at: string | null;
   carrier: string;
   online: boolean;
   is_sellable: boolean;
@@ -187,7 +210,7 @@ export interface Connection {
 export interface ConnectionUpdate {
   is_sellable?: boolean;
   tier?: string;
-  location_id?: string;
+  location_id?: string | null;
   carrier?: string;
   health_note?: string;
 }
