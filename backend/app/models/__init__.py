@@ -19,6 +19,7 @@ from app.models.system import (
     AppSetting,
     AuditLog,
     ConversationMessage,
+    MediaAsset,
     NotificationOutbox,
     TosAcceptance,
 )
@@ -42,6 +43,7 @@ __all__ = [
     "Invoice",
     "InvoiceStatusHistory",
     "Location",
+    "MediaAsset",
     "NotificationOutbox",
     "OnchainDepositLedger",
     "Order",

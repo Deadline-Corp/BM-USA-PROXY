@@ -53,6 +53,7 @@ import type {
   AccessRow,
   OtpRequest,
   SignedIn,
+  WelcomeImageUploadResult,
 } from "@/shared/api/types";
 
 // Thin, typed wrappers around every endpoint in the task spec. Grouped by
@@ -345,4 +346,18 @@ export const systemApi = {
     apiClient
       .get<Paginated<AuditLogEntry>>("/audit", { params })
       .then((r) => r.data),
+  // `t` is a client-chosen cache-busting value (bumped after every successful upload) —
+  // the endpoint itself ignores it, it only exists so the browser never has a reason to
+  // reuse a cached response for "the same" URL after the image underneath it changed.
+  getWelcomeImage: (t: number) =>
+    apiClient
+      .get<Blob>("/settings/welcome-image", { params: { t }, responseType: "blob" })
+      .then((r) => r.data),
+  uploadWelcomeImage: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return apiClient
+      .post<WelcomeImageUploadResult>("/settings/welcome-image", form)
+      .then((r) => r.data);
+  },
 };

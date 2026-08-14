@@ -575,6 +575,13 @@ export interface AppSettings {
   [key: string]: string | number | boolean;
 }
 
+/** Response to a welcome-image upload — see systemApi.uploadWelcomeImage. */
+export interface WelcomeImageUploadResult {
+  content_type: string;
+  size_bytes: number;
+  updated_at: string;
+}
+
 export interface TermsQuestion {
   /** Stable key the answer is stored under; renaming one orphans past answers. */
   id: string;

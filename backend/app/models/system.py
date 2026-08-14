@@ -1,4 +1,6 @@
-"""System tables: tos_acceptances, notifications_outbox, app_settings, audit_log."""
+"""System tables: tos_acceptances, notifications_outbox, app_settings, media_assets,
+audit_log.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     Text,
     UniqueConstraint,
     func,
@@ -77,6 +80,23 @@ class AppSetting(Base):
 
     key: Mapped[str] = mapped_column(Text, primary_key=True)
     value: Mapped[dict | list] = mapped_column(JSONB, nullable=False)
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class MediaAsset(Base):
+    """Operator-replaceable binary assets served by the bot/admin — today exactly one row,
+    the /start greeting's welcome-image (see app.services.media). Lives in Postgres rather
+    than the filesystem because the container's disk does not survive a Railway deploy.
+    """
+
+    __tablename__ = "media_assets"
+
+    key: Mapped[str] = mapped_column(Text, primary_key=True)
+    content_type: Mapped[str] = mapped_column(Text, nullable=False)
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

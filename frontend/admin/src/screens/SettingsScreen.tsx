@@ -1,6 +1,10 @@
 import { PageHead } from "@/shared/components/PageHead";
 import { strings } from "@/shared/strings";
-import { AppSettingsPanel, ReferralSettingsPanel } from "@/screens/settings/AppSettingsPanel";
+import {
+  AppSettingsPanel,
+  ReferralSettingsPanel,
+  WelcomeImagePanel,
+} from "@/screens/settings/AppSettingsPanel";
 import { TermsPanel } from "@/screens/settings/TermsPanel";
 import { AdminsPanel } from "@/screens/settings/AdminsPanel";
 import { AuditPanel } from "@/screens/settings/AuditPanel";
@@ -12,6 +16,7 @@ export function SettingsScreen() {
 
       <div className="flex flex-col gap-4">
         <AppSettingsPanel />
+        <WelcomeImagePanel />
         <ReferralSettingsPanel />
         <TermsPanel />
         <AdminsPanel />

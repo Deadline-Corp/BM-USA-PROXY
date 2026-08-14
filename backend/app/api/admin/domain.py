@@ -16,7 +16,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, File, Response, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import (
     ColumnElement,
@@ -70,7 +70,7 @@ from app.models import (
     User,
 )
 from app.models.access import Access
-from app.services import admin_telegram, audit, content, referral
+from app.services import admin_telegram, audit, content, media, referral
 from app.services import settings as settings_svc
 from app.services.notifications import enqueue
 from app.services.provisioning import allocator
@@ -3306,6 +3306,56 @@ async def patch_all_settings(
     await audit.write(session, admin_id=admin.id, action="settings.update", entity="app_setting",
                        entity_id="bulk", after=body.values)
     return await get_all_settings(admin, session)
+
+
+# ── welcome image (bot /start greeting photo) ──────────────────────────────
+# Not part of the key/value bag above: an image doesn't fit a JSONB settings value, and the
+# generic settings grid renders every value as a text input. See app/services/media.py for
+# where the bytes actually live (Postgres, not the settings table — Railway's disk doesn't
+# survive a deploy) and for why a successful upload always clears the cached Telegram
+# file_id (bot/handlers/start.py resends by that id; a stale one would keep the old photo
+# going out on every /start).
+@router.post("/settings/welcome-image")
+async def upload_welcome_image(
+    admin: CurrentAdmin, session: DbSession, file: UploadFile = File(...)
+) -> dict[str, Any]:
+    data = await file.read()
+    if len(data) > media.MAX_WELCOME_IMAGE_BYTES:
+        limit_mb = media.MAX_WELCOME_IMAGE_BYTES / (1024 * 1024)
+        raise ValidationError(f"image is too large — {limit_mb:.0f} MB max")
+
+    # The real type, off the file's own bytes — file.content_type is just whatever the
+    # client claimed in the multipart part and is not trustworthy on its own.
+    content_type = media.sniff_image_content_type(data)
+    if content_type is None:
+        raise ValidationError("unsupported image type — use JPEG, PNG, or WebP")
+
+    await media.set_welcome_image(
+        session, content_type=content_type, data=data, admin_id=admin.id
+    )
+    await audit.write(
+        session, admin_id=admin.id, action="settings.welcome_image_update",
+        entity="app_setting", entity_id="welcome_image",
+        after={"content_type": content_type, "size_bytes": len(data)},
+    )
+    return {
+        "content_type": content_type,
+        "size_bytes": len(data),
+        "updated_at": _utcnow().isoformat(),
+    }
+
+
+@router.get("/settings/welcome-image")
+async def get_welcome_image_admin(admin: CurrentAdmin, session: DbSession) -> Response:
+    asset = await media.get_welcome_image(session)
+    # no-store: the admin preview appends its own cache-busting query param after an
+    # upload, but this belt-and-suspenders header is what stops an intermediary (proxy,
+    # browser heuristic cache) from ever answering out of a cached copy on its own.
+    return Response(
+        content=asset.data,
+        media_type=asset.content_type,
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.get("/terms")

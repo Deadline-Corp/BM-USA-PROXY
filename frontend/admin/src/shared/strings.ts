@@ -388,6 +388,13 @@ export const strings = {
     title: "Settings",
     subtitle: "App configuration, terms, admins, and audit trail.",
     appSettings: "App settings",
+    welcomeImage: "Welcome image",
+    welcomeImageHint:
+      "Sent as a photo with the bot's /start greeting, the same buttons in the caption. JPEG, PNG, or WebP, up to 5 MB.",
+    welcomeImageReplace: "Replace image",
+    welcomeImageUploaded: "Welcome image updated",
+    welcomeImageBadType: "Use a JPEG, PNG, or WebP image.",
+    welcomeImageTooLarge: "Image is larger than 5 MB.",
     terms: "Terms of service",
     termsSubtitle: "What clients read and accept before the mini-app lets them buy.",
     termsText: "Agreement text (Markdown)",

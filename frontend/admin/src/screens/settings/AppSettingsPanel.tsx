@@ -1,11 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ChangeEvent } from "react";
 import { Panel } from "@/shared/components/Panel";
 import { Button } from "@/shared/components/Button";
 import { Input } from "@/shared/components/form/Input";
 import { Skeleton } from "@/shared/components/Skeleton";
 import { ErrorState } from "@/shared/components/ErrorState";
 import { EmptyState } from "@/shared/components/EmptyState";
-import { useAppSettings, useUpdateAppSettings } from "@/shared/hooks/useSystem";
+import {
+  useAppSettings,
+  useUpdateAppSettings,
+  useUploadWelcomeImage,
+  useWelcomeImage,
+} from "@/shared/hooks/useSystem";
 import { useToast } from "@/shared/components/Toast";
 import { apiErrorMessage } from "@/shared/api/client";
 import { strings } from "@/shared/strings";
@@ -59,6 +65,102 @@ export function AppSettingsPanel() {
       select={(key) => !REFERRAL_KEYS.includes(key)}
       footnote="Terms of Service and notification message texts are edited on their own screens — see the Terms of service panel below and the Notifications page."
     />
+  );
+}
+
+const WELCOME_IMAGE_ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const WELCOME_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+
+/** The bot's /start greeting photo — a coverage-map image, replaceable from here. Not part
+ * of the free-form grid above: an image doesn't fit a text `<Input>`, and the backend
+ * stores it in its own table rather than the JSONB settings bag (see
+ * app/services/media.py).
+ *
+ * The preview is fetched as an authenticated blob rather than a plain `<img src>` — the
+ * endpoint sits behind the same bearer-token auth as the rest of the admin API, which an
+ * `<img>` tag has no way to send. `cacheBust` is threaded into the fetch (both the query
+ * key and the request URL) and bumped after every successful upload, so the browser can't
+ * paint the just-replaced image from a cached copy of "the same" URL.
+ */
+export function WelcomeImagePanel() {
+  const toast = useToast();
+  const [cacheBust, setCacheBust] = useState(() => Date.now());
+  const { data: blob, isLoading, isError, refetch } = useWelcomeImage(cacheBust);
+  const uploadMutation = useUploadWelcomeImage();
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // One object URL alive at a time — each new blob revokes the last, so replacing the
+  // image a dozen times in a session doesn't leak a dozen blob URLs.
+  useEffect(() => {
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [blob]);
+
+  async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // so picking the same filename again still fires onChange
+    if (!file) return;
+    if (!WELCOME_IMAGE_ACCEPTED_TYPES.includes(file.type)) {
+      toast.error(strings.settings.welcomeImageBadType);
+      return;
+    }
+    if (file.size > WELCOME_IMAGE_MAX_BYTES) {
+      toast.error(strings.settings.welcomeImageTooLarge);
+      return;
+    }
+    try {
+      await uploadMutation.mutateAsync(file);
+      setCacheBust(Date.now());
+      toast.success(strings.settings.welcomeImageUploaded);
+    } catch (err) {
+      toast.error(apiErrorMessage(err));
+    }
+  }
+
+  return (
+    <Panel>
+      <Panel.Head
+        title={strings.settings.welcomeImage}
+        subtitle={strings.settings.welcomeImageHint}
+      />
+      <Panel.Body>
+        {isLoading ? (
+          <Skeleton className="h-[180px] w-[320px]" />
+        ) : isError ? (
+          <ErrorState onRetry={refetch} />
+        ) : (
+          <div className="flex items-end gap-4 flex-wrap">
+            {previewUrl && (
+              <img
+                src={previewUrl}
+                alt={strings.settings.welcomeImage}
+                className="w-[320px] max-w-full rounded-lg border border-border object-cover"
+              />
+            )}
+            <div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={WELCOME_IMAGE_ACCEPTED_TYPES.join(",")}
+                className="hidden"
+                onChange={handleFileChange}
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+                isLoading={uploadMutation.isPending}
+              >
+                {strings.settings.welcomeImageReplace}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Panel.Body>
+    </Panel>
   );
 }
 
