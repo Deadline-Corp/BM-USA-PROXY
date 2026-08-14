@@ -33,6 +33,11 @@ const SETTING_LABELS: Record<string, string> = {
   invoice_ttl_minutes: "Invoice lifetime (minutes)",
   rotation_cooldown_sec: "IP rotation cooldown (seconds)",
   pool_low_watermark: "Pool low-stock alert (free slots)",
+  // Comma-separated chats — @username or numeric id — that receive operator alerts:
+  // client messages, reseller enquiries, low stock, the nightly reconciliation. The bot
+  // must be a member of each (an admin, for a channel). Adds to whatever OPS_ALERT_CHAT_ID
+  // is set to at deploy time rather than replacing it.
+  ops_alert_chats: "Operator alert chats (comma-separated)",
   bot_channel_url: "Channel link",
   bot_support_url: "Support link",
 };

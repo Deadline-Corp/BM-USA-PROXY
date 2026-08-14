@@ -76,6 +76,10 @@ def default_settings(tos_version: int = 1) -> dict[str, object]:
         "invoice_ttl_minutes": 60,
         "rotation_cooldown_sec": 60,
         "pool_low_watermark": 10,
+        # Who hears about client messages, reseller enquiries and low stock. Seeded empty
+        # so the field exists in the admin Settings screen; anything set here is added to
+        # OPS_ALERT_CHAT_ID rather than replacing it. See services/ops_alerts.py.
+        "ops_alert_chats": "",
         # Bot keyboard links (Channel/Support). Blank means "use the hardcoded default" —
         # see _DEFAULT_CHANNEL_URL / _DEFAULT_SUPPORT_URL in bot/handlers/start.py — but a
         # seeded row is what makes the fields show up in the admin Settings screen at all.

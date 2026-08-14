@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 from fastapi import APIRouter
@@ -14,11 +15,11 @@ from app.core.errors import Conflict, Forbidden, NotFound, ValidationError
 from app.models import FaqItem, Invoice, ReferralLedger, Request
 from app.services import accesses as accesses_svc
 from app.services import catalog as catalog_svc
+from app.services import ops_alerts, vpn_configs
 from app.services import orders as orders_svc
 from app.services import payouts as payouts_svc
 from app.services import settings as settings_svc
 from app.services import users as users_svc
-from app.services import vpn_configs
 from app.services.notifications import enqueue
 from app.services.payments.invoice_links import invoice_pay_uri, invoice_qr_payload
 from app.services.provisioning.lifecycle import rotate_ip, swap_access
@@ -461,6 +462,16 @@ async def create_request(body: NewRequest, user: CurrentUser, session: DbSession
     req = Request(user_id=user.id, type=body.type, subject=body.subject, body=body.body)
     session.add(req)
     await session.flush()
+    # A reseller enquiry is a lead with nobody watching for it: it landed in the Requests
+    # board and waited to be noticed. Wholesale buyers do not wait. Alert goes to every
+    # operator chat; a failure here must not lose the request that is already stored.
+    with contextlib.suppress(Exception):
+        who = f"@{user.tg_username}" if user.tg_username else (user.first_name or f"#{user.id}")
+        await ops_alerts.notify_ops(
+            session,
+            f"📨 New {body.type} request from {who} (tg {user.tg_user_id})\n"
+            f"{body.subject}\n{body.body[:500]}",
+        )
     return {"id": req.id, "status": req.status}
 
 

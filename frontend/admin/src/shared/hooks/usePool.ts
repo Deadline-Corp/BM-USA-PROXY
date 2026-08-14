@@ -10,6 +10,14 @@ export function usePoolSummary() {
   });
 }
 
+/** Cities with at least one phone — the city picker when issuing an access. */
+export function usePoolLocations() {
+  return useQuery({
+    queryKey: ["pool", "locations"],
+    queryFn: poolApi.locations,
+  });
+}
+
 export function useConnections(params: ListParams) {
   return useQuery({
     queryKey: ["connections", params],

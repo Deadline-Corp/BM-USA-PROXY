@@ -733,6 +733,30 @@ async def message_client(
     return {"queued": True}
 
 
+@router.get("/locations")
+async def list_locations(admin: CurrentAdmin, session: DbSession) -> list[dict[str, Any]]:
+    """Cities the pool actually has, for the pickers that issue an access.
+
+    Read-only on purpose. The Locations *editor* was removed — cities are derived from
+    what iproxy reports and there was nothing for an operator to decide there — but a
+    dropdown still needs the ids, and issuing an access is where "which city" is a real
+    choice. Only cities with at least one connection are listed: offering a city nothing
+    can be allocated from produces a failed issue and no explanation.
+    """
+    rows = (
+        await session.execute(
+            select(Location.id, Location.city, Location.state_code, func.count(Connection.id))
+            .join(Connection, Connection.location_id == Location.id)
+            .group_by(Location.id, Location.city, Location.state_code)
+            .order_by(Location.city)
+        )
+    ).all()
+    return [
+        {"id": str(loc_id), "city": city, "state_code": state, "connections": int(count)}
+        for loc_id, city, state, count in rows
+    ]
+
+
 class IssueAccessBody(BaseModel):
     tariff_code: str
     connection_id: int | None = None
@@ -3189,6 +3213,7 @@ _SETTINGS_WHITELIST: frozenset[str] = frozenset(
         "invoice_ttl_minutes",
         "rotation_cooldown_sec",
         "pool_low_watermark",
+        "ops_alert_chats",
         "attribution",
         "bot_channel_url",
         "bot_support_url",

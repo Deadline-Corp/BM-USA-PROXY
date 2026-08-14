@@ -14,9 +14,9 @@ from typing import Any
 from aiogram import F, Router
 from aiogram.types import Message
 
-from app.core.config import settings
 from app.core.db import SessionFactory
 from app.models import ConversationMessage
+from app.services import ops_alerts
 from app.services.users import upsert_from_telegram
 
 router = Router(name="conversation")
@@ -52,17 +52,13 @@ async def capture_message(message: Message) -> None:
         display = (
             f"@{user.tg_username}" if user.tg_username else (user.first_name or f"#{user.id}")
         )
+        # The telegram id, not just the handle: a handle can be changed at any time and
+        # the operator searching for this person afterwards needs the identifier that
+        # cannot. Same reason the dossier keys off it.
+        who = f"{display} (tg {user.tg_user_id})"
 
-    # Best-effort operator alert — never let a failed notify drop the stored message.
-    if settings.ops_alert_chat_id and message.bot is not None:
+        # Best-effort operator alert — never let a failed notify drop the stored message.
+        # Fans out to every operator chat (support + the owner's channel); see
+        # services/ops_alerts.py for where the list comes from.
         with contextlib.suppress(Exception):
-            # parse_mode=None: the bot defaults to HTML, and both `display`
-            # (first_name) and `body` are attacker-controlled — rendering them as
-            # HTML allows link/markup injection into the operator alert AND lets a
-            # malformed tag raise TelegramBadRequest that the suppress() below would
-            # swallow, silently blinding the operator. This alert needs no markup.
-            await message.bot.send_message(
-                settings.ops_alert_chat_id,
-                f"💬 New message from {display}:\n{body[:500]}",
-                parse_mode=None,
-            )
+            await ops_alerts.notify_ops(session, f"💬 New message from {who}:\n{body[:500]}")

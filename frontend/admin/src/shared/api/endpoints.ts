@@ -29,6 +29,7 @@ import type {
   Paginated,
   Payout,
   PayoutInstruction,
+  PoolLocation,
   PoolSummary,
   Post,
   PostAttribution,
@@ -130,6 +131,8 @@ export const poolApi = {
     apiClient.patch<Connection>(`/connections/${id}`, body).then((r) => r.data),
   sync: () => apiClient.post<void>("/connections/sync").then((r) => r.data),
   summary: () => apiClient.get<PoolSummary>("/pool/summary").then((r) => r.data),
+  // Cities that have at least one phone — the pickers for issuing an access.
+  locations: () => apiClient.get<PoolLocation[]>("/locations").then((r) => r.data),
 };
 
 // ---------- Packages / Accesses ----------

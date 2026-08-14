@@ -149,6 +149,8 @@ export const strings = {
     messagePlaceholder: "Message to the client…",
     messageSent: "Message sent",
     issueAccess: "Issue access",
+    issueCity: "City",
+    issueCarrier: "Carrier",
     /** Tooltip on the compact checkmark next to a client's handle in the table row. */
     termsAccepted: "Terms of Use accepted",
     dossierTos: "Terms of service",

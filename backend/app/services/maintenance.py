@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import contextlib
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import log
 from app.models import Access, AccessEvent, Connection, Invoice, Order
+from app.services import ops_alerts
+from app.services import settings as settings_svc
 from app.services.notifications import enqueue
+from app.services.provisioning import allocator
 from app.services.provisioning.lifecycle import rotate_ip
 from app.services.provisioning.registry import get_provisioner
 
@@ -81,6 +86,67 @@ async def sweep_access_expiries(session: AsyncSession) -> dict[str, int]:
             )
             warned += 1
     return {"warned": warned, "expired": expired}
+
+
+_POOL_ALERT_STATE = "pool_low_alert_state"
+_POOL_ALERT_REPEAT_HOURS = 6
+
+
+async def check_pool_watermark(session: AsyncSession) -> dict[str, Any]:
+    """Tell the operators when sellable stock drops below the configured floor.
+
+    The `pool_low_watermark` setting has existed in the admin console since launch and
+    nothing ever read it — measured on the client's account: seven connections against a
+    threshold of ten, and no alert ever arrived, because this check did not exist. The
+    setting looked like a working feature, which is worse than an absent one.
+
+    "Free" is the allocator's own definition, so the number in the alert is the number of
+    proxies that can actually be sold this second — not a count of phones that happen to
+    be online.
+
+    State is kept so the alert fires on the way down rather than every pass, repeats only
+    every few hours while stock stays low, and says so once when it recovers. A threshold
+    of 0 (the default) disables the whole thing.
+    """
+    threshold = int(await settings_svc.get(session, "pool_low_watermark", 0) or 0)
+    if threshold <= 0:
+        return {"skipped": "disabled"}
+
+    free = await allocator.count_available(session)
+    now = _utcnow()
+    state = await settings_svc.get(session, _POOL_ALERT_STATE, {}) or {}
+    was_low = bool(state.get("low"))
+    notified_at = state.get("notified_at")
+
+    if free < threshold:
+        due = True
+        if was_low and notified_at:
+            with contextlib.suppress(ValueError, TypeError):
+                due = datetime.fromisoformat(str(notified_at)) + timedelta(
+                    hours=_POOL_ALERT_REPEAT_HOURS
+                ) <= now
+        if not due:
+            return {"free": free, "threshold": threshold, "alerted": False}
+        await ops_alerts.notify_ops(
+            session,
+            f"⚠️ Pool is low: {free} proxies free, alert threshold is {threshold}.\n"
+            "Add phones, or free some up in the iproxy console.",
+        )
+        await settings_svc.set_value(
+            session, _POOL_ALERT_STATE, {"low": True, "notified_at": now.isoformat()}
+        )
+        return {"free": free, "threshold": threshold, "alerted": True}
+
+    if was_low:
+        await ops_alerts.notify_ops(
+            session, f"✅ Pool recovered: {free} proxies free (threshold {threshold})."
+        )
+        await settings_svc.set_value(
+            session, _POOL_ALERT_STATE, {"low": False, "notified_at": now.isoformat()}
+        )
+        return {"free": free, "threshold": threshold, "recovered": True}
+
+    return {"free": free, "threshold": threshold, "alerted": False}
 
 
 async def sweep_auto_rotations(session: AsyncSession) -> dict[str, int]:

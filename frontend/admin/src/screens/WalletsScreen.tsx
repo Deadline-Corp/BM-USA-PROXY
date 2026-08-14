@@ -70,6 +70,18 @@ export function WalletsScreen() {
     );
   }
 
+  /** Rails grouped by chain, in the order the backend listed them — that order is the
+   *  configured one, and re-sorting it here would disagree with every other screen. */
+  const railsByChain = useMemo(() => {
+    const groups = new Map<string, PaymentRail[]>();
+    for (const rail of draft ?? []) {
+      const bucket = groups.get(rail.chain);
+      if (bucket) bucket.push(rail);
+      else groups.set(rail.chain, [rail]);
+    }
+    return [...groups];
+  }, [draft]);
+
   /** What the confirm dialog reads out: every address about to change, both directions
    *  of the money flow, because both are irreversible once a transfer goes out. */
   const addressChanges = useMemo(() => {
@@ -169,14 +181,28 @@ export function WalletsScreen() {
             </div>
           )}
 
-          <Panel>
-            <Panel.Head title={strings.wallets.railsTitle} subtitle={strings.wallets.railsHint} />
-            <div className="flex flex-col">
-              {draft.map((rail) => (
-                <RailRow key={railKey(rail)} rail={rail} onChange={(c) => patch(railKey(rail), c)} />
-              ))}
-            </div>
-          </Panel>
+          {/* Grouped by chain rather than one flat list of twelve. An operator comes here
+              with one network in mind ("the Tron address changed"), and a single column of
+              USDT/USDC/TRX/BTC/… made them read every row to find the two that mattered.
+              The header carries the count that is actually accepting money on that chain,
+              so "are we live on Tron" is answered without opening anything. */}
+          {railsByChain.map(([chain, rails]) => (
+            <Panel key={chain}>
+              <Panel.Head
+                title={formatChain(chain)}
+                subtitle={`${rails.filter((r) => r.address.trim()).length} of ${rails.length} ${strings.wallets.accepting.toLowerCase()}`}
+              />
+              <div className="flex flex-col">
+                {rails.map((rail) => (
+                  <RailRow
+                    key={railKey(rail)}
+                    rail={rail}
+                    onChange={(c) => patch(railKey(rail), c)}
+                  />
+                ))}
+              </div>
+            </Panel>
+          ))}
 
           {/* The other direction of the money flow. Down here on purpose: it is read far
               less often than the receiving addresses, and mixing the two lists would

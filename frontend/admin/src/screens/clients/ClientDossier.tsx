@@ -21,14 +21,19 @@ import {
   useUpdateClientNote,
 } from "@/shared/hooks/useClients";
 import { useTariffs } from "@/shared/hooks/useTariffs";
+import { usePoolLocations } from "@/shared/hooks/usePool";
 import { useToast } from "@/shared/components/Toast";
 import { apiErrorMessage } from "@/shared/api/client";
 import { strings } from "@/shared/strings";
 import clsx from "clsx";
+
 import { IconChevronRight, IconMail, IconPlus } from "@/shared/components/icons";
 import { CopyInline } from "@/shared/components/CopyInline";
 import { OrderNumber } from "@/shared/components/OrderNumber";
 import type { ClientDossier as ClientDossierData, ConversationMessage } from "@/shared/api/types";
+
+// The carriers the pool allows, mirroring the DB check constraint on connections.carrier.
+const CARRIERS = ["T-Mobile", "Verizon", "AT&T"] as const;
 
 interface ClientDossierProps {
   clientId: string | null;
@@ -44,6 +49,7 @@ export function ClientDossier({ clientId, onClose }: ClientDossierProps) {
   const messageMutation = useMessageClient();
   const issueMutation = useIssueAccess();
   const tariffsQuery = useTariffs();
+  const locationsQuery = usePoolLocations();
 
   const [note, setNote] = useState("");
   const [noteDirty, setNoteDirty] = useState(false);
@@ -52,6 +58,8 @@ export function ClientDossier({ clientId, onClose }: ClientDossierProps) {
   const [messageText, setMessageText] = useState("");
   const [issueOpen, setIssueOpen] = useState(false);
   const [issueTariff, setIssueTariff] = useState("");
+  const [issueLocationId, setIssueLocationId] = useState("");
+  const [issueCarrier, setIssueCarrier] = useState("");
 
   const profile = data?.profile;
 
@@ -129,10 +137,21 @@ export function ClientDossier({ clientId, onClose }: ClientDossierProps) {
   async function handleIssueAccess() {
     if (!profile || !issueTariff) return;
     try {
-      await issueMutation.mutateAsync({ id: profile.id, body: { tariff_code: issueTariff } });
+      await issueMutation.mutateAsync({
+        id: profile.id,
+        body: {
+          tariff_code: issueTariff,
+          // Omitted rather than sent empty: the allocator reads a missing field as "no
+          // preference", and an empty string is not a city.
+          ...(issueLocationId ? { location_id: issueLocationId } : {}),
+          ...(issueCarrier ? { carrier: issueCarrier } : {}),
+        },
+      });
       toast.success("Access issued");
       setIssueOpen(false);
       setIssueTariff("");
+      setIssueLocationId("");
+      setIssueCarrier("");
     } catch (err) {
       toast.error(apiErrorMessage(err));
     }
@@ -247,18 +266,50 @@ export function ClientDossier({ clientId, onClose }: ClientDossierProps) {
           </>
         }
       >
-        <Select
-          label="Plan"
-          value={issueTariff}
-          onChange={(e) => setIssueTariff(e.target.value)}
-        >
-          <option value="">Select a plan…</option>
-          {tariffsQuery.data?.map((t) => (
-            <option key={t.id} value={t.code}>
-              {t.name} · ${t.price_usd}
-            </option>
-          ))}
-        </Select>
+        <div className="flex flex-col gap-4">
+          <Select
+            label="Plan"
+            value={issueTariff}
+            onChange={(e) => setIssueTariff(e.target.value)}
+          >
+            <option value="">Select a plan…</option>
+            {tariffsQuery.data?.map((t) => (
+              <option key={t.id} value={t.code}>
+                {t.name} · ${t.price_usd}
+              </option>
+            ))}
+          </Select>
+          {/* City and carrier were accepted by the endpoint but had nowhere to be chosen,
+              so every operator-issued access took whatever the allocator happened to pick.
+              Any means exactly that — no constraint — which is the sane default when the
+              customer did not ask for a specific geo. */}
+          <div className="grid grid-cols-2 gap-4">
+            <Select
+              label={strings.clients.issueCity}
+              value={issueLocationId}
+              onChange={(e) => setIssueLocationId(e.target.value)}
+            >
+              <option value="">{strings.common.all}</option>
+              {locationsQuery.data?.map((loc) => (
+                <option key={loc.id} value={loc.id}>
+                  {loc.state_code ? `${loc.city}, ${loc.state_code}` : loc.city} · {loc.connections}
+                </option>
+              ))}
+            </Select>
+            <Select
+              label={strings.clients.issueCarrier}
+              value={issueCarrier}
+              onChange={(e) => setIssueCarrier(e.target.value)}
+            >
+              <option value="">{strings.common.all}</option>
+              {CARRIERS.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </div>
       </Modal>
     </>
   );

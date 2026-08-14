@@ -18,6 +18,7 @@ from app.core.logging import log
 from app.models import Broadcast, Invoice
 from app.services import referral
 from app.services.maintenance import (
+    check_pool_watermark,
     expire_invoices,
     sweep_access_expiries,
     sweep_auto_rotations,
@@ -34,6 +35,14 @@ async def expiry_sweeper(ctx: dict) -> dict[str, int]:
         result = await sweep_access_expiries(s)
         await s.commit()
     await _beat(ctx, "expiry_sweeper")
+    return result
+
+
+async def pool_watermark(ctx: dict) -> dict[str, Any]:
+    async with SessionFactory() as s:
+        result = await check_pool_watermark(s)
+        await s.commit()
+    await _beat(ctx, "pool_watermark")
     return result
 
 

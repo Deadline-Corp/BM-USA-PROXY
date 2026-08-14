@@ -147,6 +147,13 @@ export interface ClientDossier {
   messages: ConversationMessage[];
 }
 
+export interface PoolLocation {
+  id: string;
+  city: string;
+  state_code: string;
+  connections: number;
+}
+
 export interface IssueAccessRequest {
   tariff_code: string;
   connection_id?: string;

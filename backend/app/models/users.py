@@ -90,4 +90,11 @@ class AdminUser(Base):
 
     __table_args__ = (
         CheckConstraint("role IN ('owner','operator')", name="role_valid"),
+        # Declared here because migration 0010 creates it. Without it in the model,
+        # `alembic check` reports drift and proposes dropping the index on every run —
+        # the CI step that exists to catch a schema the code no longer describes was
+        # failing on a schema the code simply forgot to mention.
+        # It is a real guarantee, not bookkeeping: one Telegram account must not be able
+        # to receive sign-in codes for two console accounts.
+        Index("uq_admin_telegram_user", "telegram_user_id", unique=True),
     )

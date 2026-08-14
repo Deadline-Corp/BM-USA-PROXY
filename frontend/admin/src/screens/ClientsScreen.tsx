@@ -83,8 +83,12 @@ export function ClientsScreen() {
                   )}
                 </div>
                 <div className="flex items-center gap-1.5">
+                  {/* Handle AND telegram id, not one or the other. A handle can be changed
+                      at any moment — the same person then looks like a stranger in every
+                      screenshot and search anyone made before. The id never changes, and
+                      it is what this client's whole history is keyed on. */}
                   <span className="font-mono text-[.78rem] text-text-3 truncate min-w-0">
-                    {c.telegram_username ? `@${c.telegram_username}` : c.telegram_id}
+                    {c.telegram_username ? `@${c.telegram_username} · ${c.telegram_id}` : c.telegram_id}
                   </span>
                   {c.terms_accepted && (
                     <span className="flex-none" title={strings.clients.termsAccepted}>
