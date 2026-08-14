@@ -75,6 +75,13 @@ export interface Client {
   has_active_access: boolean;
   banned: boolean;
   operator_note: string | null;
+  /** Inbound messages from this client still unread by an operator — same read_at the
+   *  sidebar "Clients" badge counts and the dossier clears on open. */
+  unread_messages: number;
+  /** Accepted the currently published Terms of Use version — see ClientTos for the
+   *  full picture (version, answers) shown in the dossier. */
+  terms_accepted: boolean;
+  terms_accepted_at: string | null;
 }
 
 export interface ClientTos {

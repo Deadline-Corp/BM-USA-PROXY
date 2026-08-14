@@ -104,10 +104,10 @@ export function TariffFormModal({ open, onClose, tariff }: TariffFormModalProps)
     try {
       if (isEdit && tariff) {
         await updateMutation.mutateAsync({ id: tariff.id, body: payload });
-        toast.success("Tariff updated");
+        toast.success("Plan updated");
       } else {
         await createMutation.mutateAsync(payload);
-        toast.success("Tariff created");
+        toast.success("Plan created");
       }
       onClose();
     } catch (err) {

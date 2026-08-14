@@ -47,6 +47,8 @@ export const strings = {
     orderNotFound: "This order could not be found.",
     accessNotFound: "This access could not be found.",
     rotateCooldown: "IP rotation is cooling down. Try again shortly.",
+    paymentsUnconfigured:
+      "Purchases aren't available yet — an administrator must add a receiving wallet address in the admin console (Wallets) first.",
   },
 
   openInTelegram: {
@@ -114,6 +116,7 @@ export const strings = {
     free: "Free",
     autoIssued: "Auto-issued",
     buyPrefix: "Buy",
+    paymentsUnavailableCta: "Not available yet",
     resellerTitle: "Reseller / wholesale",
     resellerBody: "Custom pricing · request a quote for bulk access",
     resellerCta: "Request quote",
@@ -137,6 +140,10 @@ export const strings = {
     slotsFree: "free",
     slotsSoldOut: "Sold out",
     needHelp: "Need help?",
+    // Generic labels, not the @username — an operator can point the link at a private
+    // invite (e.g. "https://t.me/+AbCdEf"), which has no username to show.
+    supportLinkLabel: "Support",
+    channelLinkLabel: "Channel",
   },
 
   checkout: {
@@ -269,6 +276,8 @@ export const strings = {
     commonQuestions: "Common questions",
     contactSupport: "Contact support",
     contactSupportBody: "Responses in minutes",
+    // Button label, not the @username — same reasoning as catalog.supportLinkLabel.
+    contactSupportCta: "Support",
     newRequest: "New request",
     newRequestFormTitle: "New support request",
     subjectLabel: "Subject",

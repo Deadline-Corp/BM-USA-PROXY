@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { LayoutGrid, MapPin, Radio, Send, Briefcase, Users, MessageCircle, ChevronRight } from "lucide-react";
 import { useCatalog } from "../shared/hooks/useCatalog";
 import { useCreateOrder, usePaymentMethods } from "../shared/hooks/useOrder";
+import { DEFAULT_CHANNEL_URL, DEFAULT_SUPPORT_URL, useAppLinks } from "../shared/hooks/useLinks";
 import { useCreateRequest } from "../shared/hooks/useRequests";
 import { useTermsGate } from "../shared/hooks/useTermsGate";
 import { useRequireTos } from "../shared/hooks/useRequireTos";
@@ -32,6 +33,9 @@ export function CatalogScreen() {
   const requireTos = useRequireTos();
   const { showToast } = useToast();
   const navigate = useNavigate();
+  const linksQuery = useAppLinks();
+  const channelUrl = linksQuery.data?.channel_url ?? DEFAULT_CHANNEL_URL;
+  const supportUrl = linksQuery.data?.support_url ?? DEFAULT_SUPPORT_URL;
 
   const [locationId, setLocationId] = useState<number | typeof ANY>(ANY);
   const [carrier, setCarrier] = useState<Carrier | typeof ANY>(ANY);
@@ -40,6 +44,10 @@ export function CatalogScreen() {
   // Coin choice is a blocking step between Buy and the invoice — see handleBuy.
   const methodsQuery = usePaymentMethods();
   const methods = methodsQuery.data?.methods ?? [];
+  // No rail saved in the admin console yet: every paid purchase would fail. Gated on
+  // isLoading so this doesn't flash true for a frame on every load while the first fetch is
+  // still in flight — only once we actually know the list is empty.
+  const paymentsUnconfigured = !methodsQuery.isLoading && methods.length === 0;
   const [paySheetOpen, setPaySheetOpen] = useState(false);
   const [payingFor, setPayingFor] = useState<Tariff | null>(null);
   const [payChain, setPayChain] = useState<string>("");
@@ -111,6 +119,7 @@ export function CatalogScreen() {
       if (error instanceof ApiError) {
         if (error.status === 409) setOrderError(strings.errors.soldOut);
         else if (error.status === 422) setOrderError(strings.errors.trialUsed);
+        else if (error.status === 503) setOrderError(strings.errors.paymentsUnconfigured);
         else if (error.status !== 428) setOrderError(error.message);
       } else {
         setOrderError(strings.errors.generic);
@@ -137,7 +146,14 @@ export function CatalogScreen() {
   }
 
   const trialTariff = catalogQuery.data?.tariffs.find((t) => t.code === "trial");
-  const otherTariffs = catalogQuery.data?.tariffs.filter((t) => t.code !== "trial") ?? [];
+  // Only self-service-purchasable plans belong in "choose your plan" — mirrors the backend
+  // gate in orders.py::create_order (kind must be "auto" and auto_issue must be true).
+  // Manual/quote-only tariffs like reseller have no price and can't be bought here; they
+  // get their own request-a-quote section further down the screen.
+  const otherTariffs =
+    catalogQuery.data?.tariffs.filter(
+      (t) => t.code !== "trial" && t.kind === "auto" && t.auto_issue,
+    ) ?? [];
   const bestValueCode = otherTariffs.reduce<string | null>((bestCode, t) => {
     if (!bestCode) return t.code;
     const best = otherTariffs.find((x) => x.code === bestCode);
@@ -184,6 +200,16 @@ export function CatalogScreen() {
           <ChevronRight size={14} className="shrink-0 text-text-3" aria-hidden="true" />
         </button>
       </div>
+
+      {paymentsUnconfigured ? (
+        <div className="mb-3">
+          <ErrorState
+            message={strings.errors.paymentsUnconfigured}
+            onRetry={() => methodsQuery.refetch()}
+            compact
+          />
+        </div>
+      ) : null}
 
       {orderError ? (
         <div className="mb-3">
@@ -252,10 +278,16 @@ export function CatalogScreen() {
                   <Button
                     variant="primary"
                     block
-                    disabled={pendingTariff === tariff.code}
+                    disabled={pendingTariff === tariff.code || paymentsUnconfigured}
                     onClick={() => handleBuy(tariff)}
                   >
-                    {strings.catalog.buyPrefix} {tariff.name} — <Num>{formatUsd(tariff.price_usd)}</Num>
+                    {paymentsUnconfigured ? (
+                      strings.catalog.paymentsUnavailableCta
+                    ) : (
+                      <>
+                        {strings.catalog.buyPrefix} {tariff.name} — <Num>{formatUsd(tariff.price_usd)}</Num>
+                      </>
+                    )}
                   </Button>
                 }
               />
@@ -316,7 +348,7 @@ export function CatalogScreen() {
       <SectionLabel className="mt-[18px]">{strings.catalog.needHelp}</SectionLabel>
       <div className="flex flex-col">
         <a
-          href="https://t.me/usproxy_support"
+          href={supportUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-3 border-b border-border py-3 no-underline last:border-b-0"
@@ -325,13 +357,13 @@ export function CatalogScreen() {
             <Send size={17} strokeWidth={1.5} aria-hidden="true" />
           </span>
           <span className="min-w-0 flex-1">
-            <b className="block text-[13.5px] font-medium text-text">@usproxy_support</b>
+            <b className="block text-[13.5px] font-medium text-text">{strings.catalog.supportLinkLabel}</b>
             <small className="text-[11.5px] text-text-3">Free trial · all sales inquiries</small>
           </span>
           <ChevronRight size={15} className="shrink-0 text-text-3" aria-hidden="true" />
         </a>
         <a
-          href="https://t.me/usproxyclub"
+          href={channelUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-3 border-b border-border py-3 no-underline last:border-b-0"
@@ -340,7 +372,7 @@ export function CatalogScreen() {
             <MessageCircle size={17} strokeWidth={1.5} aria-hidden="true" />
           </span>
           <span className="min-w-0 flex-1">
-            <b className="block text-[13.5px] font-medium text-text">@usproxyclub</b>
+            <b className="block text-[13.5px] font-medium text-text">{strings.catalog.channelLinkLabel}</b>
             <small className="text-[11.5px] text-text-3">BM USA PROXY CLUB · news &amp; updates</small>
           </span>
           <ChevronRight size={15} className="shrink-0 text-text-3" aria-hidden="true" />

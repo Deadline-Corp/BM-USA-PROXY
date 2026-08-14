@@ -422,10 +422,14 @@ async def list_clients(
 
     rows, total = await _paginated(session, stmt, count_stmt, limit=limit, offset=offset)
     user_ids = [user.id for (user,) in rows]
-    # Two bulk queries replace the per-client N+1 (total_spent + active_count).
-    # Kept separate to avoid a cartesian-product inflation between orders and accesses.
+    # Bulk queries replace the per-client N+1 (total_spent + active_count + unread +
+    # terms-accepted). Kept separate to avoid a cartesian-product inflation between
+    # orders/accesses/messages/tos_acceptances.
     spent_by_user: dict[int, float] = {}
     active_by_user: dict[int, int] = {}
+    unread_by_user: dict[int, int] = {}
+    tos_accepted_by_user: dict[int, str] = {}
+    tos_version = None
     if user_ids:
         spent_rows = (
             await session.execute(
@@ -447,6 +451,36 @@ async def list_clients(
         ).all()
         for uid, active in active_rows:
             active_by_user[uid] = int(active or 0)
+        # Same "unread inbound, not yet read" definition as the sidebar badge
+        # (dashboard_summary above) and the same read_at the dossier stamps on open —
+        # one GROUP BY for the whole page rather than a query per row.
+        unread_rows = (
+            await session.execute(
+                select(ConversationMessage.user_id, func.count(ConversationMessage.id))
+                .where(
+                    ConversationMessage.user_id.in_(user_ids),
+                    ConversationMessage.direction == "in",
+                    ConversationMessage.read_at.is_(None),
+                )
+                .group_by(ConversationMessage.user_id)
+            )
+        ).all()
+        for uid, cnt in unread_rows:
+            unread_by_user[uid] = int(cnt or 0)
+        # Same semantics as services.users.is_tos_accepted: accepted means a row on file
+        # for the *currently published* version, not merely "accepted some version once".
+        tos_version = (await settings_svc.get(session, "tos", {})).get("version")
+        if tos_version:
+            tos_rows = (
+                await session.execute(
+                    select(TosAcceptance.user_id, TosAcceptance.accepted_at).where(
+                        TosAcceptance.user_id.in_(user_ids),
+                        TosAcceptance.version == tos_version,
+                    )
+                )
+            ).all()
+            for uid, accepted_at in tos_rows:
+                tos_accepted_by_user[uid] = accepted_at.isoformat()
     items = []
     for (user,) in rows:
         items.append(
@@ -459,6 +493,11 @@ async def list_clients(
                 "has_active_access": active_by_user.get(user.id, 0) > 0,
                 "banned": user.status == "banned",
                 "operator_note": user.operator_note,
+                "unread_messages": unread_by_user.get(user.id, 0),
+                # No version published yet (tos_version falsy) gates nobody — same
+                # vacuous-true fallback as is_tos_accepted.
+                "terms_accepted": not tos_version or user.id in tos_accepted_by_user,
+                "terms_accepted_at": tos_accepted_by_user.get(user.id),
             }
         )
     return {"items": items, "total": total}
@@ -836,6 +875,13 @@ def _connection_view(
         "external_id": c.iproxy_connection_id,
         "city": city,
         "state": state,
+        # What our own GeoIP lookup says about the phone's actual exit IP right now —
+        # separate from city/state above, which is what it is sold as. The two can
+        # disagree (iproxy's own city label is not trustworthy; that's the point).
+        "geo_city": c.geo_city,
+        "geo_state": c.geo_state,
+        "geo_ip": c.geo_ip,
+        "geo_resolved_at": c.geo_resolved_at.isoformat() if c.geo_resolved_at else None,
         "carrier": c.carrier,
         "online": c.online_status == "online",
         "is_sellable": c.is_sellable,
@@ -3097,6 +3143,8 @@ _SETTINGS_WHITELIST: frozenset[str] = frozenset(
         "rotation_cooldown_sec",
         "pool_low_watermark",
         "attribution",
+        "bot_channel_url",
+        "bot_support_url",
     }
 )
 

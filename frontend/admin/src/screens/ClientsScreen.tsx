@@ -15,7 +15,7 @@ import { usePagination } from "@/shared/hooks/usePagination";
 import { strings } from "@/shared/strings";
 import type { Client } from "@/shared/api/types";
 import { ClientDossier } from "@/screens/clients/ClientDossier";
-import { IconRefresh } from "@/shared/components/icons";
+import { IconCheckPlain, IconRefresh } from "@/shared/components/icons";
 
 export function ClientsScreen() {
   const [searchParams] = useSearchParams();
@@ -71,9 +71,26 @@ export function ClientsScreen() {
                 {initials(c.display_name)}
               </div>
               <div className="min-w-0">
-                <div className="text-text font-medium truncate">{c.display_name ?? "Unnamed"}</div>
-                <div className="font-mono text-[.78rem] text-text-3 truncate">
-                  {c.telegram_username ? `@${c.telegram_username}` : c.telegram_id}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-text font-medium truncate min-w-0">{c.display_name ?? "Unnamed"}</span>
+                  {c.unread_messages > 0 && (
+                    <span
+                      className="inline-flex items-center justify-center flex-none min-w-[17px] h-[17px] px-1 rounded-full bg-accent font-mono text-[.66rem] font-semibold tabular-nums text-on-accent"
+                      title={`${c.unread_messages} unread message${c.unread_messages === 1 ? "" : "s"}`}
+                    >
+                      {c.unread_messages}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono text-[.78rem] text-text-3 truncate min-w-0">
+                    {c.telegram_username ? `@${c.telegram_username}` : c.telegram_id}
+                  </span>
+                  {c.terms_accepted && (
+                    <span className="flex-none" title={strings.clients.termsAccepted}>
+                      <IconCheckPlain className="w-3 h-3 text-success" />
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

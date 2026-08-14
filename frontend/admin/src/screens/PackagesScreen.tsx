@@ -152,7 +152,7 @@ export function PackagesScreen() {
         cell: ({ row }) => <span className="font-mono text-[.8rem]">{row.original.ip ?? "—"}</span>,
       },
       {
-        header: "Tariff",
+        header: "Plan",
         accessorKey: "tariff_code",
       },
       {

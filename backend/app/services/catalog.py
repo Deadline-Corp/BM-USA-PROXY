@@ -67,6 +67,7 @@ async def get_catalog(session: AsyncSession, user: User) -> dict[str, Any]:
                 "name": t.name,
                 "description": t.description,
                 "kind": t.kind,
+                "auto_issue": t.auto_issue,
                 "duration_minutes": t.duration_minutes,
                 "price_usd": float(t.price_usd),
                 "max_user_swaps": t.max_user_swaps,

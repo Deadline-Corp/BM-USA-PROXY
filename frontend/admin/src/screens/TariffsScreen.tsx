@@ -60,7 +60,7 @@ export function TariffsScreen() {
         ) : isError ? (
           <ErrorState onRetry={refetch} />
         ) : rows.length === 0 ? (
-          <EmptyState title="No tariffs yet" action={<Button variant="ghost" size="sm" onClick={openCreate}>{strings.tariffs.create}</Button>} />
+          <EmptyState title="No plans yet" action={<Button variant="ghost" size="sm" onClick={openCreate}>{strings.tariffs.create}</Button>} />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-[.86rem]">
