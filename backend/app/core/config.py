@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     iproxy_api_key: str | None = None
     iproxy_base_url: str = "https://iproxy.online"
 
+    # GeoIP — local .mmdb city/state lookup for a connection's real exit IP (see
+    # services/provisioning/geoip.py). Baked into the image at build time; see
+    # backend/scripts/fetch_geoip_db.py and backend/Dockerfile.api / Dockerfile.worker.
+    geoip_db_path: str = "/app/data/geoip-city.mmdb"
+
     # Payments
     payment_provider: str = "mock"
     payment_api_key: str | None = None

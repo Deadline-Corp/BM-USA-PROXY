@@ -9,6 +9,9 @@ COPY --from=ghcr.io/astral-sh/uv:0.5.20 /uv /usr/local/bin/uv
 
 COPY . .
 RUN uv pip install --system .
+# GeoIP city/state database — fetched once here, never at runtime. Attribution: DB-IP
+# City Lite (https://db-ip.com), CC-BY 4.0. See scripts/fetch_geoip_db.py.
+RUN python3 scripts/fetch_geoip_db.py
 
 RUN useradd -r -u 10001 appuser && chown -R appuser /app
 USER appuser
