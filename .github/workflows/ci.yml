@@ -72,7 +72,14 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0 # scan the history, not just the tip commit
+      # gitleaks itself is MIT and free; it is their *GitHub Action* that requires a paid
+      # licence for organisation-owned repos, and without one it fails on every run:
+      # "[Deadline-Corp] is an organization. License key is required." A red step nobody
+      # can turn green is a step everybody learns to ignore, so this runs the scanner
+      # directly. Same tool, same rules, pinned by tag.
       - name: Secret scan (gitleaks)
-        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo zricethezav/gitleaks:v8.28.0 \
+            git --no-banner --redact --exit-code 1

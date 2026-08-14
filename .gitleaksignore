@@ -1,0 +1,8 @@
+# Findings gitleaks has already been judged on, by fingerprint
+# (commit:file:rule:line). Anything not listed here still fails the build.
+#
+# Reviewed 2026-08-14: the flagged line is `await extend_access(session, access=access,
+# minutes=order.duration_minutes or 0)` — ordinary code with no credential in it. The
+# `generic-api-key` rule matches on entropy and hits long identifier-heavy lines like this
+# one. The commit is in history, so the finding cannot be edited away without a rewrite.
+181da3e875102987cc131f5e3e9415a103a23269:backend/app/services/orders.py:generic-api-key:119
