@@ -86,15 +86,25 @@ _NETWORK_LABELS = {
 
 
 @router.get("/payment-methods")
-async def payment_methods() -> dict[str, Any]:
+async def payment_methods(session: DbSession) -> dict[str, Any]:
     """Rails the buyer may pay on, in configured order.
 
     Without this the mini app had no way to offer a choice, so every order was quoted in
     whichever rail happened to be listed first.
+
+    The refresh is why this takes a session. Console-saved rails live in app_settings and
+    reach the config through refresh_rails(); the process-wide override starts empty on
+    every boot. Reading the config without one meant this endpoint answered from
+    ONCHAIN_METHODS alone — empty on this deployment — so after each restart the mini app
+    told buyers payments were not configured until some *other* request happened to
+    refresh the config. Measured right after a deploy: the rail was in the database and
+    this endpoint returned nothing.
     """
     from app.services.payments.onchain.config import get_onchain_config
+    from app.services.payments.onchain.rails import refresh_rails
 
     try:
+        await refresh_rails(session)
         cfg = get_onchain_config()
     except Exception:
         return {"methods": []}

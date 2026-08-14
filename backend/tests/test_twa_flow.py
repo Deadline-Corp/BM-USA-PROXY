@@ -277,12 +277,15 @@ _BTC_ADDR = "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"
 
 async def test_payment_methods_lists_only_the_rails_with_a_saved_address(
     client: AsyncClient,
+    session,
 ) -> None:
-    """A console submission fills in two of twelve supported rails; the buyer sees two."""
-    import json
+    """A console submission fills in two of twelve supported rails; the buyer sees two.
 
-    from app.services.payments.onchain.config import set_rails_override
-    from app.services.payments.onchain.rails import normalise_rails, supported_rails
+    Saved through save_rails, the way the admin screen does it, rather than by poking the
+    in-process override: the endpoint re-reads the stored rails on every call, so an
+    override with nothing behind it in the database is not a state production can be in.
+    """
+    from app.services.payments.onchain.rails import save_rails, supported_rails
 
     filled = {("USDT", "trc20"): _TRC20_ADDR, ("BTC", "native"): _BTC_ADDR}
     raw = [
@@ -290,8 +293,8 @@ async def test_payment_methods_lists_only_the_rails_with_a_saved_address(
         for asset, network, _chain in supported_rails()
     ]
     assert len(raw) == 12  # every rail the watcher supports, ten of them left blank here
-    normalized = normalise_rails(raw, network="mainnet")
-    set_rails_override(json.dumps(normalized))
+    await save_rails(session, raw, admin_id=None, network="mainnet")
+    await session.commit()
 
     r = await client.get("/api/twa/payment-methods")
     assert r.status_code == 200
@@ -300,18 +303,21 @@ async def test_payment_methods_lists_only_the_rails_with_a_saved_address(
     assert len(methods) == 2  # the other ten are absent, not merely empty/disabled
 
 
-async def test_payment_methods_drops_a_rail_with_no_address(client: AsyncClient) -> None:
+async def test_payment_methods_drops_a_rail_with_no_address(
+    client: AsyncClient, session
+) -> None:
     """A single blank address must not surface as something the buyer can pay with."""
-    import json
-
-    from app.services.payments.onchain.config import set_rails_override
-    from app.services.payments.onchain.rails import normalise_rails
+    from app.services.payments.onchain.rails import normalise_rails, save_rails
 
     normalized = normalise_rails(
         [{"asset": "USDT", "network": "trc20", "address": ""}], network="mainnet"
     )
     assert normalized == []  # normalise_rails itself already dropped it — see rails.py
-    set_rails_override(json.dumps(normalized))
+    await save_rails(
+        session, [{"asset": "USDT", "network": "trc20", "address": ""}],
+        admin_id=None, network="mainnet",
+    )
+    await session.commit()
 
     r = await client.get("/api/twa/payment-methods")
     assert r.status_code == 200
