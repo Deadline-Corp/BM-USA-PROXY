@@ -6,6 +6,7 @@ import json
 from decimal import Decimal
 
 import pytest
+from app.core.errors import PaymentsUnconfigured
 from app.services.payments.onchain.config import OnchainConfigError, load_config
 from app.services.payments.onchain.oracle import PriceOracle
 from app.services.payments.onchain.provider import OnchainProvider
@@ -74,6 +75,24 @@ async def test_create_invoice_unknown_rail_raises() -> None:
             order_public_id="o4", amount_usd=Decimal("5"), ttl_minutes=10,
             asset="DOGE", network="native",
         )
+
+
+async def test_create_invoice_no_rails_configured_raises_payments_unconfigured() -> None:
+    """Zero configured rails is a buyer/business-owner-facing problem, not an internal one.
+
+    Before this, "no on-chain payment methods are configured" was a bare ``OnchainConfigError``
+    — not a ``DomainError`` — so it fell through FastAPI's handler and surfaced as an opaque
+    500 instead of a clear, actionable message (see PaymentsUnconfigured).
+    """
+
+    async def src(_cg: str) -> Decimal:
+        return Decimal("150")
+
+    provider = OnchainProvider(config=load_config(None, "{}"), oracle=PriceOracle(source=src))
+    with pytest.raises(PaymentsUnconfigured) as exc_info:
+        await provider.create_invoice(order_public_id="o5", amount_usd=Decimal("5"), ttl_minutes=10)
+    assert "administrator" in str(exc_info.value)
+    assert "Wallets" in str(exc_info.value)
 
 
 def test_reference_is_deterministic_base58() -> None:

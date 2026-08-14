@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import (
     Conflict,
     NotFound,
+    PaymentsUnconfigured,
     ProvisioningError,
     TermsNotAccepted,
     ValidationError,
@@ -21,10 +22,12 @@ from app.services import settings as settings_svc
 from app.services.catalog import trial_available
 from app.services.notifications import enqueue
 from app.services.payments.base import InvoiceDTO
+from app.services.payments.onchain.config import get_onchain_config
 from app.services.payments.onchain.rails import refresh_rails
 from app.services.payments.registry import get_payment_provider
 from app.services.provisioning.allocator import count_available
 from app.services.provisioning.lifecycle import extend_access, provision_access
+from app.services.ratelimit_helpers import order_guard
 from app.services.users import is_tos_accepted
 
 
@@ -86,6 +89,39 @@ async def _ensure_unique_crypto_amount(session: AsyncSession, provider_name: str
         if clash is None:
             return
         dto.crypto_amount += step
+
+
+async def guard_order_attempt(session: AsyncSession, *, user_id: int, tariff_code: str) -> None:
+    """Apply the order rate limit — unless this specific attempt is certain to fail anyway.
+
+    A paid-tariff purchase against a store with zero on-chain rails configured always ends
+    in ``PaymentsUnconfigured``, no matter how the buyer behaves. Checking that here, before
+    ``order_guard``, means those guaranteed failures stop reaching the payment provider only
+    *after* spending one of the buyer's 10/hour order attempts — which is how a business
+    owner's own test clicks used to burn the whole budget and hide the real error behind a
+    429 ``rate_limited`` (see PaymentsUnconfigured for the actual problem). Free tariffs
+    (trial) never touch the payment provider, so they are never blocked here — only a paid
+    tariff with no configured rail short-circuits before it can spend a slot.
+
+    Gated on the on-chain provider actually being the active one: "no on-chain rail" only
+    predicts a failure when ``create_order`` below is going to ask the on-chain provider for
+    an invoice. Under ``PAYMENT_PROVIDER=mock`` (every non-prod default) or any future
+    non-on-chain provider, an empty on-chain rail list means nothing — checking it anyway
+    would block purchases a real attempt could satisfy just fine.
+    """
+    if get_payment_provider().name == "onchain":
+        await refresh_rails(session)
+        if get_onchain_config().default_method() is None:
+            price = await session.scalar(
+                select(Tariff.price_usd).where(Tariff.code == tariff_code, Tariff.is_active)
+            )
+            if price is not None and float(price) > 0:
+                raise PaymentsUnconfigured(
+                    "Payments are not set up yet: an administrator must add at least one "
+                    "receiving wallet address in the admin console (Wallets), after which "
+                    "purchases will work."
+                )
+    await order_guard(user_id)
 
 
 async def create_order(

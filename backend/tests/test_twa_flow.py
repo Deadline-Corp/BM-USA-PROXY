@@ -6,6 +6,7 @@ trial one-per-user + swap semantics.
 
 from __future__ import annotations
 
+import pytest
 import pytest_asyncio
 from app.api import deps
 from app.core.redis import redis_client
@@ -83,6 +84,45 @@ async def test_terms_gate_blocks_then_allows(client: AsyncClient) -> None:
     body = r.json()
     assert body["order"]["status"] == "awaiting_payment"
     assert body["invoice"]["amount_usd"] == 10.0
+
+
+async def test_paid_order_with_no_wallets_configured_gives_clear_error_not_rate_limit(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reproduces the reported incident: an owner opened the mini app, tapped Buy, and only
+    ever saw `too many requests for orders:3` — because 0 of the on-chain rails were ever
+    saved in the admin console, every attempt failed the same way, and by the time they
+    reported it the real error was already hidden behind the order rate limit.
+
+    Two things must both hold now: the failure is a clear `payments_unconfigured` (not a
+    bare 500, not a 429), and — because it's certain to fail regardless of how many times the
+    buyer tries — it must never consume the 10/hour order_guard budget. Trial is free and
+    never touches the payment provider, so it must keep working through all of this.
+    """
+    from app.services.payments.onchain.config import set_rails_override
+    from app.services.payments.onchain.provider import OnchainProvider
+
+    # Tests default to PAYMENT_PROVIDER=mock, which never looks at on-chain rails at all —
+    # force the real on-chain provider so this test actually exercises the reported path.
+    monkeypatch.setattr("app.services.orders.get_payment_provider", lambda: OnchainProvider())
+    set_rails_override("[]")  # 0 of N rails saved — the exact state the owner hit
+
+    await _accept_terms(client)
+
+    # 11 attempts is one past the 10/hour order_guard limit. Every single one must still
+    # report the real, actionable problem — none of them may burn down into rate_limited.
+    for attempt in range(11):
+        r = await client.post("/api/twa/orders", json={"tariff_code": "daily"})
+        assert r.status_code == 503, f"attempt {attempt}: {r.status_code} {r.text}"
+        body = r.json()
+        assert body["error"]["code"] == "payments_unconfigured"
+        assert "administrator" in body["error"]["message"]
+        assert "Wallets" in body["error"]["message"]
+
+    # Free trial never needs a wallet — it must still go through untouched.
+    trial = await client.post("/api/twa/orders", json={"tariff_code": "trial"})
+    assert trial.status_code == 200, trial.text
+    assert trial.json()["order"]["status"] == "completed"
 
 
 async def test_buy_pay_and_receive_access(client: AsyncClient) -> None:

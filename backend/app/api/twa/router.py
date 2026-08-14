@@ -22,7 +22,6 @@ from app.services import vpn_configs
 from app.services.notifications import enqueue
 from app.services.payments.invoice_links import invoice_pay_uri, invoice_qr_payload
 from app.services.provisioning.lifecycle import rotate_ip, swap_access
-from app.services.ratelimit_helpers import order_guard  # thin wrapper, defined below
 
 router = APIRouter(prefix="/api/twa", tags=["twa"])
 
@@ -120,6 +119,18 @@ async def payment_methods() -> dict[str, Any]:
     return {"methods": out}
 
 
+@router.get("/links")
+async def links(session: DbSession) -> dict[str, Any]:
+    """Channel/Support links, operator-editable in the admin Settings screen.
+
+    Deliberately no CurrentUser here (session only): get_current_user 403s a banned
+    account (see AccountBanned in api/deps.py), and BannedScreen.tsx shows this exact
+    Support link to exactly that user — the one who most needs a way to reach a human.
+    Nothing sensitive is returned, just two public Telegram links.
+    """
+    return await settings_svc.app_links(session)
+
+
 def _invoice_view(inv: Invoice | None, order_public_id: str | None = None) -> dict[str, Any] | None:
     if inv is None:
         return None
@@ -154,7 +165,7 @@ def _invoice_view(inv: Invoice | None, order_public_id: str | None = None) -> di
 
 @router.post("/orders")
 async def create_order(body: CreateOrder, user: CurrentUser, session: DbSession) -> dict[str, Any]:
-    await order_guard(user.id)
+    await orders_svc.guard_order_attempt(session, user_id=user.id, tariff_code=body.tariff_code)
     order, invoice = await orders_svc.create_order(
         session, user=user, tariff_code=body.tariff_code,
         location_id=body.location_id, carrier=body.carrier,

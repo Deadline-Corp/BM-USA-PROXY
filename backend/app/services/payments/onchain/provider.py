@@ -12,6 +12,7 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+from app.core.errors import PaymentsUnconfigured
 from app.services.payments.base import (
     InvoiceDTO,
     InvoiceStatusDTO,
@@ -46,7 +47,15 @@ class OnchainProvider:
             return self._config.require_method(asset, network)
         method = self._config.default_method()
         if method is None:
-            raise OnchainConfigError("no on-chain payment methods are configured")
+            # Zero rails configured at all (vs. a specific asset/network not being one of
+            # them) — the only case that means "an admin hasn't set this up yet" rather than
+            # a malformed config, so it gets the buyer/business-owner-facing domain error
+            # instead of the internal-only OnchainConfigError other failures below still use.
+            raise PaymentsUnconfigured(
+                "Payments are not set up yet: an administrator must add at least one "
+                "receiving wallet address in the admin console (Wallets), after which "
+                "purchases will work."
+            )
         return method
 
     async def create_invoice(

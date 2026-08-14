@@ -91,6 +91,20 @@ class PaymentError(DomainError):
     status = 502
 
 
+class PaymentsUnconfigured(DomainError):
+    """No on-chain receiving wallet is configured yet.
+
+    Raised where checkout resolves which rail to quote (``OnchainProvider._resolve_method``)
+    and finds zero rails set up — the exact state a store is in before an admin has ever
+    saved a wallet address in the console. 503, not 4xx: the request itself is fine, it is
+    our own payment configuration that is incomplete, and that is worth an operator noticing
+    rather than blending into normal client-error noise.
+    """
+
+    code = "payments_unconfigured"
+    status = 503
+
+
 class ProvisioningError(DomainError):
     """iproxy provisioning error."""
 
