@@ -3,6 +3,7 @@ import { api, ApiError } from "../api/client";
 import type {
   AccessDetail,
   AccessesResponse,
+  AutoRotateBody,
   ConfigBody,
   ConfigResponse,
   CreateOrderResponse,
@@ -47,6 +48,21 @@ export function useRotateIp(publicId: string | undefined) {
     },
     // Swallow 429 here — callers use isError + error to drive the cooldown UI directly.
     retry: false,
+  });
+}
+
+/** Turn scheduled rotation on (with an interval, in minutes) or off. */
+export function useSetAutoRotate(publicId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: AutoRotateBody) =>
+      api.put<{ auto_rotate_minutes: number | null }>(`/accesses/${publicId}/auto-rotate`, body),
+    onSuccess: (data) => {
+      queryClient.setQueryData<AccessDetail | undefined>(accessDetailQueryKey(publicId), (prev) =>
+        prev ? { ...prev, auto_rotate_minutes: data.auto_rotate_minutes } : prev,
+      );
+      queryClient.invalidateQueries({ queryKey: accessesQueryKey });
+    },
   });
 }
 

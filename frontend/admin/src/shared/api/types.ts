@@ -248,6 +248,8 @@ export interface AccessRow {
    *  iproxy console, plus the phone's name as shown in the pool. */
   connection_id: string | null;
   connection_name: string | null;
+  /** Minutes between scheduled rotations; null means auto-rotation is off. */
+  auto_rotate_minutes: number | null;
   tariff_code: string;
   /** The order this access was bought with. The number is what an operator reads and
    * types; the id is what actions take. Null only if the order row is somehow gone. */

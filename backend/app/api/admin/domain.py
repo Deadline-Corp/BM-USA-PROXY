@@ -78,7 +78,6 @@ from app.services.provisioning.lifecycle import (
     extend_access,
     provision_access,
     revoke_access,
-    rotate_ip,
     swap_access,
 )
 
@@ -1152,6 +1151,8 @@ def _access_view(
         # complaint to a device meant guessing from city and carrier alone.
         "connection_id": connection,
         "connection_name": connection_name,
+        # None = off; the interval is the on/off state (see models/access.py).
+        "auto_rotate_minutes": a.auto_rotate_minutes,
         "tariff_code": a.tariff_code,
         # The order this access was bought with, twice over. The number is what an operator
         # reads out loud and types into a search; the public id is what every action takes,
@@ -1381,14 +1382,27 @@ async def admin_extend_access(
     return _access_view(access, **extras)
 
 
-@router.post("/accesses/{access_id}/rotate-ip")
-async def admin_rotate_ip(
-    access_id: str, admin: CurrentAdmin, session: DbSession
+class AutoRotateAdminBody(BaseModel):
+    enabled: bool
+    minutes: int | None = Field(default=None, ge=5, le=1440)
+
+
+# Replaces the old one-shot rotate-ip action. Rotating on demand is the buyer's to take,
+# from their own app: done from here it changed a live customer's address under them with
+# nothing on their side to explain it. Setting the *schedule* is a support action worth
+# having — "make it rotate every 30 minutes" is a thing customers ask for by message.
+@router.put("/accesses/{access_id}/auto-rotate")
+async def admin_set_auto_rotate(
+    access_id: str, body: AutoRotateAdminBody, admin: CurrentAdmin, session: DbSession
 ) -> dict[str, Any]:
     access = await _get_access(session, access_id)
-    await rotate_ip(session, access=access, actor=f"admin:{admin.id}")
-    await audit.write(session, admin_id=admin.id, action="access.rotate_ip", entity="access",
-                       entity_id=access.id)
+    if access.status not in ("active", "expiring"):
+        raise Conflict("only a live access can rotate")
+    if body.enabled and body.minutes is None:
+        raise ValidationError("choose how often to rotate")
+    access.auto_rotate_minutes = body.minutes if body.enabled else None
+    await audit.write(session, admin_id=admin.id, action="access.auto_rotate", entity="access",
+                       entity_id=access.id, after={"minutes": access.auto_rotate_minutes})
     extras = await _access_extras(session, access)
     return _access_view(access, **extras)
 

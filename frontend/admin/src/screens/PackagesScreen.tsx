@@ -12,18 +12,26 @@ import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { Modal } from "@/shared/components/Modal";
 import { OrderNumber } from "@/shared/components/OrderNumber";
 import { formatDate } from "@/shared/lib/format";
-import { useAccessesList, useExtendAccess, useReissueAccess, useRevokeAccess } from "@/shared/hooks/useAccesses";
+import {
+  useAccessesList,
+  useExtendAccess,
+  useReissueAccess,
+  useRevokeAccess,
+  useSetAutoRotate,
+} from "@/shared/hooks/useAccesses";
 import { useDebouncedValue } from "@/shared/hooks/useDebouncedValue";
 import { usePagination } from "@/shared/hooks/usePagination";
 import { useToast } from "@/shared/components/Toast";
 import { apiErrorMessage } from "@/shared/api/client";
 import { strings } from "@/shared/strings";
 import type { AccessRow } from "@/shared/api/types";
+import { IconRotate } from "@/shared/components/icons";
 
-// No "rotate" here on purpose: rotating an IP is the buyer's action, taken from their own
-// app. An operator doing it from the console changed a live customer's address under them
-// with no way for that customer to know why.
-type ActionKind = "revoke" | "extend" | "reissue";
+// No one-shot "rotate" here on purpose: rotating an IP is the buyer's action, taken from
+// their own app. An operator doing it from the console changed a live customer's address
+// under them with no way for that customer to know why. Setting the *schedule* stays —
+// "make it rotate every 30 minutes" is a thing customers ask support for.
+type ActionKind = "revoke" | "extend" | "reissue" | "autoRotate";
 
 /** Every state an access can be in — the same list the database constraint allows. */
 const STATUSES = ["provisioning", "active", "expiring", "expired", "revoked", "failed"];
@@ -40,9 +48,11 @@ export function PackagesScreen() {
 
   const [actionTarget, setActionTarget] = useState<{ row: AccessRow; kind: ActionKind } | null>(null);
   const [extendMinutes, setExtendMinutes] = useState(60);
+  const [autoRotateMinutes, setAutoRotateMinutes] = useState(30);
 
   const revokeMutation = useRevokeAccess();
   const extendMutation = useExtendAccess();
+  const autoRotateMutation = useSetAutoRotate();
   const reissueMutation = useReissueAccess();
 
   useEffect(() => {
@@ -75,6 +85,9 @@ export function PackagesScreen() {
 
   function openAction(row: AccessRow, kind: ActionKind) {
     setExtendMinutes(60);
+    // Opens on whatever this access already runs, so "every 45 minutes" doesn't silently
+    // become 30 because the dialog reset to its default.
+    setAutoRotateMinutes(row.auto_rotate_minutes ?? 30);
     setActionTarget({ row, kind });
   }
   function closeAction() {
@@ -97,6 +110,21 @@ export function PackagesScreen() {
     try {
       await extendMutation.mutateAsync({ id: actionTarget.row.id, minutes: extendMinutes });
       toast.success("Access extended");
+      closeAction();
+    } catch (err) {
+      toast.error(apiErrorMessage(err));
+    }
+  }
+
+  async function handleAutoRotate(enabled: boolean) {
+    if (!actionTarget) return;
+    try {
+      await autoRotateMutation.mutateAsync({
+        id: actionTarget.row.id,
+        enabled,
+        minutes: enabled ? autoRotateMinutes : null,
+      });
+      toast.success(enabled ? "Auto-rotation set" : "Auto-rotation off");
       closeAction();
     } catch (err) {
       toast.error(apiErrorMessage(err));
@@ -176,6 +204,17 @@ export function PackagesScreen() {
         cell: ({ row }) => <span className="font-mono text-[.8rem]">{formatDate(row.original.expires_at)}</span>,
       },
       {
+        header: strings.packages.colAutoRotate,
+        accessorKey: "auto_rotate_minutes",
+        enableSorting: false,
+        cell: ({ row }) =>
+          row.original.auto_rotate_minutes ? (
+            <span className="font-mono text-[.8rem]">{row.original.auto_rotate_minutes}m</span>
+          ) : (
+            <span className="text-text-3">{strings.common.off}</span>
+          ),
+      },
+      {
         id: "actions",
         header: "",
         cell: ({ row }) => {
@@ -193,6 +232,8 @@ export function PackagesScreen() {
           const can = {
             // `expired` is extendable on purpose — the backend resurrects it.
             extend: !["revoked", "cancelled", "failed"].includes(status),
+            // Only a live access has a schedule worth setting.
+            autoRotate: status === "active" || status === "expiring",
             // Reissue is the way *back* from revoked, so it stays available there.
             reissue: true,
             revoke: status !== "revoked",
@@ -207,6 +248,15 @@ export function PackagesScreen() {
                 onClick={() => openAction(row.original, "extend")}
               >
                 {strings.packages.extend}
+              </Button>
+              <Button
+                variant="quiet"
+                size="sm"
+                disabled={!can.autoRotate}
+                title={can.autoRotate ? strings.packages.autoRotate : strings.packages.cannotAutoRotate}
+                onClick={() => openAction(row.original, "autoRotate")}
+              >
+                <IconRotate className="w-3.5 h-3.5" />
               </Button>
               <Button variant="quiet" size="sm" onClick={() => openAction(row.original, "reissue")}>
                 {strings.packages.reissue}
@@ -328,6 +378,45 @@ export function PackagesScreen() {
           label={strings.packages.extendMinutes}
           value={extendMinutes}
           onChange={(e) => setExtendMinutes(Number(e.target.value))}
+        />
+      </Modal>
+
+      <Modal
+        open={actionTarget?.kind === "autoRotate"}
+        onClose={closeAction}
+        title={strings.packages.autoRotate}
+        footer={
+          <>
+            <Button variant="ghost" onClick={closeAction}>
+              {strings.common.cancel}
+            </Button>
+            {/* Turning it off is its own action rather than a zero in the field: an
+                interval of 0 has no meaning, and "off" should not have to be spelled. */}
+            <Button
+              variant="quiet"
+              onClick={() => handleAutoRotate(false)}
+              isLoading={autoRotateMutation.isPending}
+            >
+              {strings.packages.autoRotateOff}
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => handleAutoRotate(true)}
+              isLoading={autoRotateMutation.isPending}
+            >
+              {strings.common.save}
+            </Button>
+          </>
+        }
+      >
+        <Input
+          type="number"
+          min={5}
+          max={1440}
+          label={strings.packages.autoRotateMinutes}
+          hint={strings.packages.autoRotateHint}
+          value={autoRotateMinutes}
+          onChange={(e) => setAutoRotateMinutes(Number(e.target.value))}
         />
       </Modal>
     </div>

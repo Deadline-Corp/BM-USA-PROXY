@@ -48,6 +48,10 @@ class Access(Base):
     warned_24h_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     warned_1h_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_rotation_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Auto-rotation interval in minutes; NULL means off. One nullable column rather than a
+    # bool beside an int, because those two can disagree — "enabled with no interval" and
+    # "disabled but every 30 minutes" are both states nothing should have to interpret.
+    auto_rotate_minutes: Mapped[int | None] = mapped_column(Integer)
     rotations_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     swap_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     created_at: Mapped[datetime] = created_at_col()
@@ -57,6 +61,14 @@ class Access(Base):
         CheckConstraint(
             "status IN ('provisioning','active','expiring','expired','revoked','failed')",
             name="status_valid",
+        ),
+        # Five minutes is the floor because a rotation reboots the physical phone and the
+        # new address takes ~10s to settle; anything tighter would keep the device down
+        # more than it is up. A day is the ceiling — beyond that, off is the honest setting.
+        CheckConstraint(
+            "auto_rotate_minutes IS NULL OR "
+            "(auto_rotate_minutes >= 5 AND auto_rotate_minutes <= 1440)",
+            name="auto_rotate_minutes_sane",
         ),
         # INVARIANT #2: one live access per connection (dedicated).
         Index(

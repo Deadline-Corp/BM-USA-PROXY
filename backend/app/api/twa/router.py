@@ -282,6 +282,27 @@ async def rotate(public_id: str, user: CurrentUser, session: DbSession) -> dict[
     return {"status": "rotated"}
 
 
+class AutoRotateBody(BaseModel):
+    enabled: bool
+    # Bounded here and by a CHECK constraint on the column: five minutes is the floor
+    # because a rotation reboots the phone, a day the ceiling because past that "off" is
+    # the honest setting. Ignored entirely when enabled is false.
+    minutes: int | None = Field(default=None, ge=5, le=1440)
+
+
+@router.put("/accesses/{public_id}/auto-rotate")
+async def set_auto_rotate(
+    public_id: str, body: AutoRotateBody, user: CurrentUser, session: DbSession
+) -> dict[str, Any]:
+    access = await accesses_svc.get_owned(session, public_id, user.id)
+    if access.status not in ("active", "expiring"):
+        raise Conflict("access is not active")
+    if body.enabled and body.minutes is None:
+        raise ValidationError("choose how often to rotate")
+    access.auto_rotate_minutes = body.minutes if body.enabled else None
+    return {"auto_rotate_minutes": access.auto_rotate_minutes}
+
+
 class SwapBody(BaseModel):
     location_id: int | None = None
     carrier: str | None = None

@@ -173,6 +173,13 @@ export interface AccessSummary {
   carrier: string | null;
   expires_at: string | null;
   rotations_count: number;
+  /** Minutes between scheduled rotations; null means auto-rotation is off. */
+  auto_rotate_minutes: number | null;
+}
+
+export interface AutoRotateBody {
+  enabled: boolean;
+  minutes?: number | null;
 }
 
 export interface AccessesResponse {

@@ -28,10 +28,11 @@ export function useExtendAccess() {
   });
 }
 
-export function useRotateIp() {
+export function useSetAutoRotate() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => accessesApi.rotateIp(id),
+    mutationFn: ({ id, enabled, minutes }: { id: string; enabled: boolean; minutes: number | null }) =>
+      accessesApi.setAutoRotate(id, enabled, minutes),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["accesses"] }),
   });
 }

@@ -29,6 +29,8 @@ def _summary(access: Access, conn: Connection | None, loc: Location | None) -> d
         "carrier": conn.carrier if conn else None,
         "expires_at": access.expires_at.isoformat() if access.expires_at else None,
         "rotations_count": access.rotations_count,
+        # None = auto-rotation off. The interval doubles as the on/off state everywhere.
+        "auto_rotate_minutes": access.auto_rotate_minutes,
     }
 
 

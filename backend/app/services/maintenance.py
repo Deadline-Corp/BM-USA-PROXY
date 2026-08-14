@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import log
 from app.models import Access, AccessEvent, Connection, Invoice, Order
 from app.services.notifications import enqueue
+from app.services.provisioning.lifecycle import rotate_ip
 from app.services.provisioning.registry import get_provisioner
 
 
@@ -33,9 +34,14 @@ async def sweep_access_expiries(session: AsyncSession) -> dict[str, int]:
             try:
                 conn = await session.get(Connection, access.connection_id)
                 if conn is not None and access.iproxy_access_id:
+                    # All three resources, not just the http one: an expiry that left the
+                    # socks5 access or the changeip link behind would hand the customer a
+                    # proxy that outlives the period they paid for.
                     await get_provisioner().revoke(
                         iproxy_connection_id=conn.iproxy_connection_id,
                         iproxy_access_id=access.iproxy_access_id,
+                        socks5_access_id=access.iproxy_socks5_access_id,
+                        action_link_id=access.iproxy_action_link_id,
                     )
             except Exception as exc:  # noqa: BLE001 — best-effort revoke; log and continue
                 log.warning("revoke.failed", access_id=access.id, error=str(exc))
@@ -75,6 +81,51 @@ async def sweep_access_expiries(session: AsyncSession) -> dict[str, int]:
             )
             warned += 1
     return {"warned": warned, "expired": expired}
+
+
+async def sweep_auto_rotations(session: AsyncSession) -> dict[str, int]:
+    """Rotate the IP of every live access whose auto-rotation interval has elapsed.
+
+    Auto-rotation is ours, not iproxy's. iproxy has per-connection `ip_change_enabled` /
+    `ip_change_interval_minutes` settings, but the Console API exposes no way to write
+    them (PATCH/PUT on the connection and its settings both refuse), and they would be the
+    wrong home anyway: they belong to the *phone*, so they would keep rotating after the
+    access is revoked and follow the connection to the next buyer. Here the schedule
+    belongs to the access that paid for it and dies with it.
+
+    `last_rotation_at` is the clock, and lifecycle.rotate_ip stamps it however the rotation
+    was triggered — so a buyer who rotates by hand resets their own interval instead of
+    getting a second rotation moments later.
+    """
+    now = _utcnow()
+    rows = (
+        await session.execute(
+            select(Access).where(
+                Access.status.in_(("active", "expiring")),
+                Access.auto_rotate_minutes.is_not(None),
+            )
+        )
+    ).scalars().all()
+    rotated = failed = 0
+    for access in rows:
+        interval = access.auto_rotate_minutes
+        if not interval:
+            continue
+        # Never rotated yet: start the clock from when the access began, so the first
+        # automatic rotation lands one full interval after issue rather than immediately.
+        since = access.last_rotation_at or access.starts_at
+        if since is not None and since + timedelta(minutes=interval) > now:
+            continue
+        try:
+            await rotate_ip(session, access=access, actor="auto")
+            rotated += 1
+        except Exception as exc:  # noqa: BLE001 — one bad phone must not stop the sweep
+            # Stamped anyway so a connection that keeps failing is retried once per
+            # interval instead of on every pass, a minute apart, forever.
+            access.last_rotation_at = now
+            failed += 1
+            log.warning("auto_rotate.failed", access_id=access.id, error=str(exc))
+    return {"rotated": rotated, "failed": failed}
 
 
 def _granted_minutes(access: Access) -> float | None:

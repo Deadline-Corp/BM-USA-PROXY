@@ -44,6 +44,9 @@ class WorkerSettings:
     cron_jobs = [
         cron(jobs.send_outbox, second={0, 10, 20, 30, 40, 50}, run_at_startup=True),
         cron(jobs.expiry_sweeper, second=0),
+        # Buyer-scheduled IP rotation. Every minute because the shortest interval an
+        # access can ask for is five, and a pass that finds nothing is one indexed read.
+        cron(jobs.auto_rotate_sweeper, second=25),
         cron(jobs.invoice_expirer, second=30),
         cron(jobs.reconcile_invoices, minute=_FIVE_MIN, second=15),
         cron(jobs.watch_onchain_deposits, second={0, 15, 30, 45}, run_at_startup=True),

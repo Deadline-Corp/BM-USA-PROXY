@@ -17,7 +17,11 @@ from app.core.db import SessionFactory
 from app.core.logging import log
 from app.models import Broadcast, Invoice
 from app.services import referral
-from app.services.maintenance import expire_invoices, sweep_access_expiries
+from app.services.maintenance import (
+    expire_invoices,
+    sweep_access_expiries,
+    sweep_auto_rotations,
+)
 
 
 async def _beat(ctx: dict, name: str) -> None:
@@ -30,6 +34,14 @@ async def expiry_sweeper(ctx: dict) -> dict[str, int]:
         result = await sweep_access_expiries(s)
         await s.commit()
     await _beat(ctx, "expiry_sweeper")
+    return result
+
+
+async def auto_rotate_sweeper(ctx: dict) -> dict[str, int]:
+    async with SessionFactory() as s:
+        result = await sweep_auto_rotations(s)
+        await s.commit()
+    await _beat(ctx, "auto_rotate_sweeper")
     return result
 
 

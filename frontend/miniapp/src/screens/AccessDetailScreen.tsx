@@ -17,6 +17,7 @@ import {
   useSwapAccess,
   useExtendAccess,
   useRequestConfig,
+  useSetAutoRotate,
   isRetryAfterError,
   getRetryAfterSeconds,
 } from "../shared/hooks/useAccesses";
@@ -320,6 +321,11 @@ export function AccessDetailScreen() {
         </p>
       </div>
 
+      {/* ── auto-rotation (live access only — nothing to schedule on a dead one) ── */}
+      {isEnded ? null : (
+        <AutoRotatePanel publicId={publicId} current={access.auto_rotate_minutes} />
+      )}
+
       {/* ── credentials: http ── */}
       <SectionLabel className="mt-[18px]">{strings.access.credentialsLabel}</SectionLabel>
       <div className="flex flex-col gap-1.5">
@@ -507,6 +513,96 @@ export function AccessDetailScreen() {
         </div>
       </Sheet>
     </div>
+  );
+}
+
+const AUTO_ROTATE_DEFAULT_MINUTES = 30;
+
+/** Switch + interval for scheduled rotation. Its own component so the draft interval is
+ *  local state that cannot desync from the saved one on the screen around it. */
+function AutoRotatePanel({ publicId, current }: { publicId: string | undefined; current: number | null }) {
+  const setAutoRotate = useSetAutoRotate(publicId);
+  const { showToast } = useToast();
+  const [draft, setDraft] = useState(String(current ?? AUTO_ROTATE_DEFAULT_MINUTES));
+
+  // Follows the server after a save or a refetch, so the field never shows an interval
+  // that is not the one actually running.
+  useEffect(() => {
+    if (current !== null) setDraft(String(current));
+  }, [current]);
+
+  const enabled = current !== null;
+  const parsed = Number.parseInt(draft, 10);
+  const valid = Number.isFinite(parsed) && parsed >= 5 && parsed <= 1440;
+  const dirty = valid && parsed !== current;
+
+  async function save(nextEnabled: boolean, minutes: number | null) {
+    try {
+      await setAutoRotate.mutateAsync({ enabled: nextEnabled, minutes });
+      showToast(nextEnabled ? strings.access.autoRotateOnToast : strings.access.autoRotateOffToast);
+    } catch (e) {
+      showToast(e instanceof ApiError ? e.message : strings.errors.generic, "error");
+    }
+  }
+
+  return (
+    <>
+      <SectionLabel className="mt-[18px]">{strings.access.autoRotateLabel}</SectionLabel>
+      <div className="rounded-xl border border-border bg-surface p-3.5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[13.5px] font-medium text-text">{strings.access.autoRotateLabel}</div>
+            <p className="mt-0.5 text-[11.5px] leading-relaxed text-text-3">
+              {strings.access.autoRotateHint}
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={enabled}
+            aria-label={strings.access.autoRotateLabel}
+            disabled={setAutoRotate.isPending}
+            onClick={() => save(!enabled, enabled ? null : (valid ? parsed : AUTO_ROTATE_DEFAULT_MINUTES))}
+            className={`relative h-6 w-11 shrink-0 rounded-full border transition-colors duration-200 disabled:opacity-40 ${
+              enabled ? "border-accent bg-accent/[.9]" : "border-border-2 bg-surface-2"
+            }`}
+          >
+            <span
+              className={`absolute top-[3px] h-4 w-4 rounded-full bg-surface shadow transition-[left] duration-200 ease-out ${
+                enabled ? "left-[25px]" : "left-[3px]"
+              }`}
+            />
+          </button>
+        </div>
+
+        {enabled ? (
+          <div className="mt-3 flex items-center gap-2">
+            <span className="text-[12.5px] text-text-2">{strings.access.autoRotateEvery}</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={5}
+              max={1440}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              className="num h-9 w-20 rounded border border-border bg-surface-2 px-2.5 text-[13px] text-text outline-none focus-visible:border-accent"
+            />
+            <span className="text-[12.5px] text-text-2">{strings.access.autoRotateMinutesUnit}</span>
+            <Button
+              variant="default"
+              className="ml-auto"
+              disabled={!dirty || setAutoRotate.isPending}
+              onClick={() => save(true, parsed)}
+            >
+              {strings.access.autoRotateApply}
+            </Button>
+          </div>
+        ) : null}
+        {enabled && !valid ? (
+          <p className="mt-1.5 text-[11px] text-warning">{strings.access.autoRotateRange}</p>
+        ) : null}
+      </div>
+    </>
   );
 }
 

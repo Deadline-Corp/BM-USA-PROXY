@@ -56,7 +56,7 @@ export function isBannedError(err: unknown): boolean {
 const API_BASE = "/api/twa";
 
 interface RequestOptions {
-  method?: "GET" | "POST";
+  method?: "GET" | "POST" | "PUT";
   body?: unknown;
   signal?: AbortSignal;
 }
@@ -118,4 +118,8 @@ export const api = {
   get: <T>(path: string, signal?: AbortSignal) => apiFetch<T>(path, { method: "GET", signal }),
   post: <T>(path: string, body?: unknown, signal?: AbortSignal) =>
     apiFetch<T>(path, { method: "POST", body: body ?? {}, signal }),
+  // For settings that are *set* rather than *done*: sending the same auto-rotation
+  // interval twice has to mean the same thing as sending it once.
+  put: <T>(path: string, body?: unknown, signal?: AbortSignal) =>
+    apiFetch<T>(path, { method: "PUT", body: body ?? {}, signal }),
 };

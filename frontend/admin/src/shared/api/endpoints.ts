@@ -147,8 +147,12 @@ export const accessesApi = {
     apiClient
       .post<AccessRow>(`/accesses/${id}/extend`, { minutes })
       .then((r) => r.data),
-  rotateIp: (id: string) =>
-    apiClient.post<AccessRow>(`/accesses/${id}/rotate-ip`).then((r) => r.data),
+  // Setting the rotation schedule, not rotating now: an operator rotating on demand
+  // changed a live customer's address under them with nothing on their side to explain it.
+  setAutoRotate: (id: string, enabled: boolean, minutes: number | null) =>
+    apiClient
+      .put<AccessRow>(`/accesses/${id}/auto-rotate`, { enabled, minutes })
+      .then((r) => r.data),
   reissue: (id: string, connection_id?: string) =>
     apiClient
       .post<AccessRow>(`/accesses/${id}/reissue`, { connection_id })
