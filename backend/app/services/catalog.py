@@ -7,7 +7,7 @@ from typing import Any
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Location, Order, Tariff, User
+from app.models import Connection, Location, Order, Tariff, User
 
 CARRIERS = ["AT&T", "T-Mobile", "Verizon"]
 
@@ -41,17 +41,41 @@ async def _availability(session: AsyncSession) -> dict[tuple[int | None, str | N
     return {(r[0], r[1]): int(r[2]) for r in rows}
 
 
+async def _stocked_location_ids(session: AsyncSession) -> set[int]:
+    """Locations that actually have a phone on them.
+
+    A city is offered to a buyer only if it holds stock. Cities are created automatically
+    from whatever city a phone reports, and a phone's city changes every time its IP
+    rotates — so the table accumulates places nothing is left in. Listing those is not a
+    harmless extra: every one of them is a city a buyer can pick and be told "sold out",
+    and on the live account nine of twelve listed cities held nothing at all.
+
+    Deliberately "has a sellable phone", not "has a free phone": a city where everything is
+    currently rented is still a city we sell, and making it blink out of the list whenever
+    the last phone is taken would be worse than showing it with nothing available.
+    """
+    rows = await session.execute(
+        select(Connection.location_id)
+        .where(Connection.is_sellable, Connection.location_id.is_not(None))
+        .distinct()
+    )
+    return {int(r[0]) for r in rows}
+
+
 async def get_catalog(session: AsyncSession, user: User) -> dict[str, Any]:
     tariffs = (
         (await session.execute(
             select(Tariff).where(Tariff.is_active).order_by(Tariff.sort_order)
         )).scalars().all()
     )
-    locations = (
-        (await session.execute(
+    stocked = await _stocked_location_ids(session)
+    locations = [
+        loc
+        for loc in (await session.execute(
             select(Location).where(Location.is_active).order_by(Location.sort_order)
         )).scalars().all()
-    )
+        if loc.id in stocked
+    ]
     avail = await _availability(session)
 
     def city_free(loc_id: int) -> dict[str, int]:
@@ -84,8 +108,15 @@ async def get_catalog(session: AsyncSession, user: User) -> dict[str, Any]:
             }
             for loc in locations
         ],
+        # "Any city" counts every free phone, including ones whose city is unknown and ones
+        # in a city not listed above — picking no city is exactly the buyer saying they do
+        # not care where it is. Summing the listed cities instead would under-report the
+        # option that is always available.
         "any_city_free": {
-            **{c: sum(avail.get((loc.id, c), 0) for loc in locations) for c in CARRIERS},
+            **{
+                carrier: sum(n for (_lid, c), n in avail.items() if c == carrier)
+                for carrier in CARRIERS
+            },
             "any": total_free,
         },
         "trial_available": await trial_available(session, user),

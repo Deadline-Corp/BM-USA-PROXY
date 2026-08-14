@@ -19,6 +19,7 @@ from app.services import vpn_configs
 from app.services.notifications import enqueue
 from app.services.provisioning.allocator import allocate
 from app.services.provisioning.registry import get_provisioner
+from app.services.provisioning.sync import _resolve_location
 
 
 def _utcnow() -> datetime:
@@ -140,6 +141,23 @@ async def rotate_ip(session: AsyncSession, *, access: Access, actor: str = "user
     access.rotations_count += 1
     access.last_rotation_at = now
     session.add(AccessEvent(access_id=access.id, type="rotate_ip", actor=actor))
+
+    # Best-effort: rotation reboots the physical phone and its new exit IP can take on
+    # the order of ten seconds to settle, so this read often still reports the city we
+    # just left — that's fine, sync_pool re-resolves every connection's city on its own
+    # next pass regardless, at most a minute away. This is only a chance to be right
+    # sooner. The rotation above has already happened, so an iproxy hiccup on this
+    # second, unrelated read must not turn into a failed rotation for the buyer.
+    try:
+        exit_ip = await get_provisioner().current_exit_ip(
+            iproxy_connection_id=conn.iproxy_connection_id
+        )
+        if exit_ip.city:
+            new_loc_id = await _resolve_location(session, exit_ip.city)
+            if new_loc_id is not None and new_loc_id != conn.location_id:
+                conn.location_id = new_loc_id
+    except Exception:  # noqa: BLE001
+        pass
 
 
 async def swap_access(

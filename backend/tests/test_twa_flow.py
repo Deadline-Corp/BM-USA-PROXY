@@ -258,3 +258,74 @@ async def test_invoice_view_offers_the_handoff_only_where_a_scheme_exists(
         assert invoice["pay_open_url"].endswith(f"/pay/{r.json()['order']['public_id']}")
     else:
         assert invoice["pay_open_url"] is None
+
+
+# ── payment methods: only rails an operator actually saved an address for ──────────────
+#
+# normalise_rails() drops any rail without an address (rails.py) and payment_methods()
+# renders exactly cfg.enabled_methods() (router.py) — the mini app's CatalogScreen builds
+# its chain/coin pickers from this response alone, nothing hardcoded client-side. These
+# tests pin the one property that matters: what the console left blank never reaches the
+# buyer as a choice.
+
+# Real-shaped addresses reused from elsewhere in this suite (test_referral.py,
+# test_onchain_config.py) so validate_address's per-chain regex accepts them for real
+# rather than the test relying on a lenient path.
+_TRC20_ADDR = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
+_BTC_ADDR = "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"
+
+
+async def test_payment_methods_lists_only_the_rails_with_a_saved_address(
+    client: AsyncClient,
+) -> None:
+    """A console submission fills in two of twelve supported rails; the buyer sees two."""
+    import json
+
+    from app.services.payments.onchain.config import set_rails_override
+    from app.services.payments.onchain.rails import normalise_rails, supported_rails
+
+    filled = {("USDT", "trc20"): _TRC20_ADDR, ("BTC", "native"): _BTC_ADDR}
+    raw = [
+        {"asset": asset, "network": network, "address": filled.get((asset, network), "")}
+        for asset, network, _chain in supported_rails()
+    ]
+    assert len(raw) == 12  # every rail the watcher supports, ten of them left blank here
+    normalized = normalise_rails(raw, network="mainnet")
+    set_rails_override(json.dumps(normalized))
+
+    r = await client.get("/api/twa/payment-methods")
+    assert r.status_code == 200
+    methods = r.json()["methods"]
+    assert {(m["asset"], m["network"]) for m in methods} == {("USDT", "trc20"), ("BTC", "native")}
+    assert len(methods) == 2  # the other ten are absent, not merely empty/disabled
+
+
+async def test_payment_methods_drops_a_rail_with_no_address(client: AsyncClient) -> None:
+    """A single blank address must not surface as something the buyer can pay with."""
+    import json
+
+    from app.services.payments.onchain.config import set_rails_override
+    from app.services.payments.onchain.rails import normalise_rails
+
+    normalized = normalise_rails(
+        [{"asset": "USDT", "network": "trc20", "address": ""}], network="mainnet"
+    )
+    assert normalized == []  # normalise_rails itself already dropped it — see rails.py
+    set_rails_override(json.dumps(normalized))
+
+    r = await client.get("/api/twa/payment-methods")
+    assert r.status_code == 200
+    assert r.json() == {"methods": []}
+
+
+async def test_payment_methods_empty_when_nothing_is_configured(client: AsyncClient) -> None:
+    """Zero saved rails is exactly the state that makes the mini app show its
+    "payment is not configured yet" banner instead of a checkout screen.
+    """
+    from app.services.payments.onchain.config import set_rails_override
+
+    set_rails_override("[]")
+
+    r = await client.get("/api/twa/payment-methods")
+    assert r.status_code == 200
+    assert r.json() == {"methods": []}

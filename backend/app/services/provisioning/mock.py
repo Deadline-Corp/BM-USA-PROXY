@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import secrets
 
-from app.services.provisioning.base import IssuedProxy, Provisioner
+from app.services.provisioning.base import ExitIp, IssuedProxy, Provisioner
 
 
 class MockProvisioner(Provisioner):
@@ -33,6 +33,9 @@ class MockProvisioner(Provisioner):
 
     async def current_ip(self, *, iproxy_connection_id: str) -> str | None:
         return None
+
+    async def current_exit_ip(self, *, iproxy_connection_id: str) -> ExitIp:
+        return ExitIp(address=None, city=None)
 
     async def create_vpn_access(
         self, *, iproxy_connection_id: str, kind: str, name: str

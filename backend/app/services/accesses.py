@@ -11,7 +11,9 @@ from app.core.errors import Forbidden, NotFound
 from app.core.security import decrypt_credentials
 from app.models import Access, Connection, Location, Tariff
 from app.services import vpn_configs
+from app.services.provisioning.base import ExitIp
 from app.services.provisioning.registry import get_provisioner
+from app.services.provisioning.sync import _resolve_location
 
 _ACTIVE = ("provisioning", "active", "expiring")
 
@@ -65,14 +67,16 @@ async def _load(
     return access, conn, loc
 
 
-async def _current_ip(conn: Connection | None) -> str | None:
-    """Live exit IP from the provider; best-effort — a provider hiccup must not 500 the view."""
+async def _exit_ip(conn: Connection | None) -> ExitIp:
+    """Live exit IP + city from the provider; best-effort — a provider hiccup must not 500 the view."""
     if conn is None:
-        return None
+        return ExitIp(address=None, city=None)
     try:
-        return await get_provisioner().current_ip(iproxy_connection_id=conn.iproxy_connection_id)
+        return await get_provisioner().current_exit_ip(
+            iproxy_connection_id=conn.iproxy_connection_id
+        )
     except Exception:  # noqa: BLE001
-        return None
+        return ExitIp(address=None, city=None)
 
 
 async def detail_for_user(session: AsyncSession, public_id: str, user_id: int) -> dict[str, Any]:
@@ -80,7 +84,22 @@ async def detail_for_user(session: AsyncSession, public_id: str, user_id: int) -
     creds = decrypt_credentials(access.credentials_enc) if access.credentials_enc else {}
     tariff = await session.scalar(select(Tariff).where(Tariff.code == access.tariff_code))
     max_swaps = tariff.max_user_swaps if tariff else 0
-    current_ip = await _current_ip(conn) if access.status in ("active", "expiring") else None
+    current_ip = None
+    if access.status in ("active", "expiring"):
+        exit_ip = await _exit_ip(conn)
+        current_ip = exit_ip.address
+        # rotate_ip already tries to refresh the city right after a rotation, but that
+        # read can land ~10s too early — the phone is still rebooting onto its new IP.
+        # This request already pays for the same provider round-trip to show current_ip,
+        # so re-resolving the city here is free and catches whatever rotate_ip's early
+        # attempt missed, without making the buyer wait for the next sync_pool pass (up
+        # to a minute away). Same resolver sync_pool uses, so a location row is never
+        # created twice under different rules.
+        if conn is not None and exit_ip.city:
+            new_loc_id = await _resolve_location(session, exit_ip.city)
+            if new_loc_id is not None and new_loc_id != conn.location_id:
+                conn.location_id = new_loc_id
+                loc = await session.get(Location, new_loc_id)
     return {
         **_summary(access, conn, loc),
         "current_ip": current_ip,

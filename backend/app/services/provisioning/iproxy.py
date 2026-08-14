@@ -21,7 +21,7 @@ import httpx
 from app.core.config import settings
 from app.core.errors import ProvisioningError
 from app.core.logging import log
-from app.services.provisioning.base import IssuedProxy, Provisioner
+from app.services.provisioning.base import ExitIp, IssuedProxy, Provisioner
 
 
 class IproxyError(Exception):
@@ -309,10 +309,18 @@ class IproxyProvisioner(Provisioner):
             raise ProvisioningError(f"iproxy rotate failed: {exc}") from exc
 
     async def current_ip(self, *, iproxy_connection_id: str) -> str | None:
+        return (await self.current_exit_ip(iproxy_connection_id=iproxy_connection_id)).address
+
+    async def current_exit_ip(self, *, iproxy_connection_id: str) -> ExitIp:
+        # Same GET as current_ip used to make on its own — app_data carries both the exit
+        # IP and ip_city in one response, so a caller that also needs the city (accesses.py,
+        # lifecycle.py) never pays for a second request just to get it.
         try:
             data = await self._client.get_connection(iproxy_connection_id)
         except IproxyError:
-            return None
-        device = (data.get("app_data") or {}).get("device_info") or {}
+            return ExitIp(address=None, city=None)
+        app_data = data.get("app_data") or {}
+        device = app_data.get("device_info") or {}
         ip = (device.get("ip_public") or {}).get("ipv4")
-        return str(ip) if ip else None
+        city = app_data.get("ip_city")
+        return ExitIp(address=str(ip) if ip else None, city=str(city) if city else None)
