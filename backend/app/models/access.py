@@ -32,7 +32,13 @@ class Access(Base):
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), nullable=False)
     connection_id: Mapped[int] = mapped_column(ForeignKey("connections.id"), nullable=False)
     tariff_code: Mapped[str] = mapped_column(Text, nullable=False)
+    # An issued access owns three iproxy resources. `iproxy_access_id` is the http
+    # proxy-access; the other two are tracked so revoke takes them down as well —
+    # a socks5 access or a changeip link left behind keeps working for a customer
+    # whose access has ended.
     iproxy_access_id: Mapped[str | None] = mapped_column(Text)
+    iproxy_socks5_access_id: Mapped[str | None] = mapped_column(Text)
+    iproxy_action_link_id: Mapped[str | None] = mapped_column(Text)
     credentials_enc: Mapped[bytes | None] = mapped_column(LargeBinary)  # Fernet(JSON)
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="provisioning")
     starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -55,11 +55,9 @@ export function AccessDetailScreen() {
   const requestConfig = useRequestConfig(publicId);
   const { showToast } = useToast();
   const termsGate = useTermsGate();
-  const { copied: pwCopied, copy: copyPassword } = useCopyToClipboard();
   const { copied: allCopied, copy: copyAll } = useCopyToClipboard();
   const { copied: ipCopied, copy: copyIp } = useCopyToClipboard();
 
-  const [passwordRevealed, setPasswordRevealed] = useState(false);
   const [rotateCooldownUntil, setRotateCooldownUntil] = useState<number | null>(null);
   const [rotateCooldownRemaining, setRotateCooldownRemaining] = useState(0);
   const [rotateConfirmOpen, setRotateConfirmOpen] = useState(false);
@@ -164,9 +162,24 @@ export function AccessDetailScreen() {
   }
 
   const access = detailQuery.data;
-  const combined = `${access.credentials.host ?? ""}:${access.credentials.socks5_port ?? ""}:${
-    access.credentials.login ?? ""
-  }:${access.credentials.password ?? ""}`;
+  const creds = access.credentials;
+  const httpLogin = creds.http_login ?? creds.login;
+  const httpPassword = creds.http_password ?? creds.password;
+  // One button hands over everything the buyer pastes into their tooling: both proxies
+  // in host:port:login:pass form and the rotation URL, blank line between them. A line
+  // is omitted rather than emitted half-empty — a "socks5://host::" that cannot connect
+  // is worse than no socks5 line at all.
+  const httpLine =
+    creds.host && creds.http_port
+      ? `http://${creds.host}:${creds.http_port}:${httpLogin ?? ""}:${httpPassword ?? ""}`
+      : null;
+  const socksLine =
+    creds.host && creds.socks5_port
+      ? `socks5://${creds.host}:${creds.socks5_port}:${creds.socks5_login ?? ""}:${
+          creds.socks5_password ?? ""
+        }`
+      : null;
+  const combined = [httpLine, socksLine, creds.rotation_link].filter(Boolean).join("\n\n");
 
   // Expiry progress: width = remaining / total. The total duration is taken
   // from the catalog tariff matching this access's tariff_code (in minutes →
@@ -307,55 +320,47 @@ export function AccessDetailScreen() {
         </p>
       </div>
 
-      {/* ── credentials ── */}
+      {/* ── credentials: http ── */}
       <SectionLabel className="mt-[18px]">{strings.access.credentialsLabel}</SectionLabel>
       <div className="flex flex-col gap-1.5">
-        <CopyField label={strings.access.hostLabel} value={access.credentials.host ?? "—"} />
-        <CopyField
-          label={strings.access.socksPortLabel}
-          value={access.credentials.socks5_port?.toString() ?? "—"}
-        />
-        <CopyField label={strings.access.loginLabel} value={access.credentials.login ?? "—"} />
-        <div className="flex items-center gap-0 h-11 overflow-hidden rounded border border-border bg-surface">
-          <span className="flex h-full w-[58px] shrink-0 items-center border-r border-border bg-surface-2 px-2.5 font-mono text-[10px] uppercase tracking-wide text-text-3">
-            {strings.access.passLabel}
-          </span>
-          <span className="num flex-1 overflow-hidden text-ellipsis whitespace-nowrap px-2.5 text-[13px] text-text">
-            {access.credentials.password
-              ? passwordRevealed
-                ? access.credentials.password
-                : maskSecret(access.credentials.password)
-              : "—"}
-          </span>
-          <button
-            type="button"
-            className="flex h-full shrink-0 items-center justify-center border-l border-border px-2.5 text-[11px] font-medium text-text-2 transition-colors hover:text-accent"
-            onClick={() => setPasswordRevealed((v) => !v)}
-          >
-            {passwordRevealed ? strings.common.hide : strings.common.reveal}
-          </button>
-          <button
-            type="button"
-            className="flex h-full w-11 shrink-0 items-center justify-center border-l border-border text-text-3 transition-colors duration-150 ease-out hover:bg-accent/[.08] hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
-            aria-label="Copy password"
-            onClick={() => access.credentials.password && copyPassword(access.credentials.password)}
-          >
-            {pwCopied ? <Check size={14} /> : <Copy size={14} />}
-          </button>
-        </div>
+        <CopyField label={strings.access.hostLabel} value={creds.host ?? "—"} />
+        <CopyField label={strings.access.httpPortLabel} value={creds.http_port?.toString() ?? "—"} />
+        <CopyField label={strings.access.loginLabel} value={httpLogin ?? "—"} />
+        <SecretRow label={strings.access.passLabel} value={httpPassword} />
       </div>
 
+      {/* ── credentials: socks5 (own port and own pair — not the http one) ── */}
+      <SectionLabel className="mt-[18px]">{strings.access.socks5CredentialsLabel}</SectionLabel>
+      <div className="flex flex-col gap-1.5">
+        <CopyField label={strings.access.hostLabel} value={creds.host ?? "—"} />
+        <CopyField label={strings.access.socksPortLabel} value={creds.socks5_port?.toString() ?? "—"} />
+        <CopyField label={strings.access.loginLabel} value={creds.socks5_login ?? "—"} />
+        <SecretRow label={strings.access.passLabel} value={creds.socks5_password} />
+      </div>
+
+      {/* ── rotation link ── */}
+      {creds.rotation_link ? (
+        <>
+          <SectionLabel className="mt-[18px]">{strings.access.rotationLinkSectionLabel}</SectionLabel>
+          <CopyField label={strings.access.rotationLinkLabel} value={creds.rotation_link} />
+          <p className="mt-1.5 px-1 text-[11px] leading-relaxed text-text-3">
+            {strings.access.rotationLinkHint}
+          </p>
+        </>
+      ) : null}
+
       {/* ── combined copy ── */}
-      <div className="mt-2 flex items-center gap-2.5 rounded border border-border-2 bg-surface p-3">
+      <div className="mt-3 flex items-start gap-2.5 rounded border border-border-2 bg-surface p-3">
         <div className="min-w-0 flex-1">
-          <div className="mb-0.5 text-[10px] uppercase tracking-wide text-text-3">{strings.access.combinedLabel}</div>
-          <Num className="block overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-text-2">
-            {combined}
+          <div className="mb-1 text-[10px] uppercase tracking-wide text-text-3">{strings.access.combinedLabel}</div>
+          <Num className="block overflow-hidden whitespace-pre-line break-all text-[11px] leading-[1.6] text-text-2">
+            {combined || "—"}
           </Num>
         </div>
         <button
           type="button"
-          className="flex h-[38px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[8px] border border-border-2 bg-transparent px-3.5 text-xs font-medium text-accent transition-colors hover:bg-accent/[.08] hover:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          className="flex h-[38px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[8px] border border-border-2 bg-transparent px-3.5 text-xs font-medium text-accent transition-colors hover:bg-accent/[.08] hover:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40"
+          disabled={!combined}
           onClick={() => copyAll(combined)}
         >
           {allCopied ? <Check size={14} /> : <Copy size={14} />}
@@ -501,6 +506,42 @@ export function AccessDetailScreen() {
             ))}
         </div>
       </Sheet>
+    </div>
+  );
+}
+
+/** Masked value with its own reveal + copy. A component rather than two more pieces of
+ *  screen state, because there are now two of these (http and socks5) and a shared
+ *  `revealed` flag would uncover both passwords at once. */
+function SecretRow({ label, value }: { label: string; value: string | null }) {
+  const [revealed, setRevealed] = useState(false);
+  const { copied, copy } = useCopyToClipboard();
+
+  return (
+    <div className="flex items-center gap-0 h-11 overflow-hidden rounded border border-border bg-surface">
+      <span className="flex h-full w-[58px] shrink-0 items-center border-r border-border bg-surface-2 px-2.5 font-mono text-[10px] uppercase tracking-wide text-text-3">
+        {label}
+      </span>
+      <span className="num flex-1 overflow-hidden text-ellipsis whitespace-nowrap px-2.5 text-[13px] text-text">
+        {value ? (revealed ? value : maskSecret(value)) : "—"}
+      </span>
+      <button
+        type="button"
+        className="flex h-full shrink-0 items-center justify-center border-l border-border px-2.5 text-[11px] font-medium text-text-2 transition-colors hover:text-accent disabled:opacity-40"
+        disabled={!value}
+        onClick={() => setRevealed((v) => !v)}
+      >
+        {revealed ? strings.common.hide : strings.common.reveal}
+      </button>
+      <button
+        type="button"
+        className="flex h-full w-11 shrink-0 items-center justify-center border-l border-border text-text-3 transition-colors duration-150 ease-out hover:bg-accent/[.08] hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent disabled:opacity-40"
+        aria-label={`Copy ${label}`}
+        disabled={!value}
+        onClick={() => value && copy(value)}
+      >
+        {copied ? <Check size={14} /> : <Copy size={14} />}
+      </button>
     </div>
   );
 }

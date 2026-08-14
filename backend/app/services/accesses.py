@@ -11,6 +11,7 @@ from app.core.errors import Forbidden, NotFound
 from app.core.security import decrypt_credentials
 from app.models import Access, Connection, Location, Tariff
 from app.services import vpn_configs
+from app.services.carriers import carrier_from_ip
 from app.services.provisioning.base import ExitIp
 from app.services.provisioning.registry import get_provisioner
 from app.services.provisioning.sync import _resolve_location
@@ -100,15 +101,28 @@ async def detail_for_user(session: AsyncSession, public_id: str, user_id: int) -
             if new_loc_id is not None and new_loc_id != conn.location_id:
                 conn.location_id = new_loc_id
                 loc = await session.get(Location, new_loc_id)
+    summary = _summary(access, conn, loc)
+    # The buyer judges the carrier by looking up the address they were handed, so derive
+    # it from that same live address whenever we have one. The stored value (last sync)
+    # is the fallback for an access whose phone is not reporting an IP right now.
+    summary["carrier"] = carrier_from_ip(current_ip) or summary["carrier"]
     return {
-        **_summary(access, conn, loc),
+        **summary,
         "current_ip": current_ip,
         "credentials": {
             "host": creds.get("host"),
             "http_port": creds.get("http_port"),
+            # http and socks5 are two iproxy accesses with their own ports AND their own
+            # credentials, so both pairs travel to the client. `login`/`password` stay as
+            # the http pair for accesses issued before the socks5 one existed.
+            "http_login": creds.get("http_login") or creds.get("login"),
+            "http_password": creds.get("http_password") or creds.get("password"),
             "socks5_port": creds.get("socks5_port"),
+            "socks5_login": creds.get("socks5_login"),
+            "socks5_password": creds.get("socks5_password"),
             "login": creds.get("login"),
             "password": creds.get("password"),
+            "rotation_link": creds.get("rotation_link"),
         },
         "swap_left": max(0, max_swaps - access.swap_count),
         # Derived, not hardcoded. It was ["ovpn", "wg"] for every access in every state,

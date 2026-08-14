@@ -13,19 +13,37 @@ class MockProvisioner(Provisioner):
     async def issue(self, *, iproxy_connection_id: str, duration_minutes: int) -> IssuedProxy:
         token = secrets.token_hex(4)
         octet = 1 + (hash(iproxy_connection_id) % 254)
+        # Mirrors the real thing: http and socks5 are separate accesses, so they carry
+        # separate ports AND separate credentials. Anything that assumes one login for
+        # both protocols must fail against the mock too, not only in production.
+        http_login, http_password = f"u{token}", secrets.token_urlsafe(9)
         return IssuedProxy(
             iproxy_access_id=f"mock-acc-{token}",
+            socks5_access_id=f"mock-socks-{token}",
+            action_link_id=f"mock-link-{token}",
             credentials={
                 "host": f"104.28.{octet}.{1 + secrets.randbelow(254)}",
                 "http_port": 8080,
+                "http_login": http_login,
+                "http_password": http_password,
                 "socks5_port": 1080,
-                "login": f"u{token}",
-                "password": secrets.token_urlsafe(9),
+                "socks5_login": f"s{token}",
+                "socks5_password": secrets.token_urlsafe(9),
+                # login/password stay the http pair — same contract as the real provisioner.
+                "login": http_login,
+                "password": http_password,
                 "rotation_link": f"https://mock.iproxy.local/rotate/{token}",
             },
         )
 
-    async def revoke(self, *, iproxy_connection_id: str, iproxy_access_id: str) -> None:
+    async def revoke(
+        self,
+        *,
+        iproxy_connection_id: str,
+        iproxy_access_id: str,
+        socks5_access_id: str | None = None,
+        action_link_id: str | None = None,
+    ) -> None:
         return None
 
     async def rotate_ip(self, *, iproxy_connection_id: str) -> None:

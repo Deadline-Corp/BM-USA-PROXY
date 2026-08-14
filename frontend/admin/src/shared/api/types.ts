@@ -97,6 +97,8 @@ export interface ClientAccess {
   city: string | null;
   carrier: string | null;
   ip: string | null;
+  /** The iproxy connection serving it — pasted straight into the iproxy console. */
+  connection_id: string | null;
   expires_at: string | null;
   created_at: string;
 }
@@ -242,6 +244,10 @@ export interface AccessRow {
   city: string | null;
   carrier: string | null;
   ip: string | null;
+  /** The iproxy connection serving this access — the id an operator pastes into the
+   *  iproxy console, plus the phone's name as shown in the pool. */
+  connection_id: string | null;
+  connection_name: string | null;
   tariff_code: string;
   /** The order this access was bought with. The number is what an operator reads and
    * types; the id is what actions take. Null only if the order row is somehow gone. */

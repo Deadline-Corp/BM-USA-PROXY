@@ -545,17 +545,22 @@ async def client_dossier(client_id: int, admin: CurrentAdmin, session: DbSession
 
     # bulk-resolve city/carrier per access (via its connection's location)
     conn_ids = {a.connection_id for a in accesses}
-    conn_lookup: dict[int, tuple[str | None, str | None]] = {}
+    conn_lookup: dict[int, tuple[str | None, str | None, str | None]] = {}
     if conn_ids:
         conn_rows = (
             await session.execute(
-                select(Connection.id, Location.city, Connection.carrier)
+                select(
+                    Connection.id,
+                    Location.city,
+                    Connection.carrier,
+                    Connection.iproxy_connection_id,
+                )
                 .outerjoin(Location, Location.id == Connection.location_id)
                 .where(Connection.id.in_(conn_ids))
             )
         ).all()
-        for cid, city, carrier in conn_rows:
-            conn_lookup[cid] = (city, carrier)
+        for cid, city, carrier, iproxy_id in conn_rows:
+            conn_lookup[cid] = (city, carrier, iproxy_id)
 
     # bulk-resolve provider per order (via its most recent invoice)
     order_ids = [o.id for o in orders]
@@ -609,9 +614,12 @@ async def client_dossier(client_id: int, admin: CurrentAdmin, session: DbSession
                 "id": str(a.public_id),
                 "tariff_code": a.tariff_code,
                 "status": a.status,
-                "city": conn_lookup.get(a.connection_id, (None, None))[0],
-                "carrier": conn_lookup.get(a.connection_id, (None, None))[1],
+                "city": conn_lookup.get(a.connection_id, (None, None, None))[0],
+                "carrier": conn_lookup.get(a.connection_id, (None, None, None))[1],
                 "ip": None,
+                # Which phone is serving it — support's next stop is that connection in
+                # the iproxy console.
+                "connection_id": conn_lookup.get(a.connection_id, (None, None, None))[2],
                 "expires_at": a.expires_at.isoformat() if a.expires_at else None,
                 "created_at": a.created_at.isoformat(),
             }
@@ -1129,6 +1137,8 @@ def _access_view(
     carrier: str | None,
     order_public_id: str | None = None,
     order_number: int | None = None,
+    connection: str | None = None,
+    connection_name: str | None = None,
 ) -> dict[str, Any]:
     return {
         "id": str(a.public_id),
@@ -1137,6 +1147,11 @@ def _access_view(
         "city": city,
         "carrier": carrier,
         "ip": None,
+        # Which physical phone is serving this access. Support reads it out when they open
+        # the same connection in the iproxy console — without it, matching a customer's
+        # complaint to a device meant guessing from city and carrier alone.
+        "connection_id": connection,
+        "connection_name": connection_name,
         "tariff_code": a.tariff_code,
         # The order this access was bought with, twice over. The number is what an operator
         # reads out loud and types into a search; the public id is what every action takes,
@@ -1169,6 +1184,8 @@ async def _access_extras(session: DbSession, a: Access) -> dict[str, Any]:
         "carrier": carrier,
         "order_public_id": str(order.public_id) if order else None,
         "order_number": order.id if order else None,
+        "connection": conn.iproxy_connection_id if conn else None,
+        "connection_name": conn.name if conn else None,
     }
 
 
@@ -1275,17 +1292,23 @@ async def list_admin_accesses(
 
     user_display_map = await _user_display_map(session, [a.user_id for a in rows])
     connection_ids = {a.connection_id for a in rows}
-    conn_lookup: dict[int, tuple[str | None, str | None]] = {}
+    conn_lookup: dict[int, tuple[str | None, str | None, str | None, str | None]] = {}
     if connection_ids:
         conn_rows = (
             await session.execute(
-                select(Connection.id, Connection.carrier, Location.city)
+                select(
+                    Connection.id,
+                    Connection.carrier,
+                    Location.city,
+                    Connection.iproxy_connection_id,
+                    Connection.name,
+                )
                 .outerjoin(Location, Location.id == Connection.location_id)
                 .where(Connection.id.in_(connection_ids))
             )
         ).all()
-        for cid, carrier, city_val in conn_rows:
-            conn_lookup[cid] = (city_val, carrier)
+        for cid, carrier, city_val, iproxy_id, conn_name in conn_rows:
+            conn_lookup[cid] = (city_val, carrier, iproxy_id, conn_name)
 
     # One query for the page's orders rather than one per row — the same shape as the
     # connection lookup above.
@@ -1301,12 +1324,15 @@ async def list_admin_accesses(
             ).all()
         }
 
+    empty_conn: tuple[str | None, str | None, str | None, str | None] = (None, None, None, None)
     items = [
         _access_view(
             a,
             user_display=user_display_map.get(a.user_id, "—"),
-            city=conn_lookup.get(a.connection_id, (None, None))[0],
-            carrier=conn_lookup.get(a.connection_id, (None, None))[1],
+            city=conn_lookup.get(a.connection_id, empty_conn)[0],
+            carrier=conn_lookup.get(a.connection_id, empty_conn)[1],
+            connection=conn_lookup.get(a.connection_id, empty_conn)[2],
+            connection_name=conn_lookup.get(a.connection_id, empty_conn)[3],
             order_public_id=order_lookup.get(a.order_id),
             # The order's own key is the sequential number — no second lookup for it.
             order_number=a.order_id,

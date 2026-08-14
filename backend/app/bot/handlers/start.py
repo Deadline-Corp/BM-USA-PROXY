@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.db import SessionFactory
+from app.core.logging import log
 from app.services import admin_telegram, content, media, referral
 from app.services import settings as settings_svc
 from app.services.users import upsert_from_telegram
@@ -92,8 +93,11 @@ async def _send_welcome_photo(
             await message.answer_photo(
                 cached_file_id, caption=caption, reply_markup=photo_markup
             )
-        except Exception:
-            pass  # Telegram most likely invalidated this id — resend the actual bytes below.
+        except Exception as exc:  # noqa: BLE001 — any failure falls through to a re-upload
+            # Expected when Telegram invalidates the id; the bytes are re-sent below, so
+            # this is recoverable. Logged rather than swallowed: if it starts happening on
+            # every /start, the cache is broken and nothing else would say so.
+            log.warning("bot.welcome_photo_cached_failed", error=str(exc))
         else:
             await _send_text_if_uncaptioned()
             return

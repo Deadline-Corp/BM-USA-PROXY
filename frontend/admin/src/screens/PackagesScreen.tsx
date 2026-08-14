@@ -12,16 +12,18 @@ import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { Modal } from "@/shared/components/Modal";
 import { OrderNumber } from "@/shared/components/OrderNumber";
 import { formatDate } from "@/shared/lib/format";
-import { useAccessesList, useExtendAccess, useReissueAccess, useRevokeAccess, useRotateIp } from "@/shared/hooks/useAccesses";
+import { useAccessesList, useExtendAccess, useReissueAccess, useRevokeAccess } from "@/shared/hooks/useAccesses";
 import { useDebouncedValue } from "@/shared/hooks/useDebouncedValue";
 import { usePagination } from "@/shared/hooks/usePagination";
 import { useToast } from "@/shared/components/Toast";
 import { apiErrorMessage } from "@/shared/api/client";
 import { strings } from "@/shared/strings";
 import type { AccessRow } from "@/shared/api/types";
-import { IconRotate } from "@/shared/components/icons";
 
-type ActionKind = "revoke" | "extend" | "rotate" | "reissue";
+// No "rotate" here on purpose: rotating an IP is the buyer's action, taken from their own
+// app. An operator doing it from the console changed a live customer's address under them
+// with no way for that customer to know why.
+type ActionKind = "revoke" | "extend" | "reissue";
 
 /** Every state an access can be in — the same list the database constraint allows. */
 const STATUSES = ["provisioning", "active", "expiring", "expired", "revoked", "failed"];
@@ -41,7 +43,6 @@ export function PackagesScreen() {
 
   const revokeMutation = useRevokeAccess();
   const extendMutation = useExtendAccess();
-  const rotateMutation = useRotateIp();
   const reissueMutation = useReissueAccess();
 
   useEffect(() => {
@@ -102,17 +103,6 @@ export function PackagesScreen() {
     }
   }
 
-  async function handleRotate() {
-    if (!actionTarget) return;
-    try {
-      await rotateMutation.mutateAsync(actionTarget.row.id);
-      toast.success("IP rotated");
-      closeAction();
-    } catch (err) {
-      toast.error(apiErrorMessage(err));
-    }
-  }
-
   async function handleReissue() {
     if (!actionTarget) return;
     try {
@@ -145,6 +135,22 @@ export function PackagesScreen() {
         header: "Carrier",
         accessorKey: "carrier",
         cell: ({ row }) => row.original.carrier ?? "—",
+      },
+      {
+        // The phone behind the access. Named first because that is what the pool screen
+        // shows; the id underneath is what the iproxy console takes.
+        header: strings.packages.colConnection,
+        accessorKey: "connection_id",
+        enableSorting: false,
+        cell: ({ row }) =>
+          row.original.connection_id ? (
+            <span className="flex flex-col leading-tight">
+              <span className="text-[.82rem] text-text">{row.original.connection_name ?? "—"}</span>
+              <span className="font-mono text-[.7rem] text-text-3">{row.original.connection_id}</span>
+            </span>
+          ) : (
+            "—"
+          ),
       },
       {
         header: "IP",
@@ -184,11 +190,9 @@ export function PackagesScreen() {
           // no less. Guessing wider here quietly removes capability: revoking an expired
           // access is worth keeping, since it forces the provisioner-side cleanup.
           const status = row.original.status;
-          const live = status === "active" || status === "expiring";
           const can = {
             // `expired` is extendable on purpose — the backend resurrects it.
             extend: !["revoked", "cancelled", "failed"].includes(status),
-            rotate: live,
             // Reissue is the way *back* from revoked, so it stays available there.
             reissue: true,
             revoke: status !== "revoked",
@@ -203,15 +207,6 @@ export function PackagesScreen() {
                 onClick={() => openAction(row.original, "extend")}
               >
                 {strings.packages.extend}
-              </Button>
-              <Button
-                variant="quiet"
-                size="sm"
-                disabled={!can.rotate}
-                title={can.rotate ? strings.packages.rotateIp : strings.packages.cannotRotate}
-                onClick={() => openAction(row.original, "rotate")}
-              >
-                <IconRotate className="w-3.5 h-3.5" />
               </Button>
               <Button variant="quiet" size="sm" onClick={() => openAction(row.original, "reissue")}>
                 {strings.packages.reissue}
@@ -300,16 +295,6 @@ export function PackagesScreen() {
         danger
         requireReason
         isSubmitting={revokeMutation.isPending}
-      />
-
-      <ConfirmDialog
-        open={actionTarget?.kind === "rotate"}
-        onClose={closeAction}
-        onConfirm={handleRotate}
-        title={strings.packages.rotateIp}
-        description={strings.packages.rotateIpConfirm}
-        confirmLabel={strings.packages.rotateIp}
-        isSubmitting={rotateMutation.isPending}
       />
 
       <ConfirmDialog

@@ -167,6 +167,38 @@ class IproxyClient:
         data = await self._request("GET", f"/api/console/v1/connection/{connection_id}")
         return data if isinstance(data, dict) else {}
 
+    # ── action links (buyer-facing "rotate my IP" URL) ───────────────────
+    # Confirmed against the live API 2026-08-14 — none of this is documented:
+    #   POST   /connection/{id}/actionlinks  {"action": "changeip"}  -> {"id"}
+    #   GET    /connection/{id}/actionlinks  -> {"action_links": [{id, link, ...}]}
+    #   DELETE /connection/{id}/actionlinks/{link_id}
+    # The flat /actionlinks/{id} form answers 404 on DELETE — must be connection-scoped.
+    # POST returns the id ONLY, so the URL itself has to be read back from the list;
+    # composing it from a hardcoded i.fxdx.in host would break the day they move domains.
+    # Each connection is capped at plan_info.features.max_ip_links_per_connection (15).
+
+    async def create_action_link(self, connection_id: str, *, action: str = "changeip") -> str:
+        data = await self._request(
+            "POST",
+            f"/api/console/v1/connection/{connection_id}/actionlinks",
+            json={"action": action, "comment": "bm-usa-proxy"},
+        )
+        return str((data or {}).get("id") or "") if isinstance(data, dict) else ""
+
+    async def list_action_links(self, connection_id: str) -> list[dict[str, Any]]:
+        data = await self._request(
+            "GET", f"/api/console/v1/connection/{connection_id}/actionlinks"
+        )
+        if isinstance(data, list):
+            return data
+        return data.get("action_links", []) if isinstance(data, dict) else []
+
+    async def delete_action_link(self, connection_id: str, link_id: str) -> None:
+        await self._request(
+            "DELETE",
+            f"/api/console/v1/connection/{connection_id}/actionlinks/{link_id}",
+        )
+
     # ── VPN configs (OpenVPN / WireGuard) ───────────────────────────────
     # Verified against the live API 2026-08-12, because the docs do not describe this:
     # OpenVPN is documented, **WireGuard is not documented at all** — no endpoint, no
@@ -227,25 +259,46 @@ def _parse_proxy_access(raw: dict[str, Any]) -> IssuedProxy:
 
     Confirmed live shape (2026-07-07): {"id", "auth": {"login", "password"},
     "hostname", "ip", "port", "listen_service"}. `hostname` is the durable proxy
-    endpoint (c_fqdn); `ip` is the current mobile exit IP (informational). Rotation
-    is a per-connection command, so there is no per-access rotation link.
+    endpoint (c_fqdn); `ip` is the current mobile exit IP (informational).
+
+    One payload describes ONE protocol. A buyer gets both http and socks5, which are
+    two separate iproxy accesses with **different ports and different credentials** —
+    so `login`/`password` here are the ones for `listen_service`, and the sibling
+    protocol's are merged in by `_merge_socks5` afterwards.
     """
     auth = raw.get("auth") or {}
     port = raw.get("port")
     service = raw.get("listen_service") or "http"
+    is_http = service == "http"
+    login, password = auth.get("login"), auth.get("password")
     return IssuedProxy(
         iproxy_access_id=str(raw.get("id") or ""),
         credentials={
             "host": raw.get("hostname") or raw.get("ip"),
-            "http_port": port if service == "http" else None,
-            "socks5_port": port if service == "socks5" else None,
-            "login": auth.get("login"),
-            "password": auth.get("password"),
+            "http_port": port if is_http else None,
+            "http_login": login if is_http else None,
+            "http_password": password if is_http else None,
+            "socks5_port": None if is_http else port,
+            "socks5_login": None if is_http else login,
+            "socks5_password": None if is_http else password,
+            # Kept as the http pair: every existing access in the database was issued
+            # with these two keys and the UI still reads them as the primary credential.
+            "login": login,
+            "password": password,
             "listen_service": service,
             "exit_ip": raw.get("ip"),
             "rotation_link": None,
         },
     )
+
+
+def _merge_socks5(issued: IssuedProxy, raw: dict[str, Any]) -> None:
+    """Fold a socks5 proxy-access payload into an already-parsed http access."""
+    auth = raw.get("auth") or {}
+    issued.socks5_access_id = str(raw.get("id") or "") or None
+    issued.credentials["socks5_port"] = raw.get("port")
+    issued.credentials["socks5_login"] = auth.get("login")
+    issued.credentials["socks5_password"] = auth.get("password")
 
 
 class IproxyProvisioner(Provisioner):
@@ -263,12 +316,65 @@ class IproxyProvisioner(Provisioner):
         issued = _parse_proxy_access(raw)
         if not issued.iproxy_access_id or not issued.credentials.get("host"):
             raise ProvisioningError(f"malformed iproxy proxy-access response: {sorted(raw)[:8]}")
-        log.info("iproxy.issued", connection=iproxy_connection_id, access=issued.iproxy_access_id)
+
+        # socks5 and the rotation link are deliberately best-effort. The buyer has
+        # already paid and the http proxy above is live and usable; failing the whole
+        # issue over a second, optional resource would take away what already works.
+        # A miss is logged and shows up as an empty field on the access screen.
+        try:
+            socks_raw = await self._client.create_proxy_access(
+                iproxy_connection_id, listen_service="socks5"
+            )
+            _merge_socks5(issued, socks_raw)
+        except IproxyError as exc:
+            log.warning("iproxy.socks5_failed", connection=iproxy_connection_id, error=str(exc))
+
+        try:
+            issued.action_link_id = await self._client.create_action_link(iproxy_connection_id)
+            issued.credentials["rotation_link"] = await self._action_link_url(
+                iproxy_connection_id, issued.action_link_id
+            )
+        except IproxyError as exc:
+            log.warning("iproxy.actionlink_failed", connection=iproxy_connection_id, error=str(exc))
+
+        log.info(
+            "iproxy.issued",
+            connection=iproxy_connection_id,
+            access=issued.iproxy_access_id,
+            socks5=issued.socks5_access_id,
+            link=issued.action_link_id,
+        )
         return issued
 
-    async def revoke(self, *, iproxy_connection_id: str, iproxy_access_id: str) -> None:
-        with contextlib.suppress(IproxyNotFound):  # already gone — fine
-            await self._client.delete_proxy_access(iproxy_connection_id, iproxy_access_id)
+    async def _action_link_url(self, connection_id: str, link_id: str) -> str | None:
+        """Read the URL back — POST answers with the id alone."""
+        if not link_id:
+            return None
+        for link in await self._client.list_action_links(connection_id):
+            if str(link.get("id")) == link_id:
+                url = link.get("link")
+                return str(url) if url else None
+        return None
+
+    async def revoke(
+        self,
+        *,
+        iproxy_connection_id: str,
+        iproxy_access_id: str,
+        socks5_access_id: str | None = None,
+        action_link_id: str | None = None,
+    ) -> None:
+        # Every resource is removed independently: one that is already gone (404) or
+        # fails must not strand the others on the connection. A leftover socks5 access
+        # or rotation link would keep working for a customer whose access we revoked.
+        for access_id in (iproxy_access_id, socks5_access_id):
+            if not access_id:
+                continue
+            with contextlib.suppress(IproxyError):  # already gone / transient — best-effort
+                await self._client.delete_proxy_access(iproxy_connection_id, access_id)
+        if action_link_id:
+            with contextlib.suppress(IproxyError):
+                await self._client.delete_action_link(iproxy_connection_id, action_link_id)
 
     async def create_vpn_access(
         self, *, iproxy_connection_id: str, kind: str, name: str

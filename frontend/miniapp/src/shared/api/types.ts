@@ -182,10 +182,17 @@ export interface AccessesResponse {
 
 export interface AccessCredentials {
   host: string | null;
+  // http and socks5 are two separate proxies on the same phone: each has its own port
+  // and its own login/password pair. login/password mirror the http pair.
   http_port: number | null;
+  http_login: string | null;
+  http_password: string | null;
   socks5_port: number | null;
+  socks5_login: string | null;
+  socks5_password: string | null;
   login: string | null;
   password: string | null;
+  rotation_link: string | null;
 }
 
 export type ConfigType = "ovpn" | "wg";

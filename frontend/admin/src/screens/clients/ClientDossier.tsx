@@ -367,7 +367,11 @@ function DossierBody({
               <RowItem
                 key={a.id}
                 title={`${a.tariff_code} · ${a.city ?? "—"}`}
-                sub={`${a.carrier ?? "—"} · ${a.ip ?? "no IP"}`}
+                // The connection id belongs on this line because support's next step is
+                // opening that phone in the iproxy console.
+                sub={[a.carrier ?? "—", a.ip ?? "no IP", a.connection_id ?? "no connection"].join(
+                  " · ",
+                )}
                 trailing={<StatusBadge status={a.status} />}
               />
             ))}

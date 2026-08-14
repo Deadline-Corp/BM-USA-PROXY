@@ -8,8 +8,13 @@ from typing import Protocol
 
 @dataclass(slots=True)
 class IssuedProxy:
-    iproxy_access_id: str
-    credentials: dict  # host, http_port, socks5_port, login, password, rotation_link
+    # A buyer's access is three iproxy resources, not one: an http proxy-access, a
+    # socks5 proxy-access (own port and own credentials), and a changeip action link.
+    # All three ids are stored so revoke can take every one of them back down.
+    iproxy_access_id: str  # the http access — the one that must exist
+    credentials: dict  # host, {http,socks5}_{port,login,password}, rotation_link
+    socks5_access_id: str | None = None
+    action_link_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -23,7 +28,14 @@ class Provisioner(Protocol):
 
     async def issue(self, *, iproxy_connection_id: str, duration_minutes: int) -> IssuedProxy: ...
 
-    async def revoke(self, *, iproxy_connection_id: str, iproxy_access_id: str) -> None: ...
+    async def revoke(
+        self,
+        *,
+        iproxy_connection_id: str,
+        iproxy_access_id: str,
+        socks5_access_id: str | None = None,
+        action_link_id: str | None = None,
+    ) -> None: ...
 
     async def rotate_ip(self, *, iproxy_connection_id: str) -> None: ...
 

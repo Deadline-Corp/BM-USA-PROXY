@@ -18,8 +18,11 @@ while their addresses had long since resolved to Wisconsin. The label was not wr
 it was written — it was just never rewritten.
 
 Because it is derived, `location_id` can no longer be an operator's to keep: a manual
-pick in /admin is overwritten by the next pass. carrier / is_sellable / tier remain
-operator-owned and are still never touched after the first sighting.
+pick in /admin is overwritten by the next pass. `carrier` is derived the same way and for
+the same reason — it is read off the phone's current exit IP, which is what the buyer
+checks, so a phone that rotates onto another carrier's address stops advertising the old
+one. is_sellable / tier remain operator-owned and are never touched after the first
+sighting.
 """
 
 from __future__ import annotations
@@ -33,6 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import log
 from app.models import Connection, Location
+from app.services.carriers import carrier_from_ip
 from app.services.provisioning.iproxy import IproxyClient
 
 # iproxy reports the exit-IP city but not its state, so the state is filled in here for the
@@ -49,6 +53,19 @@ _CITY_STATE: dict[str, str] = {
     "milwaukee": "WI", "madison": "WI", "saint francis": "WI", "sun prairie": "WI",
     "pleasant prairie": "WI", "new berlin": "WI", "kenosha": "WI",
 }
+
+
+def _carrier_for(status_row: dict[str, Any], device: dict[str, Any]) -> str | None:
+    """Carrier of a phone: from its exit IP first, from what the handset reports second.
+
+    The exit IP is what the buyer will check, and it is the client's own rule for reading
+    their pool (see services/carriers.py). `network_operator_mobile` is the fallback for a
+    phone that has not reported an address yet — it names the SIM's operator, which is the
+    same thing whenever both are present.
+    """
+    return carrier_from_ip(status_row.get("ipv4")) or _normalize_carrier(
+        device.get("network_operator_mobile")
+    )
 
 
 def _normalize_carrier(raw: str | None) -> str | None:
@@ -137,6 +154,7 @@ async def sync_pool(session: AsyncSession, client: IproxyClient | None = None) -
                     Connection.name,
                     Connection.online_status,
                     Connection.location_id,
+                    Connection.carrier,
                 )
             )
         ).all()
@@ -158,9 +176,11 @@ async def sync_pool(session: AsyncSession, client: IproxyClient | None = None) -
         app_data = c.get("app_data") or {}
         device = app_data.get("device_info") or {}
         name = basic.get("name") or c.get("name") or ""
-        status = _online_status(statuses.get(cid, {}))
+        status_row = statuses.get(cid, {})
+        status = _online_status(status_row)
         if status == "online":
             online += 1
+        carrier = _carrier_for(status_row, device)
 
         known = current.get(cid)
         # Resolved for every phone on every pass, not just new ones — this is what keeps a
@@ -174,6 +194,7 @@ async def sync_pool(session: AsyncSession, client: IproxyClient | None = None) -
             and known.name == name
             and known.online_status == status
             and known.location_id == loc_id
+            and known.carrier == carrier
         )
         if unchanged:
             (stamp_online if status == "online" else stamp_offline).append(cid)
@@ -182,7 +203,7 @@ async def sync_pool(session: AsyncSession, client: IproxyClient | None = None) -
         values: dict[str, Any] = {
             "iproxy_connection_id": cid,
             "name": name,
-            "carrier": _normalize_carrier(device.get("network_operator_mobile")),
+            "carrier": carrier,
             "location_id": loc_id,
             "is_sellable": True,  # auto-list on first sight; admin can toggle later
             "tier": "standard",
@@ -201,6 +222,10 @@ async def sync_pool(session: AsyncSession, client: IproxyClient | None = None) -
             "online_status": stmt.excluded.online_status,
             "synced_at": stmt.excluded.synced_at,
             "location_id": stmt.excluded.location_id,
+            # Derived from the exit IP, so it moves with the phone exactly like the city
+            # does. It used to be written once and kept as an operator's field; a phone
+            # that rotated onto another carrier's address then advertised the old one.
+            "carrier": stmt.excluded.carrier,
         }
         if status == "online":
             set_["last_online_at"] = stmt.excluded.last_online_at

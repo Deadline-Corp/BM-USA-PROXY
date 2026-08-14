@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import Conflict, ProvisioningError
+from app.core.logging import log
 from app.core.security import encrypt_credentials
 from app.models import Access, AccessEvent, Connection, Order, Tariff
 from app.services import vpn_configs
@@ -57,6 +58,8 @@ async def provision_access(session: AsyncSession, *, order: Order) -> Access:
         raise
     now = _utcnow()
     access.iproxy_access_id = issued.iproxy_access_id
+    access.iproxy_socks5_access_id = issued.socks5_access_id
+    access.iproxy_action_link_id = issued.action_link_id
     access.credentials_enc = encrypt_credentials(issued.credentials)
     access.starts_at = now
     access.expires_at = now + timedelta(minutes=duration)
@@ -88,6 +91,8 @@ async def revoke_access(
                 await get_provisioner().revoke(
                     iproxy_connection_id=conn.iproxy_connection_id,
                     iproxy_access_id=access.iproxy_access_id,
+                    socks5_access_id=access.iproxy_socks5_access_id,
+                    action_link_id=access.iproxy_action_link_id,
                 )
     # A VPN config is a separate iproxy resource with no expiry of its own. Leaving it
     # behind hands the customer a tunnel that outlives the month they paid for — the
@@ -156,8 +161,16 @@ async def rotate_ip(session: AsyncSession, *, access: Access, actor: str = "user
             new_loc_id = await _resolve_location(session, exit_ip.city)
             if new_loc_id is not None and new_loc_id != conn.location_id:
                 conn.location_id = new_loc_id
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001 — the rotation itself already succeeded
+        # Not fatal: sync_pool re-resolves every connection's city on its next pass, so a
+        # miss here only delays the label. Logged because a persistent failure would keep
+        # every rotated phone on a stale city and look, from outside, like the city simply
+        # never updates.
+        log.warning(
+            "rotate.city_refresh_failed",
+            connection=conn.iproxy_connection_id,
+            error=str(exc),
+        )
 
 
 async def swap_access(
@@ -194,6 +207,8 @@ async def swap_access(
             await get_provisioner().revoke(
                 iproxy_connection_id=old_conn.iproxy_connection_id,
                 iproxy_access_id=access.iproxy_access_id,
+                socks5_access_id=access.iproxy_socks5_access_id,
+                action_link_id=access.iproxy_action_link_id,
             )
 
     if reactivating:
@@ -209,6 +224,8 @@ async def swap_access(
     )
     access.connection_id = new_conn_id
     access.iproxy_access_id = issued.iproxy_access_id
+    access.iproxy_socks5_access_id = issued.socks5_access_id
+    access.iproxy_action_link_id = issued.action_link_id
     access.credentials_enc = encrypt_credentials(issued.credentials)
     access.swap_count += 1
     if reactivating:
