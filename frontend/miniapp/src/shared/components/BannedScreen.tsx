@@ -1,11 +1,19 @@
 import { ShieldX, Send } from "lucide-react";
 import { strings } from "../strings";
 import { Button } from "./Button";
+import { DEFAULT_SUPPORT_URL, useAppLinks } from "../hooks/useLinks";
 
 /** Full-screen block shown when the backend reports the account as banned.
  *  Replaces the generic "Something went wrong" so the user knows what happened
- *  and how to reach a human. */
+ *  and how to reach a human.
+ *
+ *  The Support link comes from GET /api/twa/links — deliberately a public, unauthenticated
+ *  endpoint (see backend/app/api/twa/router.py::links) precisely so the one person who most
+ *  needs it, a banned user, can still fetch it; the authenticated endpoints all 403 them. */
 export function BannedScreen() {
+  const linksQuery = useAppLinks();
+  const supportUrl = linksQuery.data?.support_url ?? DEFAULT_SUPPORT_URL;
+
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-app px-6 text-center">
       <span className="flex h-14 w-14 items-center justify-center rounded-xl border border-danger/[.22] bg-danger/10 text-danger">
@@ -16,7 +24,7 @@ export function BannedScreen() {
       </h1>
       <p className="max-w-[300px] text-[13.5px] leading-relaxed text-text-2">{strings.banned.body}</p>
       <a
-        href="https://t.me/usproxy_support"
+        href={supportUrl}
         target="_blank"
         rel="noopener noreferrer"
         className="mt-1 no-underline"

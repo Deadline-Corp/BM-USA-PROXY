@@ -1,5 +1,5 @@
 """/start, /app, /help — onboarding, deep-link capture (referral + post attribution),
-open-the-app button, and the Terms-of-Use prompt.
+and the open-the-app button.
 """
 
 from __future__ import annotations
@@ -14,27 +14,40 @@ from aiogram.types import (
     Message,
     WebAppInfo,
 )
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.db import SessionFactory
 from app.services import admin_telegram, content, referral
-from app.services.users import is_tos_accepted, upsert_from_telegram
+from app.services import settings as settings_svc
+from app.services.users import upsert_from_telegram
 
 router = Router(name="start")
 
 
-def _open_app_keyboard() -> InlineKeyboardMarkup:
+async def _app_links(session: AsyncSession) -> tuple[str, str]:
+    """Channel/support links, operator-editable in the admin Settings screen.
+
+    Resolved via the shared app.services.settings.app_links() helper so the bot keyboard
+    and the mini-app's GET /api/twa/links endpoint read the exact same values and defaults
+    — see settings.py for the normalization rules and DEFAULT_CHANNEL_URL/DEFAULT_SUPPORT_URL.
+    """
+    links = await settings_svc.app_links(session)
+    return links["channel_url"], links["support_url"]
+
+
+def _open_app_keyboard(channel_url: str, support_url: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Open BM USA Proxy",
+                    text="Get proxy",
                     web_app=WebAppInfo(url=f"{settings.public_base_url}/app"),
                 )
             ],
             [
-                InlineKeyboardButton(text="Channel", url="https://t.me/usproxyclub"),
-                InlineKeyboardButton(text="Support", url="https://t.me/usproxy_support"),
+                InlineKeyboardButton(text="Channel", url=channel_url),
+                InlineKeyboardButton(text="Support", url=support_url),
             ],
         ]
     )
@@ -87,7 +100,7 @@ async def cmd_start(message: Message, command: CommandObject) -> None:
             await content.record_click(
                 session, code=payload[len(_POST_PREFIX) :], user=user
             )
-        accepted = await is_tos_accepted(session, user)
+        channel_url, support_url = await _app_links(session)
         # If the console is waiting on this handle, this is the moment it gets an address
         # to send login codes to. Silent for everyone else — the overwhelming majority of
         # people pressing Start are customers, not operators.
@@ -107,32 +120,25 @@ async def cmd_start(message: Message, command: CommandObject) -> None:
     await message.answer(
         "Welcome to <b>BM USA Proxy</b> — premium USA mobile proxies.\n\n"
         "Tap below to open the app and get started.",
-        reply_markup=_open_app_keyboard(),
+        reply_markup=_open_app_keyboard(channel_url, support_url),
     )
-    if not accepted:
-        await message.answer(
-            "Please read and accept our Terms of Use first, then we'll provide you "
-            "with a proxy.",
-            reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[[
-                    InlineKeyboardButton(
-                        text="Read & accept Terms",
-                        web_app=WebAppInfo(url=f"{settings.public_base_url}/app?screen=terms"),
-                    )
-                ]]
-            ),
-        )
 
 
 @router.message(Command("app"))
 async def cmd_app(message: Message) -> None:
-    await message.answer("Open the app:", reply_markup=_open_app_keyboard())
+    async with SessionFactory() as session:
+        channel_url, support_url = await _app_links(session)
+    await message.answer(
+        "Open the app:", reply_markup=_open_app_keyboard(channel_url, support_url)
+    )
 
 
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
+    async with SessionFactory() as session:
+        channel_url, support_url = await _app_links(session)
     await message.answer(
-        "Need help? Contact @usproxy_support.\n"
+        "Need help? Use the Support button below.\n"
         "All actions (buy, my access, referrals) are inside the app.",
-        reply_markup=_open_app_keyboard(),
+        reply_markup=_open_app_keyboard(channel_url, support_url),
     )

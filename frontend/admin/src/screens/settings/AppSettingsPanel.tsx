@@ -27,6 +27,8 @@ const SETTING_LABELS: Record<string, string> = {
   invoice_ttl_minutes: "Invoice lifetime (minutes)",
   rotation_cooldown_sec: "IP rotation cooldown (seconds)",
   pool_low_watermark: "Pool low-stock alert (free slots)",
+  bot_channel_url: "Channel link",
+  bot_support_url: "Support link",
 };
 
 const labelFor = (key: string) => SETTING_LABELS[key] ?? key.replace(/_/g, " ");

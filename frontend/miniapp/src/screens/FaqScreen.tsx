@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { HelpCircle, ChevronDown, Send, Plus } from "lucide-react";
 import { useFaq } from "../shared/hooks/useFaq";
+import { DEFAULT_SUPPORT_URL, useAppLinks } from "../shared/hooks/useLinks";
 import { useCreateRequest } from "../shared/hooks/useRequests";
 import { useToast } from "../shared/components/Toast";
 import { strings } from "../shared/strings";
@@ -44,6 +45,8 @@ export function FaqScreen() {
   const faqQuery = useFaq();
   const createRequest = useCreateRequest();
   const { showToast } = useToast();
+  const linksQuery = useAppLinks();
+  const supportUrl = linksQuery.data?.support_url ?? DEFAULT_SUPPORT_URL;
 
   const [openId, setOpenId] = useState<string | null>(null);
   const [requestSheetOpen, setRequestSheetOpen] = useState(false);
@@ -129,13 +132,13 @@ export function FaqScreen() {
           <small className="text-xs text-text-3">{strings.faq.contactSupportBody}</small>
         </div>
         <a
-          href="https://t.me/usproxy_support"
+          href={supportUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="whitespace-nowrap no-underline"
         >
           <Button variant="primary" size="sm">
-            @usproxy_support
+            {strings.faq.contactSupportCta}
           </Button>
         </a>
       </div>

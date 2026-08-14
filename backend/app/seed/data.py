@@ -76,6 +76,11 @@ def default_settings(tos_version: int = 1) -> dict[str, object]:
         "invoice_ttl_minutes": 60,
         "rotation_cooldown_sec": 60,
         "pool_low_watermark": 10,
+        # Bot keyboard links (Channel/Support). Blank means "use the hardcoded default" —
+        # see _DEFAULT_CHANNEL_URL / _DEFAULT_SUPPORT_URL in bot/handlers/start.py — but a
+        # seeded row is what makes the fields show up in the admin Settings screen at all.
+        "bot_channel_url": "",
+        "bot_support_url": "",
         "attribution": {"mode": "first_touch", "rebind_window_hours": 720},
         "tos": {
             "version": tos_version,

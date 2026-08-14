@@ -21,6 +21,8 @@ export interface Tariff {
   code: string;
   name: string;
   description: string;
+  kind: "auto" | "manual";
+  auto_issue: boolean;
   duration_minutes: number;
   price_usd: number;
   max_user_swaps: number;
@@ -143,6 +145,14 @@ export interface PaymentMethod {
 
 export interface PaymentMethodsResponse {
   methods: PaymentMethod[];
+}
+
+// ── /links ───────────────────────────────────────────────────────────────
+/** Channel/Support links, operator-editable in the admin Settings screen. Public
+ *  endpoint — no auth — so a banned account can still reach Support. */
+export interface AppLinks {
+  channel_url: string;
+  support_url: string;
 }
 
 // ── /accesses ────────────────────────────────────────────────────────────
