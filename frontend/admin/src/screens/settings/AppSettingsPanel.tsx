@@ -33,11 +33,12 @@ const SETTING_LABELS: Record<string, string> = {
   invoice_ttl_minutes: "Invoice lifetime (minutes)",
   rotation_cooldown_sec: "IP rotation cooldown (seconds)",
   pool_low_watermark: "Pool low-stock alert (free slots)",
-  // Comma-separated chats — @username or numeric id — that receive operator alerts:
-  // client messages, reseller enquiries, low stock, the nightly reconciliation. The bot
-  // must be a member of each (an admin, for a channel). Adds to whatever OPS_ALERT_CHAT_ID
-  // is set to at deploy time rather than replacing it.
-  ops_alert_chats: "Operator alert chats (comma-separated)",
+  // Comma-separated destinations for operator alerts: client messages, reseller enquiries,
+  // low stock, the nightly reconciliation. Adds to OPS_ALERT_CHAT_ID rather than replacing
+  // it. A person must be given as their NUMERIC telegram id (shown next to their handle on
+  // the Clients screen) and must have pressed Start on the bot — an @handle only addresses
+  // a public channel, and for a person it silently reaches nobody.
+  ops_alert_chats: "Operator alert chats — numeric telegram ids, comma-separated",
   bot_channel_url: "Channel link",
   bot_support_url: "Support link",
 };

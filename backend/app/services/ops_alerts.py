@@ -10,8 +10,14 @@ Recipients come from two places, both allowed to be empty:
   * the `ops_alert_chats` app setting — editable in the admin console, so the client can
     add or remove a chat without a deploy.
 
-A chat is either a numeric id or an @username; Telegram accepts both, and the bot must be
-a member (for a channel, an admin) of each.
+**Use numeric ids for people.** An @username only works as a destination for a public
+channel or supergroup. A private chat with a person can only be addressed by their numeric
+Telegram id, and only after that person has pressed Start on the bot — Telegram does not
+let a bot open a conversation. So an operator's @handle in this list silently resolves to
+nothing, which is indistinguishable from "no alerts are firing".
+
+Their id is on the Clients screen beside the handle, and in admin_users for anyone with a
+console account.
 """
 
 from __future__ import annotations
