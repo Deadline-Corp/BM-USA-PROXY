@@ -39,8 +39,6 @@ export function CatalogScreen() {
 
   const [locationId, setLocationId] = useState<number | typeof ANY>(ANY);
   const [carrier, setCarrier] = useState<Carrier | typeof ANY>(ANY);
-  const [citySheetOpen, setCitySheetOpen] = useState(false);
-  const [carrierSheetOpen, setCarrierSheetOpen] = useState(false);
   // Coin choice is a blocking step between Buy and the invoice — see handleBuy.
   const methodsQuery = usePaymentMethods();
   const methods = methodsQuery.data?.methods ?? [];
@@ -70,10 +68,6 @@ export function CatalogScreen() {
   const [orderError, setOrderError] = useState<string | null>(null);
   const [pendingTariff, setPendingTariff] = useState<string | null>(null);
 
-  const selectedLocation = useMemo(
-    () => (locationId === ANY ? null : catalogQuery.data?.locations.find((l) => l.id === locationId) ?? null),
-    [locationId, catalogQuery.data],
-  );
 
   /**
    * Buy is a two-step flow: pick the coin, then the invoice is created.
@@ -175,30 +169,61 @@ export function CatalogScreen() {
         </div>
       </div>
 
-      {/* ── city / carrier selectors ── */}
-      <div className="mb-4 flex gap-2">
-        <button
-          type="button"
-          className="flex flex-1 items-center justify-between gap-2 rounded border border-border bg-surface px-3 py-2.5 text-left text-[13px] text-text transition-colors hover:border-border-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-          onClick={() => setCitySheetOpen(true)}
-        >
-          <span className="flex min-w-0 items-center gap-1.5">
-            <MapPin size={14} className="shrink-0 text-text-3" aria-hidden="true" />
-            <span className="truncate">{selectedLocation ? selectedLocation.city : strings.common.any}</span>
-          </span>
-          <ChevronRight size={14} className="shrink-0 text-text-3" aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          className="flex flex-1 items-center justify-between gap-2 rounded border border-border bg-surface px-3 py-2.5 text-left text-[13px] text-text transition-colors hover:border-border-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-          onClick={() => setCarrierSheetOpen(true)}
-        >
-          <span className="flex min-w-0 items-center gap-1.5">
-            <Radio size={14} className="shrink-0 text-text-3" aria-hidden="true" />
-            <span className="truncate">{carrier === ANY ? strings.common.any : carrier}</span>
-          </span>
-          <ChevronRight size={14} className="shrink-0 text-text-3" aria-hidden="true" />
-        </button>
+      {/* ── city / carrier selectors ──
+          Dropdowns rather than buttons opening a sheet, matching the network/coin pickers
+          in the pay sheet: one control vocabulary for "choose one of a short list" across
+          the app. Both default to Any, which is also what the allocator does with no
+          preference — the buyer is choosing a constraint, not filling a required field. */}
+      <div className="mb-4 grid grid-cols-2 gap-2">
+        <div>
+          <label
+            htmlFor="catalog-city"
+            className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-3"
+          >
+            <MapPin size={12} className="shrink-0" aria-hidden="true" />
+            {strings.catalog.cityFilterLabel}
+          </label>
+          <select
+            id="catalog-city"
+            className="w-full rounded border border-border bg-surface px-3 py-2.5 text-[13.5px] text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            value={locationId === ANY ? "" : String(locationId)}
+            onChange={(e) => setLocationId(e.target.value === "" ? ANY : Number(e.target.value))}
+          >
+            <option value="">
+              {strings.common.any}
+              {catalogQuery.data ? ` · ${catalogQuery.data.any_city_free.any}` : ""}
+            </option>
+            {/* The free count rides along in the label, as it did in the old sheet: a city
+                with nothing free is the one thing a buyer needs to know before choosing. */}
+            {(catalogQuery.data?.locations ?? []).map((loc) => (
+              <option key={loc.id} value={String(loc.id)}>
+                {formatCityState(loc.city, loc.state_code)} · {loc.free.any}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label
+            htmlFor="catalog-carrier"
+            className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-3"
+          >
+            <Radio size={12} className="shrink-0" aria-hidden="true" />
+            {strings.catalog.carrierFilterLabel}
+          </label>
+          <select
+            id="catalog-carrier"
+            className="w-full rounded border border-border bg-surface px-3 py-2.5 text-[13.5px] text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            value={carrier === ANY ? "" : carrier}
+            onChange={(e) => setCarrier(e.target.value === "" ? ANY : (e.target.value as Carrier))}
+          >
+            <option value="">{strings.common.any}</option>
+            {(catalogQuery.data?.carriers ?? []).map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {paymentsUnconfigured ? (
@@ -446,61 +471,6 @@ export function CatalogScreen() {
         </Button>
       </Sheet>
 
-      {/* ── city sheet ── */}
-      <Sheet open={citySheetOpen} onClose={() => setCitySheetOpen(false)} title={strings.catalog.citySheetTitle}>
-        <div className="flex flex-col gap-1">
-          <CityRow
-            label={strings.common.any}
-            selected={locationId === ANY}
-            freeCount={catalogQuery.data?.any_city_free.any}
-            onSelect={() => {
-              setLocationId(ANY);
-              setCitySheetOpen(false);
-            }}
-          />
-          {catalogQuery.data?.locations.map((loc) => (
-            <CityRow
-              key={loc.id}
-              label={formatCityState(loc.city, loc.state_code)}
-              selected={locationId === loc.id}
-              freeCount={loc.free.any}
-              onSelect={() => {
-                setLocationId(loc.id);
-                setCitySheetOpen(false);
-              }}
-            />
-          ))}
-        </div>
-      </Sheet>
-
-      {/* ── carrier sheet ── */}
-      <Sheet
-        open={carrierSheetOpen}
-        onClose={() => setCarrierSheetOpen(false)}
-        title={strings.catalog.carrierSheetTitle}
-      >
-        <div className="flex flex-col gap-1">
-          <CityRow
-            label={strings.common.any}
-            selected={carrier === ANY}
-            onSelect={() => {
-              setCarrier(ANY);
-              setCarrierSheetOpen(false);
-            }}
-          />
-          {catalogQuery.data?.carriers.map((c) => (
-            <CityRow
-              key={c}
-              label={c}
-              selected={carrier === c}
-              onSelect={() => {
-                setCarrier(c);
-                setCarrierSheetOpen(false);
-              }}
-            />
-          ))}
-        </div>
-      </Sheet>
 
       {/* ── reseller request sheet ── */}
       <Sheet
@@ -532,34 +502,3 @@ export function CatalogScreen() {
   );
 }
 
-interface CityRowProps {
-  label: string;
-  selected: boolean;
-  freeCount?: number;
-  onSelect: () => void;
-}
-
-function CityRow({ label, selected, freeCount, onSelect }: CityRowProps) {
-  const soldOut = freeCount === 0;
-  return (
-    <button
-      type="button"
-      className={`flex items-center justify-between gap-2 rounded px-3 py-2.5 text-left text-[13.5px] transition-colors ${
-        selected ? "bg-accent/[.08] text-accent" : "text-text hover:bg-surface-2"
-      }`}
-      onClick={onSelect}
-      disabled={soldOut}
-    >
-      <span className={soldOut ? "text-text-3" : undefined}>{label}</span>
-      {freeCount !== undefined ? (
-        soldOut ? (
-          <span className="text-[11px] text-text-3">{strings.catalog.slotsSoldOut}</span>
-        ) : (
-          <span className="text-[11px] text-text-3">
-            <Num>{freeCount}</Num> {strings.catalog.slotsFree}
-          </span>
-        )
-      ) : null}
-    </button>
-  );
-}

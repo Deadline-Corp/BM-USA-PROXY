@@ -46,7 +46,6 @@ const tariffSchema = z.object({
   price_usd: z.coerce.number().min(0, "Must be 0 or more"),
   duration_value: z.coerce.number().int().min(1, "Must be at least 1"),
   duration_unit: z.enum(DURATION_UNITS),
-  max_user_swaps: z.coerce.number().int().min(0, "Must be 0 or more"),
   is_active: z.boolean(),
 });
 
@@ -71,7 +70,7 @@ export function TariffFormModal({ open, onClose, tariff }: TariffFormModalProps)
     formState: { errors },
   } = useForm<TariffForm>({
     resolver: zodResolver(tariffSchema),
-    defaultValues: { code: "", name: "", price_usd: 0, duration_value: 1, duration_unit: "day", max_user_swaps: 0, is_active: true },
+    defaultValues: { code: "", name: "", price_usd: 0, duration_value: 1, duration_unit: "day", is_active: true },
   });
 
   useEffect(() => {
@@ -84,11 +83,10 @@ export function TariffFormModal({ open, onClose, tariff }: TariffFormModalProps)
         price_usd: tariff.price_usd,
         duration_value: d.value,
         duration_unit: d.unit,
-        max_user_swaps: tariff.max_user_swaps,
         is_active: tariff.is_active,
       });
     } else {
-      reset({ code: "", name: "", price_usd: 0, duration_value: 1, duration_unit: "day", max_user_swaps: 0, is_active: true });
+      reset({ code: "", name: "", price_usd: 0, duration_value: 1, duration_unit: "day", is_active: true });
     }
   }, [open, tariff, reset]);
 
@@ -98,7 +96,9 @@ export function TariffFormModal({ open, onClose, tariff }: TariffFormModalProps)
       name: values.name,
       price_usd: values.price_usd,
       duration_minutes: values.duration_value * UNIT_MINUTES[values.duration_unit],
-      max_user_swaps: values.max_user_swaps,
+      // Carried through untouched rather than edited here — an existing plan keeps the
+      // swap limit it was saved with, and a new one starts at none.
+      max_user_swaps: tariff?.max_user_swaps ?? 0,
       is_active: values.is_active,
     };
     try {
@@ -147,14 +147,10 @@ export function TariffFormModal({ open, onClose, tariff }: TariffFormModalProps)
             error={errors.price_usd?.message}
             {...register("price_usd")}
           />
-          <Input
-            type="number"
-            min={0}
-            label={strings.tariffs.maxUserSwaps}
-            hint="Max self-service IP swaps the client can do"
-            error={errors.max_user_swaps?.message}
-            {...register("max_user_swaps")}
-          />
+          {/* No swap-limit field: it asked an operator to set a number for a mechanism
+              buyers reach only from the trial screen, and nothing on this card explained
+              it. Existing plans keep whatever they were saved with (see onSubmit) — the
+              limit still works, it is simply no longer a decision made here. */}
         </div>
         <div className="grid grid-cols-2 gap-4">
           <Input

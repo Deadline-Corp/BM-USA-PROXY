@@ -82,7 +82,7 @@ export const strings = {
     tileMyAccessTitle: "My access",
     tileMyAccessSubActive: "active package",
     tileMyAccessSubNone: "No active package",
-    tileTariffsTitle: "Tariffs",
+    tileTariffsTitle: "Plans",
     tileTariffsSub: "Daily, Weekly, Monthly · auto-issue",
     // No number here on purpose: this teaser has no access to the live rate, and a stale
     // one is worse than none. The referral screen states the rate, and gets it from the API.
@@ -97,7 +97,7 @@ export const strings = {
   },
 
   catalog: {
-    title: "Tariffs",
+    title: "Plans",
     choosePlan: "Choose your plan",
     trialName: "Trial",
     trialMeta: "1 hour · instant real-device test",
@@ -133,10 +133,10 @@ export const strings = {
     payCoinPlaceholder: "Select a coin…",
     payCoinDisabled: "Choose a network first",
     payContinue: "Continue to payment",
-    citySheetTitle: "Choose city",
-    carrierSheetTitle: "Choose carrier",
     citySelectorLabel: "City",
     carrierSelectorLabel: "Carrier",
+    cityFilterLabel: "City",
+    carrierFilterLabel: "Carrier",
     slotsFree: "free",
     slotsSoldOut: "Sold out",
     needHelp: "Need help?",
@@ -233,7 +233,7 @@ export const strings = {
     noAccessTitle: "No active access yet",
     noAccessBody: "Start with a free trial on a real device, or pick a plan that fits your workflow.",
     getFreeTrial: "Get free trial",
-    viewTariffs: "View tariffs",
+    viewTariffs: "View plans",
     empty: "Nothing here yet.",
     howToConnectSocks: "SOCKS5",
     howToConnectSocksBody:
