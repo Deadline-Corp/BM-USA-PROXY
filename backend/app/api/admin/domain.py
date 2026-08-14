@@ -890,6 +890,13 @@ def _connection_view(
         "health_note": c.health_note,
         "slots_total": 1,
         "slots_used": slots_used,
+        # Held from the iproxy side rather than by anything we sold. The card says so
+        # explicitly, because otherwise this phone reads as free here while it is serving
+        # somebody's traffic — the exact mismatch the client saw on the demo.
+        "external_holds": c.external_access_count,
+        "external_checked_at": (
+            c.external_checked_at.isoformat() if c.external_checked_at else None
+        ),
         "last_rotated_at": c.last_rotated_at.isoformat() if c.last_rotated_at else None,
     }
 
@@ -1060,9 +1067,15 @@ async def pool_summary(admin: CurrentAdmin, session: DbSession) -> dict[str, Any
     connection falls in exactly one:
       busy        — an access is live on it. Sold capacity, whether or not the phone is
                     answering right now; a device dropping off does not un-sell it.
-      free        — sellable, online, nothing on it. This is what the allocator can hand
-                    out this second, and the only number that answers "can we sell?".
-      unavailable — everything else: offline, silent, or withheld by an operator.
+      free        — sellable, online, nothing on it, and nothing holding it in iproxy.
+                    This is what the allocator can hand out this second, and the only
+                    number that answers "can we sell?".
+      unavailable — everything else: offline, silent, withheld by an operator, or held by
+                    a proxy-access somebody created straight in the iproxy console.
+
+    That last case is why `free` checks external_access_count as well: a phone occupied
+    from the iproxy side has no row here saying so, and counting it free promises capacity
+    the allocator will refuse to hand out.
     """
     rows = await session.execute(
         text(
@@ -1074,6 +1087,7 @@ async def pool_summary(admin: CurrentAdmin, session: DbSession) -> dict[str, Any
                 count(*) AS total,
                 count(*) FILTER (
                     WHERE c.is_sellable AND c.online_status = 'online'
+                      AND c.external_access_count = 0
                       AND NOT EXISTS (
                         SELECT 1 FROM accesses a
                         WHERE a.connection_id = c.id

@@ -108,6 +108,11 @@ export function PoolsScreen() {
           <SummaryCell label={strings.pools.slots} value={summary?.slots_total ?? 0} />
           <SummaryCell label={strings.pools.free} value={summary?.slots_free ?? 0} tone="success" />
           <SummaryCell label={strings.pools.used} value={summary?.slots_used ?? 0} tone="accent" />
+          {/* The fourth bucket had a colour in the bar and a number in the legend but no
+              cell of its own, so the three cells never added up to the total and the gap
+              had no name. Unavailable is the one an operator has to act on — it is stock
+              that cannot be sold. */}
+          <SummaryCell label={strings.pools.unavailable} value={unavailableSlots} />
           <div className="flex-1 min-w-[220px] px-6 py-3.5 border-l border-border flex flex-col gap-1.5 justify-center">
             <div className="flex justify-between items-baseline">
               <span className="text-[.69rem] uppercase tracking-[.08em] text-text-3">Capacity</span>

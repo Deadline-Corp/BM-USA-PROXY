@@ -62,6 +62,10 @@ class WorkerSettings:
         # or a newly added one should not stay invisible for five. Costs two iproxy calls
         # per pass whatever the pool size — both endpoints return the whole account.
         cron(jobs.sync_connections, second=45),
+        # One request per phone, so it walks the pool in batches rather than sweeping it
+        # every minute like sync_connections does. Five minutes is fast enough for a hold
+        # created by hand in the iproxy console — nobody does that twice a minute.
+        cron(jobs.sync_external_holds, minute=_FIVE_MIN, second=50),
         cron(jobs.publish_scheduled_posts, second=5),
         cron(jobs.process_broadcasts, second={5, 20, 35, 50}),
     ]

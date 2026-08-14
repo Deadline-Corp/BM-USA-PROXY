@@ -2,6 +2,10 @@
 
 FOR UPDATE ... SKIP LOCKED picks a free, online, sellable connection matching the
 requested city/carrier; the partial unique index on accesses is the backstop.
+
+"Free" also means nobody is holding it outside our tables: a proxy-access created straight
+in the iproxy console occupies the phone without any row here to say so, and selling that
+phone hands two customers the same device. See sync.sync_external_holds.
 """
 
 from __future__ import annotations
@@ -14,6 +18,7 @@ _ALLOC_SQL = text(
     SELECT c.id, c.iproxy_connection_id
     FROM connections c
     WHERE c.is_sellable AND c.online_status = 'online'
+      AND c.external_access_count = 0
       AND (CAST(:location_id AS bigint) IS NULL OR c.location_id = CAST(:location_id AS bigint))
       AND (CAST(:carrier AS text) IS NULL OR c.carrier = CAST(:carrier AS text))
       AND (CAST(:exclude_id AS bigint) IS NULL OR c.id <> CAST(:exclude_id AS bigint))
@@ -58,6 +63,7 @@ async def count_available(
             """
             SELECT count(*) FROM connections c
             WHERE c.is_sellable AND c.online_status = 'online'
+      AND c.external_access_count = 0
               AND (CAST(:location_id AS bigint) IS NULL OR c.location_id = CAST(:location_id AS bigint))
               AND (CAST(:carrier AS text) IS NULL OR c.carrier = CAST(:carrier AS text))
               AND NOT EXISTS (

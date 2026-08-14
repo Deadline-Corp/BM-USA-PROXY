@@ -201,6 +201,10 @@ export interface Connection {
   health_note: string | null;
   slots_total: number;
   slots_used: number;
+  /** Proxy-accesses on this phone in iproxy that we did not issue — created by hand in
+   *  the iproxy console. Non-zero means occupied even when slots_used is 0. */
+  external_holds: number;
+  external_checked_at: string | null;
   last_rotated_at: string | null;
 }
 

@@ -35,7 +35,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import log
-from app.models import Connection, Location
+from app.models import Access, Connection, Location
 from app.services.carriers import carrier_from_ip
 from app.services.provisioning.iproxy import IproxyClient
 
@@ -124,6 +124,66 @@ async def _resolve_location(
     if cache is not None:
         cache[name] = resolved
     return resolved
+
+
+async def sync_external_holds(
+    session: AsyncSession, client: IproxyClient | None = None, batch: int = 300
+) -> dict[str, int]:
+    """Find phones held by proxy-accesses we did not issue.
+
+    sync_pool reads two account-wide endpoints and says nothing about who is *using* a
+    connection. An access created straight in the iproxy console is invisible to it: the
+    phone serves traffic while our pool counts it free and the allocator sells it again.
+    That is the mismatch the client saw on the demo — three phones busy in iproxy, one
+    busy here, and Sync now did not close the gap because nothing was looking.
+
+    Costs one request per connection, so it walks the pool in batches, oldest check first,
+    rather than sweeping thousands of phones every pass. A connection whose request fails
+    is left exactly as it was: "we could not ask" must not read as "nobody is holding it".
+    """
+    client = client or IproxyClient()
+    rows = (
+        await session.execute(
+            select(Connection.id, Connection.iproxy_connection_id)
+            .order_by(Connection.external_checked_at.asc().nullsfirst())
+            .limit(batch)
+        )
+    ).all()
+    if not rows:
+        return {"checked": 0, "held": 0}
+
+    # Every access id we issued and still consider live, both protocols. Anything on a
+    # phone that is not in here belongs to somebody else's doing.
+    ours: set[str] = set()
+    for http_id, socks_id in (
+        await session.execute(
+            select(Access.iproxy_access_id, Access.iproxy_socks5_access_id).where(
+                Access.status.in_(("provisioning", "active", "expiring"))
+            )
+        )
+    ).all():
+        ours.update(x for x in (http_id, socks_id) if x)
+
+    now = datetime.now(UTC)
+    checked = held = 0
+    for conn_id, iproxy_id in rows:
+        try:
+            accesses = await client.list_proxy_access(iproxy_id)
+        except Exception as exc:  # noqa: BLE001 — one unreachable phone must not stop the walk
+            log.warning("iproxy.external_holds_failed", connection=iproxy_id, error=str(exc))
+            continue
+        foreign = sum(1 for a in accesses if str(a.get("id") or "") not in ours)
+        checked += 1
+        if foreign:
+            held += 1
+        await session.execute(
+            update(Connection)
+            .where(Connection.id == conn_id)
+            .values(external_access_count=foreign, external_checked_at=now)
+        )
+
+    log.info("iproxy.external_holds", checked=checked, held=held)
+    return {"checked": checked, "held": held}
 
 
 async def sync_pool(session: AsyncSession, client: IproxyClient | None = None) -> dict[str, Any]:

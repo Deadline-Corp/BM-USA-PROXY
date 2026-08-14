@@ -179,8 +179,12 @@ export const strings = {
     // for one state across the screen, and it reads right about a phone as well as a slot.
     used: "Busy",
     free: "Free",
+    // Online but held by an access created straight in the iproxy console, offline, or
+    // switched off for sale — stock that exists and cannot be sold.
+    unavailable: "Unavailable",
     lastRotated: "Last rotated",
-    never: "Never",
+    busyByAdmin: "Held in iproxy",
+    busyByAdminHint: "An access for this phone was created in the iproxy console, not here.",
     editConnection: "Edit connection",
   },
   packages: {

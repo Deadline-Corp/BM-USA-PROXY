@@ -223,6 +223,21 @@ async def daily_reconciliation(ctx: dict) -> dict[str, Any]:
     return report
 
 
+async def sync_external_holds(ctx: dict) -> dict[str, int] | dict[str, str]:
+    """Spot phones occupied by proxy-accesses created straight in the iproxy console."""
+    if not settings.feature_real_provisioning:
+        await _beat(ctx, "sync_external_holds")
+        return {"skipped": "mock mode"}
+
+    from app.services.provisioning.sync import sync_external_holds as walk
+
+    async with SessionFactory() as s:
+        result = await walk(s)
+        await s.commit()
+    await _beat(ctx, "sync_external_holds")
+    return result
+
+
 async def sync_connections(ctx: dict) -> dict[str, Any]:
     """Mirror iproxy inventory + online status into `connections` (real provider only)."""
     if not settings.feature_real_provisioning:

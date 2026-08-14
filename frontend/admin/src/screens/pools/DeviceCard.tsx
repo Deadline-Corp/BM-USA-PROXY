@@ -64,6 +64,19 @@ export function DeviceCard({ connection: c, onEdit }: DeviceCardProps) {
         </span>
       </div>
 
+      {/* A phone can be occupied without a single row of ours saying so — somebody made a
+          proxy-access for it in the iproxy console. Saying it on the card is the whole
+          point: without it this device reads as free here while it serves traffic there. */}
+      {c.external_holds > 0 ? (
+        <div
+          className="flex items-center gap-1.5 rounded border border-warning-line bg-warning-soft px-2 py-1 text-[.72rem] text-warning"
+          title={strings.pools.busyByAdminHint}
+        >
+          <span className="w-[5px] h-[5px] rounded-full bg-current flex-none" />
+          {strings.pools.busyByAdmin}
+        </div>
+      ) : null}
+
       <div className="flex items-center gap-1.5 text-[.76rem] text-text-2">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-[13px] h-[13px] text-text-3 flex-none">
           <path d="M4 20h16" />
@@ -88,9 +101,16 @@ export function DeviceCard({ connection: c, onEdit }: DeviceCardProps) {
       </div>
 
       <div className="flex items-center justify-between pt-[9px] border-t border-border">
+        {/* Only shown once there is a rotation to date. It used to read "never" on every
+            phone nobody had rotated yet, next to a rotate icon, which looked like a fault
+            rather than the absence of an event. */}
         <span className={clsx("flex items-center gap-1.5 font-mono text-[.68rem] tabular-nums", c.online ? "text-text-3" : "text-danger/70")}>
-          <IconRotate className="w-3 h-3 text-text-3" />
-          {c.last_rotated_at ? formatRelative(c.last_rotated_at) : strings.pools.never}
+          {c.last_rotated_at ? (
+            <>
+              <IconRotate className="w-3 h-3 text-text-3" />
+              {formatRelative(c.last_rotated_at)}
+            </>
+          ) : null}
         </span>
 
         <div className="flex items-center gap-2">

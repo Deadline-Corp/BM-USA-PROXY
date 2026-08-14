@@ -69,6 +69,13 @@ class Connection(Base):
     last_online_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     health_note: Mapped[str | None] = mapped_column(Text)
+    # Proxy-accesses that exist on this phone in iproxy but were not issued by us —
+    # someone created them straight in the iproxy console. Such a phone is occupied even
+    # though our own tables show it free, which is exactly the mismatch the client hit on
+    # the demo: three phones busy in iproxy, one busy here, and syncing did not help
+    # because sync never looked at per-connection accesses.
+    external_access_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    external_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = created_at_col()
     updated_at: Mapped[datetime] = updated_at_col()
