@@ -21,8 +21,6 @@ import type {
   FaqItem,
   IssueAccessRequest,
   ListParams,
-  Location,
-  LocationInput,
   LoginRequest,
   LoginResponse,
   MarkPaidRequest,
@@ -119,19 +117,6 @@ export const tariffsApi = {
     apiClient.patch<Tariff>(`/tariffs/${id}`, body).then((r) => r.data),
   toggle: (id: string) =>
     apiClient.post<Tariff>(`/tariffs/${id}/toggle`).then((r) => r.data),
-};
-
-// ---------- Locations (cities) ----------
-
-export const locationsApi = {
-  list: () => apiClient.get<Location[]>("/locations").then((r) => r.data),
-  create: (body: LocationInput) =>
-    apiClient.post<Location>("/locations", body).then((r) => r.data),
-  update: (id: string, body: Partial<LocationInput>) =>
-    apiClient.patch<Location>(`/locations/${id}`, body).then((r) => r.data),
-  toggle: (id: string) =>
-    apiClient.post<Location>(`/locations/${id}/toggle`).then((r) => r.data),
-  remove: (id: string) => apiClient.delete<void>(`/locations/${id}`).then((r) => r.data),
 };
 
 // ---------- Pool / Connections ----------
