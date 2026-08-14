@@ -66,7 +66,7 @@ export const strings = {
     dashboard: "Dashboard",
     clients: "Clients",
     requests: "Requests",
-    pools: "Auto-issue pools",
+    pools: "Proxies pool",
     locations: "Cities",
     packages: "Client packages",
     tariffs: "Plans",
@@ -163,7 +163,7 @@ export const strings = {
     conversationOperator: "Operator",
   },
   pools: {
-    title: "Auto-issue pools",
+    title: "Proxies pool",
     subtitle: "Real-device 5G nodes across US carriers.",
     sync: "Sync now",
     syncing: "Syncing…",
