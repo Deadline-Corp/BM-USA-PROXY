@@ -183,9 +183,9 @@ export const strings = {
     never: "Never",
     editConnection: "Edit connection",
     locationLabel: "City",
+    locationHint: "Set automatically from the phone's reported city on every sync — a manual pick here is overwritten on the next pass.",
     noLocation: "No city assigned",
     inactiveLocation: "inactive",
-    geoNotChecked: "GeoIP not checked yet",
   },
   locations: {
     title: "Cities",

@@ -153,6 +153,18 @@ export function formatRelative(iso: string | null | undefined): string {
   return `${diffDay}d ago`;
 }
 
+/**
+ * "Boston, MA" — or just "Boston" when there is no state to show.
+ *
+ * sync_pool assigns every reported city a Location even when the city isn't in its state
+ * lookup table, with state_code "" rather than null (Postgres would let a NULL state_code
+ * duplicate an existing city, defeating the city+state uniqueness this is supposed to
+ * have). "" reaching this far and being joined naively would print a dangling "Boston, ".
+ */
+export function formatCityState(city: string, stateCode: string): string {
+  return stateCode ? `${city}, ${stateCode}` : city;
+}
+
 export function initials(name: string | null | undefined): string {
   if (!name) return "—";
   const parts = name.trim().split(/\s+/).filter(Boolean);

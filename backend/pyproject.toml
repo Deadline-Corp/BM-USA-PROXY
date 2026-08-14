@@ -21,7 +21,6 @@ dependencies = [
     "structlog>=24.1",
     "sentry-sdk[fastapi]>=2.5",
     "email-validator>=2.1",
-    "maxminddb>=2.6",
 ]
 
 [project.optional-dependencies]
@@ -65,10 +64,6 @@ disallow_untyped_defs = true
 module = ["app.services.*", "app.core.*"]
 disallow_untyped_defs = true
 warn_return_any = true
-
-[[tool.mypy.overrides]]
-module = ["maxminddb.*"]
-ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

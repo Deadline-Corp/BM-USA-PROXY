@@ -8,6 +8,7 @@ import { useUpdateConnection } from "@/shared/hooks/usePool";
 import { useLocations } from "@/shared/hooks/useLocations";
 import { useToast } from "@/shared/components/Toast";
 import { apiErrorMessage } from "@/shared/api/client";
+import { formatCityState } from "@/shared/lib/format";
 import { strings } from "@/shared/strings";
 import type { Connection } from "@/shared/api/types";
 
@@ -71,6 +72,7 @@ export function EditConnectionModal({ connection, onClose }: EditConnectionModal
         <Input label="Tier" value={tier} onChange={(e) => setTier(e.target.value)} placeholder="e.g. standard, premium" />
         <Select
           label={strings.pools.locationLabel}
+          hint={strings.pools.locationHint}
           value={locationId}
           onChange={(e) => setLocationId(e.target.value)}
           disabled={locationsQuery.isLoading}
@@ -78,7 +80,7 @@ export function EditConnectionModal({ connection, onClose }: EditConnectionModal
           <option value="">{strings.pools.noLocation}</option>
           {locations.map((loc) => (
             <option key={loc.id} value={loc.id}>
-              {loc.city}, {loc.state_code}
+              {formatCityState(loc.city, loc.state_code)}
               {loc.is_active ? "" : ` (${strings.pools.inactiveLocation})`}
             </option>
           ))}

@@ -36,7 +36,7 @@ import { CredentialRowsSkeleton } from "../shared/components/Skeleton";
 import { ErrorState } from "../shared/components/ErrorState";
 import { useCopyToClipboard } from "../shared/hooks/useCopyToClipboard";
 import { ApiError } from "../shared/api/client";
-import { maskSecret } from "../shared/lib/format";
+import { formatCityState, maskSecret } from "../shared/lib/format";
 import { cacheInvoice } from "../shared/lib/invoiceCache";
 import type { Carrier, ConfigType } from "../shared/api/types";
 
@@ -436,7 +436,7 @@ export function AccessDetailScreen() {
               {catalogQuery.data?.locations.map((loc) => (
                 <PickerRow
                   key={loc.id}
-                  label={`${loc.city}, ${loc.state_code}`}
+                  label={formatCityState(loc.city, loc.state_code)}
                   selected={swapLocationId === loc.id}
                   onSelect={() => setSwapLocationId(loc.id)}
                 />

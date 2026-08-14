@@ -186,16 +186,11 @@ export type LocationInput = Omit<Location, "id" | "connections_count">;
 export interface Connection {
   id: string;
   external_id: string;
+  /** What this connection is sold as — resolved server-side from location_id, which
+   *  sync_pool re-resolves from iproxy's reported city on every pass. state can be "" for
+   *  a city outside the known state map; render it as absent, not a dangling ", ". */
   city: string;
   state: string;
-  /** What our own GeoIP lookup says about the phone's actual exit IP right now — separate
-   *  from city/state above, which is what it is sold as. The two can legitimately disagree
-   *  (e.g. a suburb sold under the name of the nearest major city). Null until sync_pool has
-   *  resolved it at least once. */
-  geo_city: string | null;
-  geo_state: string | null;
-  geo_ip: string | null;
-  geo_resolved_at: string | null;
   carrier: string;
   online: boolean;
   is_sellable: boolean;

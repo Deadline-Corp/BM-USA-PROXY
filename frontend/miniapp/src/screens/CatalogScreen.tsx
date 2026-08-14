@@ -19,7 +19,7 @@ import { TariffListSkeleton } from "../shared/components/Skeleton";
 import { ErrorState } from "../shared/components/ErrorState";
 import { EmptyState } from "../shared/components/EmptyState";
 import { ApiError } from "../shared/api/client";
-import { formatUsd } from "../shared/lib/format";
+import { formatCityState, formatUsd } from "../shared/lib/format";
 import { cacheInvoice } from "../shared/lib/invoiceCache";
 import type { Carrier, PaymentMethod, Tariff } from "../shared/api/types";
 
@@ -336,7 +336,7 @@ export function CatalogScreen() {
                   key={loc.id}
                   className="rounded-md border border-border bg-surface-2 px-1.5 py-0.5 text-[11px] text-text-3"
                 >
-                  {loc.city}, {loc.state_code}
+                  {formatCityState(loc.city, loc.state_code)}
                 </span>
               ))}
             </div>
@@ -461,7 +461,7 @@ export function CatalogScreen() {
           {catalogQuery.data?.locations.map((loc) => (
             <CityRow
               key={loc.id}
-              label={`${loc.city}, ${loc.state_code}`}
+              label={formatCityState(loc.city, loc.state_code)}
               selected={locationId === loc.id}
               freeCount={loc.free.any}
               onSelect={() => {

@@ -1025,13 +1025,6 @@ def _connection_view(
         "external_id": c.iproxy_connection_id,
         "city": city,
         "state": state,
-        # What our own GeoIP lookup says about the phone's actual exit IP right now —
-        # separate from city/state above, which is what it is sold as. The two can
-        # disagree (iproxy's own city label is not trustworthy; that's the point).
-        "geo_city": c.geo_city,
-        "geo_state": c.geo_state,
-        "geo_ip": c.geo_ip,
-        "geo_resolved_at": c.geo_resolved_at.isoformat() if c.geo_resolved_at else None,
         "carrier": c.carrier,
         "online": c.online_status == "online",
         "is_sellable": c.is_sellable,

@@ -13,6 +13,7 @@ import { useDeleteLocation, useLocations, useToggleLocation } from "@/shared/hoo
 import { useToast } from "@/shared/components/Toast";
 import { apiErrorMessage } from "@/shared/api/client";
 import { strings } from "@/shared/strings";
+import { formatCityState } from "@/shared/lib/format";
 import type { Location } from "@/shared/api/types";
 import { LocationFormModal } from "@/screens/locations/LocationFormModal";
 
@@ -158,7 +159,9 @@ export function LocationsScreen() {
         onConfirm={handleDelete}
         title={strings.locations.deleteTitle}
         description={
-          deleteTarget ? `Delete "${deleteTarget.city}, ${deleteTarget.state_code}"? This cannot be undone.` : undefined
+          deleteTarget
+            ? `Delete "${formatCityState(deleteTarget.city, deleteTarget.state_code)}"? This cannot be undone.`
+            : undefined
         }
         confirmLabel={strings.common.delete}
         danger

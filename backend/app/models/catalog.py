@@ -68,13 +68,6 @@ class Connection(Base):
     online_status: Mapped[str] = mapped_column(Text, nullable=False, server_default="unknown")
     last_online_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # What our own GeoIP lookup says about the phone's *actual* exit IP — separate from
-    # location_id (what it is *sold as*, an operator edit once set). Refreshed
-    # automatically by sync_pool; never written by an admin. See services/provisioning/geoip.py.
-    geo_city: Mapped[str | None] = mapped_column(Text)
-    geo_state: Mapped[str | None] = mapped_column(Text)
-    geo_ip: Mapped[str | None] = mapped_column(Text)
-    geo_resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     health_note: Mapped[str | None] = mapped_column(Text)
     synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = created_at_col()
