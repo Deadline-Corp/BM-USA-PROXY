@@ -1422,7 +1422,7 @@ async def admin_extend_access(
 
 class AutoRotateAdminBody(BaseModel):
     enabled: bool
-    minutes: int | None = Field(default=None, ge=5, le=1440)
+    minutes: int | None = Field(default=None, ge=1, le=1440)
 
 
 # Replaces the old one-shot rotate-ip action. Rotating on demand is the buyer's to take,

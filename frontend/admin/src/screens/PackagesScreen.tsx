@@ -411,7 +411,7 @@ export function PackagesScreen() {
       >
         <Input
           type="number"
-          min={5}
+          min={1}
           max={1440}
           label={strings.packages.autoRotateMinutes}
           hint={strings.packages.autoRotateHint}

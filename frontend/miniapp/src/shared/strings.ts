@@ -199,7 +199,7 @@ export const strings = {
     autoRotateApply: "Apply",
     autoRotateOnToast: "Auto-rotation is on",
     autoRotateOffToast: "Auto-rotation is off",
-    autoRotateRange: "5 to 1440 minutes",
+    autoRotateRange: "1 to 1440 minutes",
     credentialsLabel: "HTTP proxy",
     socks5CredentialsLabel: "SOCKS5 proxy",
     rotationLinkSectionLabel: "Rotation link",

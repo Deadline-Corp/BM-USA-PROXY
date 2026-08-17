@@ -295,10 +295,10 @@ async def rotate(public_id: str, user: CurrentUser, session: DbSession) -> dict[
 
 class AutoRotateBody(BaseModel):
     enabled: bool
-    # Bounded here and by a CHECK constraint on the column: five minutes is the floor
-    # because a rotation reboots the phone, a day the ceiling because past that "off" is
-    # the honest setting. Ignored entirely when enabled is false.
-    minutes: int | None = Field(default=None, ge=5, le=1440)
+    # Bounded here and by a CHECK constraint on the column: one minute is the floor
+    # because that is the sweep's own cadence, a day the ceiling because past that "off"
+    # is the honest setting. Ignored entirely when enabled is false.
+    minutes: int | None = Field(default=None, ge=1, le=1440)
 
 
 @router.put("/accesses/{public_id}/auto-rotate")

@@ -201,7 +201,7 @@ export const strings = {
     autoRotate: "Auto-rotation",
     autoRotateOff: "Turn off",
     autoRotateMinutes: "Rotate every (minutes)",
-    autoRotateHint: "Between 5 and 1440. The buyer can change this in their app too.",
+    autoRotateHint: "Between 1 and 1440. The buyer can change this in their app too.",
     cannotAutoRotate: "Only a live access has a schedule to set",
     searchPlaceholder: "Search user, status, city, carrier, tariff, order…",
     revoke: "Revoke",

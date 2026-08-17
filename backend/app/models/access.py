@@ -62,12 +62,15 @@ class Access(Base):
             "status IN ('provisioning','active','expiring','expired','revoked','failed')",
             name="status_valid",
         ),
-        # Five minutes is the floor because a rotation reboots the physical phone and the
-        # new address takes ~10s to settle; anything tighter would keep the device down
-        # more than it is up. A day is the ceiling — beyond that, off is the honest setting.
+        # One minute is the floor because that is how often the sweep runs — a smaller
+        # number would behave exactly like 1 while promising something faster. It is a
+        # deliberate trade: a rotation reboots the phone's data connection and the new
+        # address takes ~10s to settle, so a one-minute cycle keeps the device
+        # reconnecting a sixth of the time. A day is the ceiling — beyond that, off is the
+        # honest setting.
         CheckConstraint(
             "auto_rotate_minutes IS NULL OR "
-            "(auto_rotate_minutes >= 5 AND auto_rotate_minutes <= 1440)",
+            "(auto_rotate_minutes >= 1 AND auto_rotate_minutes <= 1440)",
             name="auto_rotate_minutes_sane",
         ),
         # INVARIANT #2: one live access per connection (dedicated).

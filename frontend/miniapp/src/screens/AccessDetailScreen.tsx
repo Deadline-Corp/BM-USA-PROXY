@@ -537,7 +537,7 @@ function AutoRotatePanel({ publicId, current }: { publicId: string | undefined; 
 
   const enabled = current !== null;
   const parsed = Number.parseInt(draft, 10);
-  const valid = Number.isFinite(parsed) && parsed >= 5 && parsed <= 1440;
+  const valid = Number.isFinite(parsed) && parsed >= 1 && parsed <= 1440;
   const dirty = valid && parsed !== current;
 
   async function save(nextEnabled: boolean, minutes: number | null) {
@@ -585,7 +585,7 @@ function AutoRotatePanel({ publicId, current }: { publicId: string | undefined; 
             <input
               type="number"
               inputMode="numeric"
-              min={5}
+              min={1}
               max={1440}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
