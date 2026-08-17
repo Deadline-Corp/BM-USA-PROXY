@@ -145,10 +145,22 @@ class IproxyClient:
         return data if isinstance(data, dict) else {}
 
     async def list_proxy_access(self, connection_id: str) -> list[dict[str, Any]]:
+        """Every proxy-access on this connection, whoever created it.
+
+        The envelope key is `proxy_accesses`, confirmed against the live API 2026-08-17.
+        This used to read `items`, which is not a key iproxy has ever returned — so it
+        answered "no accesses" for every connection, always, including phones plainly
+        showing credentials in the iproxy console. Everything built on it (external-hold
+        detection) therefore saw an empty account and reported nothing.
+
+        The list form is kept for safety, not because it has been observed.
+        """
         data = await self._request(
             "GET", f"/api/console/v1/connection/{connection_id}/proxy-access"
         )
-        return data if isinstance(data, list) else data.get("items", [])
+        if isinstance(data, list):
+            return data
+        return data.get("proxy_accesses", []) if isinstance(data, dict) else []
 
     async def delete_proxy_access(self, connection_id: str, proxy_access_id: str) -> None:
         await self._request(
