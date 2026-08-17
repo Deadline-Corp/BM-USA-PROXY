@@ -16,7 +16,7 @@ from app.core.errors import (
     TermsNotAccepted,
     ValidationError,
 )
-from app.models import Access, AccessEvent, Invoice, Order, Tariff, User
+from app.models import Access, AccessEvent, Connection, Invoice, Order, Tariff, User
 from app.services import referral
 from app.services import settings as settings_svc
 from app.services.catalog import trial_available
@@ -26,7 +26,7 @@ from app.services.payments.onchain.config import get_onchain_config
 from app.services.payments.onchain.rails import refresh_rails
 from app.services.payments.registry import get_payment_provider
 from app.services.provisioning.allocator import count_available
-from app.services.provisioning.lifecycle import extend_access, provision_access
+from app.services.provisioning.lifecycle import extend_access, provision_access, swap_access
 from app.services.ratelimit_helpers import order_guard
 from app.services.users import is_tos_accepted
 
@@ -224,12 +224,47 @@ async def mark_paid(session: AsyncSession, *, order: Order, source: str) -> None
     await referral.accrue(session, order=order)  # no-op if no referrer / admin origin
     if order.is_extension and order.extends_access_id:
         access = await session.get(Access, order.extends_access_id)
-        if access is not None:
+        if access is None:
+            order.status = "manual_review"
+        elif access.status in ("active", "expiring"):
             await extend_access(session, access=access, minutes=order.duration_minutes or 0)
             order.status = "completed"
             order.completed_at = _utcnow()
         else:
-            order.status = "manual_review"
+            # The access died between "Extend" and the payment landing — an invoice lives
+            # an hour, and create_extension_order only checked the access was alive when
+            # it was created. Extending now would flip a dead access back to 'active'
+            # while the expiry sweeper has already deleted its proxy-accesses on iproxy:
+            # the customer has paid, the app says active, and nothing connects.
+            #
+            # So re-issue instead of extend. Same city and carrier, fresh credentials, and
+            # the duration they just paid for. The connection may well be the same phone
+            # if nobody took it in the meantime.
+            conn = await session.get(Connection, access.connection_id)
+            try:
+                await swap_access(
+                    session,
+                    access=access,
+                    location_id=conn.location_id if conn else None,
+                    carrier=conn.carrier if conn else None,
+                    duration_minutes=order.duration_minutes,
+                )
+            except Conflict:
+                # Nothing free in that city/carrier right now. The money is recorded and
+                # an operator picks it up rather than the buyer being told "paid" over an
+                # access that does not work.
+                order.status = "manual_review"
+            else:
+                order.status = "completed"
+                order.completed_at = _utcnow()
+                # Different credentials than the ones they had — say so, because the app
+                # will quietly show new ones and the old pair stops working.
+                await enqueue(
+                    session,
+                    user_id=access.user_id,
+                    template_code="access_reissued",
+                    payload={"access_public_id": str(access.public_id)},
+                )
         return
     await _provision_or_review(session, order)
 

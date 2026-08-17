@@ -174,7 +174,12 @@ async def rotate_ip(session: AsyncSession, *, access: Access, actor: str = "user
 
 
 async def swap_access(
-    session: AsyncSession, *, access: Access, location_id: int | None, carrier: str | None
+    session: AsyncSession,
+    *,
+    access: Access,
+    location_id: int | None,
+    carrier: str | None,
+    duration_minutes: int | None = None,
 ) -> None:
     """Re-provision an access onto a fresh connection.
 
@@ -212,8 +217,14 @@ async def swap_access(
             )
 
     if reactivating:
-        tariff = await session.scalar(select(Tariff).where(Tariff.code == access.tariff_code))
-        duration = tariff.duration_minutes if tariff and tariff.duration_minutes else 60
+        # An explicit duration wins: when a paid extension lands on an access that expired
+        # while the invoice was open, the customer bought *that* plan's time, which is not
+        # necessarily the plan the dead access was originally issued on.
+        if duration_minutes:
+            duration = duration_minutes
+        else:
+            tariff = await session.scalar(select(Tariff).where(Tariff.code == access.tariff_code))
+            duration = tariff.duration_minutes if tariff and tariff.duration_minutes else 60
     else:
         duration = 60
         if access.expires_at is not None:
