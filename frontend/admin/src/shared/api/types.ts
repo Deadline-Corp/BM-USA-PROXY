@@ -269,8 +269,6 @@ export interface AccessRow {
    *  iproxy console, plus the phone's name as shown in the pool. */
   connection_id: string | null;
   connection_name: string | null;
-  /** Minutes between scheduled rotations; null means auto-rotation is off. */
-  auto_rotate_minutes: number | null;
   /** Why the access ended and who ended it. `revoked_at` is also stamped on expiry, so a
    *  null reason there means time ran out rather than somebody deciding. */
   revoked_at: string | null;
