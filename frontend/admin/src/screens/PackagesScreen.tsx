@@ -152,7 +152,34 @@ export function PackagesScreen() {
       {
         header: strings.orders.colStatus,
         accessorKey: "status",
-        cell: ({ row }) => <StatusBadge status={row.original.status} />,
+        cell: ({ row }) => {
+          // The reason an operator was required to type on revoke, finally readable. It
+          // was written to a column nothing ever selected, so "why did this customer lose
+          // their proxy" could only be answered by asking whoever pressed the button.
+          // Only for a revoke: expiry stamps revoked_at too, and a plain "Expired" badge
+          // already says everything about time running out.
+          const revoked = row.original.status === "revoked";
+          const reason = row.original.revoke_reason;
+          return (
+            <div className="flex flex-col gap-0.5">
+              <StatusBadge status={row.original.status} />
+              {revoked && reason ? (
+                <span
+                  className="max-w-[190px] truncate text-[.72rem] text-text-3"
+                  title={[
+                    reason,
+                    row.original.revoked_by ? `by ${row.original.revoked_by}` : null,
+                    row.original.revoked_at ? formatDate(row.original.revoked_at) : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                >
+                  {reason}
+                </span>
+              ) : null}
+            </div>
+          );
+        },
       },
       {
         header: "City",

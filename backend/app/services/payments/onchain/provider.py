@@ -39,8 +39,28 @@ class OnchainProvider:
         config: OnchainConfig | None = None,
         oracle: PriceOracle | None = None,
     ) -> None:
-        self._config = config or get_onchain_config()
+        # Held only when a caller passes one in (tests do). Left as None, the config is
+        # read at the moment it is used — see `_cfg`.
+        self._pinned_config = config
         self._oracle = oracle or get_oracle()
+
+    @property
+    def _config(self) -> OnchainConfig:
+        """The rails as they are right now, not as they were when this object was built.
+
+        get_payment_provider() is lru_cached, so this provider is constructed once per
+        process — and in guard_order_attempt it is constructed one line *before* the rails
+        are loaded from the database. Snapshotting in __init__ therefore froze an empty
+        rail list for the life of the process: every later check passed (those read the
+        live config) and then invoice creation failed with "rail 'USDT/trc20' is not
+        enabled". Measured on production: the address was configured, the mini app listed
+        it, and every purchase returned 500.
+
+        Reading through means an address an operator changes in the console takes effect on
+        the next invoice rather than the next deploy, which is the behaviour the Wallets
+        screen already promises.
+        """
+        return self._pinned_config or get_onchain_config()
 
     def _resolve_method(self, asset: str | None, network: str | None) -> MethodConfig:
         if asset and network:

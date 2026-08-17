@@ -448,10 +448,17 @@ function DossierBody({
                 key={a.id}
                 title={`${a.tariff_code} · ${a.city ?? "—"}`}
                 // The connection id belongs on this line because support's next step is
-                // opening that phone in the iproxy console.
-                sub={[a.carrier ?? "—", a.ip ?? "no IP", a.connection_id ?? "no connection"].join(
-                  " · ",
-                )}
+                // opening that phone in the iproxy console. The revoke reason belongs here
+                // too — this panel is where "why did this customer lose their proxy" is
+                // actually asked, and until now the answer was only in the database.
+                sub={[
+                  a.carrier ?? "—",
+                  a.ip ?? "no IP",
+                  a.connection_id ?? "no connection",
+                  a.status === "revoked" && a.revoke_reason ? `revoked: ${a.revoke_reason}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
                 trailing={<StatusBadge status={a.status} />}
               />
             ))}

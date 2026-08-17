@@ -99,6 +99,8 @@ export interface ClientAccess {
   ip: string | null;
   /** The iproxy connection serving it — pasted straight into the iproxy console. */
   connection_id: string | null;
+  revoked_at: string | null;
+  revoke_reason: string | null;
   expires_at: string | null;
   created_at: string;
 }
@@ -269,6 +271,11 @@ export interface AccessRow {
   connection_name: string | null;
   /** Minutes between scheduled rotations; null means auto-rotation is off. */
   auto_rotate_minutes: number | null;
+  /** Why the access ended and who ended it. `revoked_at` is also stamped on expiry, so a
+   *  null reason there means time ran out rather than somebody deciding. */
+  revoked_at: string | null;
+  revoke_reason: string | null;
+  revoked_by: string | null;
   tariff_code: string;
   /** The order this access was bought with. The number is what an operator reads and
    * types; the id is what actions take. Null only if the order row is somehow gone. */

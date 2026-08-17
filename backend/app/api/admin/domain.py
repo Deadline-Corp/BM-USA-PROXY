@@ -45,6 +45,7 @@ from app.api.deps import CurrentAdmin, DbSession
 from app.core.errors import Conflict, NotFound, ValidationError
 from app.core.security import hash_password
 from app.models import (
+    AccessEvent,
     AdminUser,
     AppSetting,
     AuditLog,
@@ -619,6 +620,10 @@ async def client_dossier(client_id: int, admin: CurrentAdmin, session: DbSession
                 # Which phone is serving it — support's next stop is that connection in
                 # the iproxy console.
                 "connection_id": conn_lookup.get(a.connection_id, (None, None, None))[2],
+                # The dossier is where "why did this customer lose their proxy" gets asked,
+                # so the reason an operator typed on revoke belongs here too.
+                "revoked_at": a.revoked_at.isoformat() if a.revoked_at else None,
+                "revoke_reason": a.revoke_reason,
                 "expires_at": a.expires_at.isoformat() if a.expires_at else None,
                 "created_at": a.created_at.isoformat(),
             }
@@ -1159,6 +1164,42 @@ async def pool_summary(admin: CurrentAdmin, session: DbSession) -> dict[str, Any
 
 
 # ── accesses (packages) ─────────────────────────────────────────────────
+async def _revoked_by_map(session: DbSession, access_ids: Sequence[int]) -> dict[int, str]:
+    """Who revoked each access — the actor on its latest `revoked` event.
+
+    The name is not on the access itself: `revoke_reason` records *why*, and the event log
+    records *who*, so answering "who cut this customer off, and what did they say" needs
+    both. One query for the page rather than one per row, matching the connection and order
+    lookups beside it.
+    """
+    ids = [aid for aid in access_ids if aid is not None]
+    if not ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(AccessEvent.access_id, AccessEvent.actor)
+            .where(AccessEvent.access_id.in_(ids), AccessEvent.type == "revoked")
+            .distinct(AccessEvent.access_id)
+            .order_by(AccessEvent.access_id, AccessEvent.created_at.desc())
+        )
+    ).all()
+    admin_ids = [
+        int(actor.split(":", 1)[1])
+        for _, actor in rows
+        if actor.startswith("admin:") and actor.split(":", 1)[1].isdigit()
+    ]
+    names = await _admin_display_map(session, admin_ids)
+    out: dict[int, str] = {}
+    for access_id, actor in rows:
+        if actor.startswith("admin:") and actor.split(":", 1)[1].isdigit():
+            # Falls back to the raw actor when the account has since been deleted — the
+            # row outlives the account precisely so entries like this keep their name.
+            out[access_id] = names.get(int(actor.split(":", 1)[1]), actor)
+        else:
+            out[access_id] = actor  # 'system' (expiry sweeper) or 'user'
+    return out
+
+
 def _access_view(
     a: Access,
     *,
@@ -1169,11 +1210,20 @@ def _access_view(
     order_number: int | None = None,
     connection: str | None = None,
     connection_name: str | None = None,
+    revoked_by: str | None = None,
 ) -> dict[str, Any]:
     return {
         "id": str(a.public_id),
         "user": user_display,
         "status": a.status,
+        # Why this access ended, and at whose hand. The reason has been collected in a
+        # required field on the revoke dialog since launch and was then readable nowhere —
+        # an operator typed a justification into a box that only ever wrote to a column
+        # nothing selected. "Expired" also stamps revoked_at, so a null reason there means
+        # time ran out rather than somebody deciding.
+        "revoked_at": a.revoked_at.isoformat() if a.revoked_at else None,
+        "revoke_reason": a.revoke_reason,
+        "revoked_by": revoked_by,
         "city": city,
         "carrier": carrier,
         "ip": None,
@@ -1218,6 +1268,7 @@ async def _access_extras(session: DbSession, a: Access) -> dict[str, Any]:
         "order_number": order.id if order else None,
         "connection": conn.iproxy_connection_id if conn else None,
         "connection_name": conn.name if conn else None,
+        "revoked_by": (await _revoked_by_map(session, [a.id])).get(a.id),
     }
 
 
@@ -1356,6 +1407,10 @@ async def list_admin_accesses(
             ).all()
         }
 
+    # Only the revoked rows need an actor, and on a page of live accesses that is usually
+    # none of them — so the lookup is skipped rather than run over the whole page.
+    revoked_by = await _revoked_by_map(session, [a.id for a in rows if a.status == "revoked"])
+
     empty_conn: tuple[str | None, str | None, str | None, str | None] = (None, None, None, None)
     items = [
         _access_view(
@@ -1368,6 +1423,7 @@ async def list_admin_accesses(
             order_public_id=order_lookup.get(a.order_id),
             # The order's own key is the sequential number — no second lookup for it.
             order_number=a.order_id,
+            revoked_by=revoked_by.get(a.id),
         )
         for a in rows
     ]
