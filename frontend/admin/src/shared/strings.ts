@@ -151,6 +151,10 @@ export const strings = {
     issueAccess: "Issue access",
     issueCity: "City",
     issueCarrier: "Carrier",
+    autoRotate: "Auto-rotate",
+    autoRotateOff: "Turn off",
+    autoRotateMinutes: "Rotate every (minutes)",
+    autoRotateHint: "Between 1 and 1440. The client can change this in their app too.",
     /** Tooltip on the compact checkmark next to a client's handle in the table row. */
     termsAccepted: "Terms of Use accepted",
     dossierTos: "Terms of service",

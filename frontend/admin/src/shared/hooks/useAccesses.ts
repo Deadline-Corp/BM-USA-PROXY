@@ -28,6 +28,18 @@ export function useExtendAccess() {
   });
 }
 
+export function useSetAutoRotate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, enabled, minutes }: { id: string; enabled: boolean; minutes: number | null }) =>
+      accessesApi.setAutoRotate(id, enabled, minutes),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["accesses"] });
+      qc.invalidateQueries({ queryKey: ["clients"] }); // the dossier renders the interval
+    },
+  });
+}
+
 export function useReissueAccess() {
   const qc = useQueryClient();
   return useMutation({

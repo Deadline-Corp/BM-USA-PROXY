@@ -101,6 +101,8 @@ export interface ClientAccess {
   connection_id: string | null;
   revoked_at: string | null;
   revoke_reason: string | null;
+  /** Minutes between scheduled rotations; null means off. Settable here on a live access. */
+  auto_rotate_minutes: number | null;
   expires_at: string | null;
   created_at: string;
 }

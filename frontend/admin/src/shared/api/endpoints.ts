@@ -150,6 +150,12 @@ export const accessesApi = {
     apiClient
       .post<AccessRow>(`/accesses/${id}/extend`, { minutes })
       .then((r) => r.data),
+  // The buyer's rotation schedule, set from the client's dossier. Not a one-shot rotate:
+  // that changes a live customer's address under them with nothing on their side to say why.
+  setAutoRotate: (id: string, enabled: boolean, minutes: number | null) =>
+    apiClient
+      .put<AccessRow>(`/accesses/${id}/auto-rotate`, { enabled, minutes })
+      .then((r) => r.data),
   reissue: (id: string, connection_id?: string) =>
     apiClient
       .post<AccessRow>(`/accesses/${id}/reissue`, { connection_id })
