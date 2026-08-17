@@ -3,8 +3,7 @@ import clsx from "clsx";
 import type { Connection, ConnectionUpdate } from "@/shared/api/types";
 import { Switch } from "@/shared/components/Switch";
 import { Num } from "@/shared/components/Num";
-import { formatRelative } from "@/shared/lib/format";
-import { IconKebab, IconRotate } from "@/shared/components/icons";
+import { IconKebab } from "@/shared/components/icons";
 import { useUpdateConnection } from "@/shared/hooks/usePool";
 import { useToast } from "@/shared/components/Toast";
 import { apiErrorMessage } from "@/shared/api/client";
@@ -100,19 +99,12 @@ export function DeviceCard({ connection: c, onEdit }: DeviceCardProps) {
         </div>
       </div>
 
-      <div className="flex items-center justify-between pt-[9px] border-t border-border">
-        {/* Only shown once there is a rotation to date. It used to read "never" on every
-            phone nobody had rotated yet, next to a rotate icon, which looked like a fault
-            rather than the absence of an event. */}
-        <span className={clsx("flex items-center gap-1.5 font-mono text-[.68rem] tabular-nums", c.online ? "text-text-3" : "text-danger/70")}>
-          {c.last_rotated_at ? (
-            <>
-              <IconRotate className="w-3 h-3 text-text-3" />
-              {formatRelative(c.last_rotated_at)}
-            </>
-          ) : null}
-        </span>
-
+      {/* No "last rotated" here. It only ever recorded rotations WE triggered, so it said
+          nothing about when the phone's address actually changed — a device whose IP moved
+          an hour ago on iproxy's own schedule still showed a timestamp from days back.
+          A number that looks like an answer to a question it does not answer is worse than
+          no number: iproxy's ip_updated_at is the real one, if this is ever wanted back. */}
+      <div className="flex items-center justify-end pt-[9px] border-t border-border">
         <div className="flex items-center gap-2">
           <label className="flex items-center gap-1.5 cursor-pointer" title={strings.pools.sellable}>
             <span className="text-[.7rem] text-text-3">{strings.pools.sellable}</span>

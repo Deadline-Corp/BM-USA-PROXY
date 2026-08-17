@@ -184,7 +184,6 @@ export const strings = {
     // Online but held by an access created straight in the iproxy console, offline, or
     // switched off for sale — stock that exists and cannot be sold.
     unavailable: "Unavailable",
-    lastRotated: "Last rotated",
     busyByAdmin: "Held in iproxy",
     busyByAdminHint: "An access for this phone was created in the iproxy console, not here.",
     editConnection: "Edit connection",
