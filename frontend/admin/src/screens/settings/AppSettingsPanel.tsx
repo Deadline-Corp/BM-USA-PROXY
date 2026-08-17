@@ -33,6 +33,7 @@ const SETTING_LABELS: Record<string, string> = {
   invoice_ttl_minutes: "Invoice lifetime (minutes)",
   rotation_cooldown_sec: "IP rotation cooldown (seconds)",
   pool_low_watermark: "Pool low-stock alert (free slots)",
+  pool_check_interval_minutes: "Pool check interval (minutes)",
   // Comma-separated destinations for operator alerts: client messages, reseller enquiries,
   // low stock, the nightly reconciliation. Adds to OPS_ALERT_CHAT_ID rather than replacing
   // it. @handles are resolved to ids server-side (see services/ops_alerts.py), so an

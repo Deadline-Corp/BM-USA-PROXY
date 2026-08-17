@@ -66,10 +66,10 @@ class WorkerSettings:
         # every minute like sync_connections does. Five minutes is fast enough for a hold
         # created by hand in the iproxy console — nobody does that twice a minute.
         cron(jobs.sync_external_holds, minute=_FIVE_MIN, second=50),
-        # Low-stock alert. Runs on the same five-minute beat: the operator is being asked
-        # to go and add phones, which is not a one-minute errand, and the check itself
-        # repeats its alert only every few hours while stock stays low.
-        cron(jobs.pool_watermark, minute=_FIVE_MIN, second=55),
+        # Low-stock alert. Fires every minute and decides for itself whether it is due —
+        # the cadence is `pool_check_interval_minutes` in the console, and a schedule fixed
+        # here would mean a redeploy every time somebody wanted to change it.
+        cron(jobs.pool_watermark, second=55),
         cron(jobs.publish_scheduled_posts, second=5),
         cron(jobs.process_broadcasts, second={5, 20, 35, 50}),
     ]

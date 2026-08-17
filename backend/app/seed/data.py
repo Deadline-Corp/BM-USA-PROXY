@@ -76,6 +76,9 @@ def default_settings(tos_version: int = 1) -> dict[str, object]:
         "invoice_ttl_minutes": 60,
         "rotation_cooldown_sec": 60,
         "pool_low_watermark": 10,
+        # How often the low-stock check looks. The job itself runs every minute and
+        # returns early until this has elapsed.
+        "pool_check_interval_minutes": 5,
         # Who hears about client messages, reseller enquiries and low stock. Seeded empty
         # so the field exists in the admin Settings screen; anything set here is added to
         # OPS_ALERT_CHAT_ID rather than replacing it. See services/ops_alerts.py.

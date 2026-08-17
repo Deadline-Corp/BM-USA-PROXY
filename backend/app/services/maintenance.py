@@ -90,6 +90,7 @@ async def sweep_access_expiries(session: AsyncSession) -> dict[str, int]:
 
 _POOL_ALERT_STATE = "pool_low_alert_state"
 _POOL_ALERT_REPEAT_HOURS = 6
+POOL_CHECK_INTERVAL_SETTING = "pool_check_interval_minutes"
 
 
 async def check_pool_watermark(session: AsyncSession) -> dict[str, Any]:
@@ -107,16 +108,33 @@ async def check_pool_watermark(session: AsyncSession) -> dict[str, Any]:
     State is kept so the alert fires on the way down rather than every pass, repeats only
     every few hours while stock stays low, and says so once when it recovers. A threshold
     of 0 (the default) disables the whole thing.
+
+    How often it looks is `pool_check_interval_minutes`, also from the console. The cron
+    fires every minute and this returns early until the interval has elapsed, rather than
+    the interval living in the worker's schedule: changing a number in Settings then takes
+    effect on the next minute instead of on the next deploy.
     """
     threshold = int(await settings_svc.get(session, "pool_low_watermark", 0) or 0)
     if threshold <= 0:
         return {"skipped": "disabled"}
 
-    free = await allocator.count_available(session)
     now = _utcnow()
     state = await settings_svc.get(session, _POOL_ALERT_STATE, {}) or {}
+    interval = int(await settings_svc.get(session, POOL_CHECK_INTERVAL_SETTING, 5) or 5)
+    checked_at = state.get("checked_at")
+    if interval > 1 and checked_at:
+        with contextlib.suppress(ValueError, TypeError):
+            if datetime.fromisoformat(str(checked_at)) + timedelta(minutes=interval) > now:
+                return {"skipped": "not due"}
+
+    free = await allocator.count_available(session)
     was_low = bool(state.get("low"))
     notified_at = state.get("notified_at")
+
+    # One write at the end, whatever happened: `checked_at` has to move even on a pass that
+    # sends nothing, or the interval above never elapses and the check runs every minute.
+    new_state = {"low": was_low, "notified_at": notified_at, "checked_at": now.isoformat()}
+    result: dict[str, Any] = {"free": free, "threshold": threshold, "alerted": False}
 
     if free < threshold:
         due = True
@@ -125,28 +143,24 @@ async def check_pool_watermark(session: AsyncSession) -> dict[str, Any]:
                 due = datetime.fromisoformat(str(notified_at)) + timedelta(
                     hours=_POOL_ALERT_REPEAT_HOURS
                 ) <= now
-        if not due:
-            return {"free": free, "threshold": threshold, "alerted": False}
-        await ops_alerts.notify_ops(
-            session,
-            f"⚠️ Pool is low: {free} proxies free, alert threshold is {threshold}.\n"
-            "Add phones, or free some up in the iproxy console.",
-        )
-        await settings_svc.set_value(
-            session, _POOL_ALERT_STATE, {"low": True, "notified_at": now.isoformat()}
-        )
-        return {"free": free, "threshold": threshold, "alerted": True}
-
-    if was_low:
+        new_state["low"] = True
+        if due:
+            await ops_alerts.notify_ops(
+                session,
+                f"⚠️ Pool is low: {free} proxies free, alert threshold is {threshold}.\n"
+                "Add phones, or free some up in the iproxy console.",
+            )
+            new_state["notified_at"] = now.isoformat()
+            result["alerted"] = True
+    elif was_low:
         await ops_alerts.notify_ops(
             session, f"✅ Pool recovered: {free} proxies free (threshold {threshold})."
         )
-        await settings_svc.set_value(
-            session, _POOL_ALERT_STATE, {"low": False, "notified_at": now.isoformat()}
-        )
-        return {"free": free, "threshold": threshold, "recovered": True}
+        new_state = {"low": False, "notified_at": now.isoformat(), "checked_at": now.isoformat()}
+        result["recovered"] = True
 
-    return {"free": free, "threshold": threshold, "alerted": False}
+    await settings_svc.set_value(session, _POOL_ALERT_STATE, new_state)
+    return result
 
 
 async def sweep_auto_rotations(session: AsyncSession) -> dict[str, int]:

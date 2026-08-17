@@ -3277,6 +3277,7 @@ _SETTINGS_WHITELIST: frozenset[str] = frozenset(
         "invoice_ttl_minutes",
         "rotation_cooldown_sec",
         "pool_low_watermark",
+        "pool_check_interval_minutes",
         "ops_alert_chats",
         "attribution",
         "bot_channel_url",
