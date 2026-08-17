@@ -17,7 +17,6 @@ import {
   useClientDossier,
   useIssueAccess,
   useMessageClient,
-  useRefreshTelegram,
   useUnbanClient,
   useUpdateClientNote,
 } from "@/shared/hooks/useClients";
@@ -47,7 +46,6 @@ export function ClientDossier({ clientId, onClose }: ClientDossierProps) {
   const noteMutation = useUpdateClientNote();
   const messageMutation = useMessageClient();
   const issueMutation = useIssueAccess();
-  const refreshTelegramMutation = useRefreshTelegram();
   const tariffsQuery = useTariffs();
   const locationsQuery = usePoolLocations();
 
@@ -160,20 +158,6 @@ export function ClientDossier({ clientId, onClose }: ClientDossierProps) {
     }
   }
 
-  async function handleRefreshTelegram() {
-    if (!profile) return;
-    try {
-      const result = await refreshTelegramMutation.mutateAsync(profile.id);
-      toast.success(
-        result.changed
-          ? `Now @${result.telegram_username ?? "—"}`
-          : strings.clients.refreshTelegramSame,
-      );
-    } catch (err) {
-      toast.error(apiErrorMessage(err));
-    }
-  }
-
   async function handleIssueAccess() {
     if (!profile || !issueTariff) return;
     try {
@@ -210,18 +194,6 @@ export function ClientDossier({ clientId, onClose }: ClientDossierProps) {
               <Button variant="ghost" size="sm" onClick={() => setMessageOpen(true)}>
                 <IconMail />
                 {strings.clients.message}
-              </Button>
-              {/* Telegram never announces a rename, so a stored handle is only as fresh as
-                  this person's last visit. Identity is the numeric id and never moves — but
-                  support searching for the handle they were just given finds nobody. */}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleRefreshTelegram}
-                isLoading={refreshTelegramMutation.isPending}
-                title={strings.clients.refreshTelegramHint}
-              >
-                {strings.clients.refreshTelegram}
               </Button>
               <Button
                 variant={profile.banned ? "primary" : "danger"}

@@ -152,9 +152,6 @@ export const strings = {
     issueAccess: "Issue access",
     issueCity: "City",
     issueCarrier: "Carrier",
-    refreshTelegram: "Refresh from Telegram",
-    refreshTelegramHint: "Re-read the handle and name — Telegram never tells us when they change.",
-    refreshTelegramSame: "Handle is already up to date",
     /** Tooltip on the compact checkmark next to a client's handle in the table row. */
     termsAccepted: "Terms of Use accepted",
     dossierTos: "Terms of service",

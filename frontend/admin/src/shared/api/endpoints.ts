@@ -104,13 +104,6 @@ export const clientsApi = {
     apiClient.post<Client>(`/clients/${id}/unban`).then((r) => r.data),
   message: (id: string, text: string) =>
     apiClient.post<void>(`/clients/${id}/message`, { text }).then((r) => r.data),
-  /** Re-read handle and name from Telegram — it never notifies us when they change. */
-  refreshTelegram: (id: string) =>
-    apiClient
-      .post<{ telegram_username: string | null; display_name: string | null; changed: boolean }>(
-        `/clients/${id}/refresh-telegram`,
-      )
-      .then((r) => r.data),
   issueAccess: (id: string, body: IssueAccessRequest) =>
     apiClient
       .post<ClientDossier>(`/clients/${id}/issue-access`, body)

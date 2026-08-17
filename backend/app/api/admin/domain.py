@@ -718,48 +718,6 @@ async def unban_client(client_id: int, admin: CurrentAdmin, session: DbSession) 
     return {"status": user.status}
 
 
-@router.post("/clients/{client_id}/refresh-telegram")
-async def refresh_client_from_telegram(
-    client_id: int, admin: CurrentAdmin, session: DbSession
-) -> dict[str, Any]:
-    """Re-read this client's handle and name from Telegram.
-
-    Telegram never tells a bot that somebody renamed themselves, so a stored @handle is
-    only as fresh as that person's last visit — they change it, and the console keeps
-    showing the old one until they next open the app or message the bot. Nothing breaks
-    (identity is the numeric id, which never changes), but support searches for a handle
-    that no longer exists and finds nobody.
-
-    getChat answers for any user the bot has ever spoken to, which is every client here,
-    so one button beats waiting for them to come back.
-    """
-    from app.bot.factory import get_bot
-
-    user = await _get_user(session, client_id)
-    bot = get_bot()
-    if bot is None:
-        raise Conflict("bot is not configured")
-    try:
-        chat = await bot.get_chat(user.tg_user_id)
-    except Exception as exc:  # noqa: BLE001 — a blocked or deleted account is not our bug
-        raise Conflict(f"Telegram did not answer for this client: {exc}") from None
-
-    before = user.tg_username
-    user.tg_username = chat.username
-    user.first_name = chat.first_name or user.first_name
-    user.last_name = chat.last_name or user.last_name
-    if before != user.tg_username:
-        await audit.write(
-            session, admin_id=admin.id, action="client.refresh_telegram", entity="user",
-            entity_id=user.id, before={"username": before}, after={"username": user.tg_username},
-        )
-    return {
-        "telegram_username": user.tg_username,
-        "display_name": user.first_name,
-        "changed": before != user.tg_username,
-    }
-
-
 class ClientMessage(BaseModel):
     text: str = Field(max_length=4096)
 
