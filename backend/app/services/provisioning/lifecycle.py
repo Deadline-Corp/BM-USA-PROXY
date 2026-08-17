@@ -20,7 +20,7 @@ from app.services import vpn_configs
 from app.services.notifications import enqueue
 from app.services.provisioning.allocator import allocate
 from app.services.provisioning.registry import get_provisioner
-from app.services.provisioning.sync import _resolve_location
+from app.services.provisioning.sync import resolve_sold_location
 
 
 def _utcnow() -> datetime:
@@ -158,7 +158,11 @@ async def rotate_ip(session: AsyncSession, *, access: Access, actor: str = "user
             iproxy_connection_id=conn.iproxy_connection_id
         )
         if exit_ip.city:
-            new_loc_id = await _resolve_location(session, exit_ip.city)
+            # Same rule as everywhere else: a mapped state in the phone's name wins over
+            # whatever the fresh IP resolves to.
+            new_loc_id = await resolve_sold_location(
+                session, connection_name=conn.name, ip_city=exit_ip.city
+            )
             if new_loc_id is not None and new_loc_id != conn.location_id:
                 conn.location_id = new_loc_id
     except Exception as exc:  # noqa: BLE001 — the rotation itself already succeeded

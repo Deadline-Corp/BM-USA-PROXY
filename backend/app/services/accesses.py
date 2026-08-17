@@ -14,7 +14,7 @@ from app.services import vpn_configs
 from app.services.carriers import carrier_from_ip
 from app.services.provisioning.base import ExitIp
 from app.services.provisioning.registry import get_provisioner
-from app.services.provisioning.sync import _resolve_location
+from app.services.provisioning.sync import resolve_sold_location
 
 _ACTIVE = ("provisioning", "active", "expiring")
 
@@ -99,7 +99,12 @@ async def detail_for_user(session: AsyncSession, public_id: str, user_id: int) -
         # to a minute away). Same resolver sync_pool uses, so a location row is never
         # created twice under different rules.
         if conn is not None and exit_ip.city:
-            new_loc_id = await _resolve_location(session, exit_ip.city)
+            # Sold-as, not IP-as: the state in this phone's name decides the city when it
+            # maps to one. Re-resolving from the exit IP alone is what used to overwrite
+            # "Las Vegas" with "North Las Vegas" the moment the buyer opened this screen.
+            new_loc_id = await resolve_sold_location(
+                session, connection_name=conn.name, ip_city=exit_ip.city
+            )
             if new_loc_id is not None and new_loc_id != conn.location_id:
                 conn.location_id = new_loc_id
                 loc = await session.get(Location, new_loc_id)

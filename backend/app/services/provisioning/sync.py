@@ -198,6 +198,33 @@ async def sync_external_holds(
     return {"checked": checked, "held": held}
 
 
+async def resolve_sold_location(
+    session: AsyncSession,
+    *,
+    connection_name: str | None,
+    ip_city: str | None,
+    cache: dict[str, int | None] | None = None,
+) -> int | None:
+    """The location a connection is SOLD as — the one answer, used everywhere.
+
+    Order matters and is the whole point: a state written into the phone's name, mapped to a
+    city on the Cities screen, beats whatever the exit IP resolves to. The client sells by
+    state; the IP lands wherever the carrier's address block happens to sit.
+
+    This exists because three separate places used to write `location_id` — the sync pass,
+    the access screen (which re-resolves from the live exit IP so a rotation shows up
+    promptly) and rotate_ip itself. When only the sync knew about the state mapping, opening
+    the access screen quietly overwrote "Las Vegas" with "North Las Vegas", which is exactly
+    what a buyer then saw. One function, one answer.
+    """
+    state = state_from_name(connection_name)
+    if state:
+        city = await session.scalar(select(StateCity.city).where(StateCity.state_code == state))
+        if city:
+            return await _resolve_location(session, str(city), cache, state=state)
+    return await _resolve_location(session, ip_city, cache)
+
+
 async def sync_pool(session: AsyncSession, client: IproxyClient | None = None) -> dict[str, Any]:
     """Mirror the iproxy account into `connections`, writing only what changed.
 
@@ -232,15 +259,6 @@ async def sync_pool(session: AsyncSession, client: IproxyClient | None = None) -
         ).all()
     }
 
-    # One read of the client's state→city mapping for the whole pass — it is nine rows, and
-    # every phone consults it.
-    state_city_map: dict[str, str] = {
-        str(code): str(city)
-        for code, city in (
-            await session.execute(select(StateCity.state_code, StateCity.city))
-        ).all()
-    }
-
     seen = written = online = 0
     # Rows where nothing moved still need their freshness stamps, but not a statement each:
     # they are collected here and stamped in one UPDATE per group at the end.
@@ -263,25 +281,19 @@ async def sync_pool(session: AsyncSession, client: IproxyClient | None = None) -
             online += 1
         carrier = _carrier_for(status_row, device)
 
-        # The client sells by state and writes it into the name (`att113_NV`), so that is
-        # what a buyer is promised. It wins over the exit IP's own city: the IP resolves to
-        # wherever the carrier's pool happens to sit — Rolling Meadows, Sun Prairie — and
-        # nobody shops for those. `ip_city` remains the answer for a phone whose name says
-        # nothing, and for a state nobody has mapped yet (surfaced on the Cities screen).
-        sold_state = state_from_name(name)
-        sold_city = state_city_map.get(sold_state) if sold_state else None
-
         known = current.get(cid)
         # Resolved for every phone on every pass, not just new ones — this is what keeps a
         # rotated phone's city current. It costs no HTTP call: the city rides along in the
         # list response we already have, and the per-pass cache collapses a whole pool down
         # to one pair of statements per distinct city.
-        if sold_city:
-            loc_id = await _resolve_location(
-                session, sold_city, location_cache, state=sold_state
-            )
-        else:
-            loc_id = await _resolve_location(session, app_data.get("ip_city"), location_cache)
+        # Sold-as location: the state in the name if it maps to a city, the exit IP's own
+        # city otherwise. Same helper the access screen and rotate_ip use.
+        loc_id = await resolve_sold_location(
+            session,
+            connection_name=name,
+            ip_city=app_data.get("ip_city"),
+            cache=location_cache,
+        )
 
         unchanged = (
             known is not None
