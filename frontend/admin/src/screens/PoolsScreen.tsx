@@ -272,9 +272,13 @@ function SummaryCell({
   return (
     // Every cell the same width regardless of its label or how many digits it holds:
     // they read as one row of comparable numbers, and the row does not reflow when a
-    // count crosses into double figures.
-    <div className="flex w-[132px] shrink-0 flex-col gap-0.5 px-6 py-3.5 border-l border-border first:border-l-0">
-      <span className="text-[.69rem] uppercase tracking-[.08em] text-text-3">{label}</span>
+    // count crosses into double figures. The width is set by the longest label — "Held in
+    // iproxy" — because a label that wraps to a second line pushes its number below the
+    // others, and five numbers meant to be compared have to sit on one line.
+    <div className="flex w-[156px] shrink-0 flex-col gap-0.5 px-5 py-3.5 border-l border-border first:border-l-0">
+      <span className="whitespace-nowrap text-[.69rem] uppercase tracking-[.08em] text-text-3">
+        {label}
+      </span>
       <span className={`font-mono tabular-nums text-[1.55rem] font-semibold leading-none tracking-[-0.02em] ${toneClass}`}>
         <Num value={value} />
       </span>
