@@ -493,8 +493,12 @@ export function AccessDetailScreen() {
       {/* ── extend sheet ── */}
       <Sheet open={extendSheetOpen} onClose={() => setExtendSheetOpen(false)} title={strings.access.extendSheetTitle}>
         <div className="flex flex-col gap-1.5">
+          {/* Same gate the catalogue uses, plus a price: the backend refuses to extend on
+              a free or quote-only plan ("tariff not valid for extension"), so listing one
+              here offered a button whose only outcome was an error. Reseller sat in this
+              sheet at $0.00 for exactly that reason. */}
           {catalogQuery.data?.tariffs
-            .filter((t) => t.code !== "trial")
+            .filter((t) => t.code !== "trial" && t.kind === "auto" && t.auto_issue && t.price_usd > 0)
             .map((tariff) => (
               <button
                 key={tariff.code}
