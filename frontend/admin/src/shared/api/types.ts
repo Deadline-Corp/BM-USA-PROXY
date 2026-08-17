@@ -101,8 +101,6 @@ export interface ClientAccess {
   connection_id: string | null;
   revoked_at: string | null;
   revoke_reason: string | null;
-  /** Minutes between scheduled rotations; null means off. Settable here on a live access. */
-  auto_rotate_minutes: number | null;
   expires_at: string | null;
   created_at: string;
 }
@@ -276,6 +274,8 @@ export interface AccessRow {
    *  iproxy console, plus the phone's name as shown in the pool. */
   connection_id: string | null;
   connection_name: string | null;
+  /** Minutes between scheduled rotations; null means off. Set from the actions column. */
+  auto_rotate_minutes: number | null;
   /** Why the access ended and who ended it. `revoked_at` is also stamped on expiry, so a
    *  null reason there means time ran out rather than somebody deciding. */
   revoked_at: string | null;

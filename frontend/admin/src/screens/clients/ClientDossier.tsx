@@ -8,7 +8,6 @@ import { Skeleton } from "@/shared/components/Skeleton";
 import { ErrorState } from "@/shared/components/ErrorState";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { Modal } from "@/shared/components/Modal";
-import { Input } from "@/shared/components/form/Input";
 import { Textarea } from "@/shared/components/form/Textarea";
 import { Select } from "@/shared/components/form/Select";
 import { initials } from "@/shared/lib/format";
@@ -18,10 +17,10 @@ import {
   useClientDossier,
   useIssueAccess,
   useMessageClient,
+  useRefreshTelegram,
   useUnbanClient,
   useUpdateClientNote,
 } from "@/shared/hooks/useClients";
-import { useSetAutoRotate } from "@/shared/hooks/useAccesses";
 import { useTariffs } from "@/shared/hooks/useTariffs";
 import { usePoolLocations } from "@/shared/hooks/usePool";
 import { useToast } from "@/shared/components/Toast";
@@ -32,11 +31,7 @@ import clsx from "clsx";
 import { IconChevronRight, IconMail, IconPlus } from "@/shared/components/icons";
 import { CopyInline } from "@/shared/components/CopyInline";
 import { OrderNumber } from "@/shared/components/OrderNumber";
-import type {
-  ClientAccess,
-  ClientDossier as ClientDossierData,
-  ConversationMessage,
-} from "@/shared/api/types";
+import type { ClientDossier as ClientDossierData, ConversationMessage } from "@/shared/api/types";
 
 
 interface ClientDossierProps {
@@ -52,7 +47,7 @@ export function ClientDossier({ clientId, onClose }: ClientDossierProps) {
   const noteMutation = useUpdateClientNote();
   const messageMutation = useMessageClient();
   const issueMutation = useIssueAccess();
-  const autoRotateMutation = useSetAutoRotate();
+  const refreshTelegramMutation = useRefreshTelegram();
   const tariffsQuery = useTariffs();
   const locationsQuery = usePoolLocations();
 
@@ -65,8 +60,6 @@ export function ClientDossier({ clientId, onClose }: ClientDossierProps) {
   const [issueTariff, setIssueTariff] = useState("");
   const [issueLocationId, setIssueLocationId] = useState("");
   const [issueCarrier, setIssueCarrier] = useState("");
-  const [autoRotateFor, setAutoRotateFor] = useState<ClientAccess | null>(null);
-  const [autoRotateMinutes, setAutoRotateMinutes] = useState(30);
 
   // Carriers that can actually be issued, narrowed to the chosen city. Sourced from the
   // same availability the city list uses, so the two dropdowns can never describe a
@@ -167,16 +160,15 @@ export function ClientDossier({ clientId, onClose }: ClientDossierProps) {
     }
   }
 
-  async function handleAutoRotate(enabled: boolean) {
-    if (!autoRotateFor) return;
+  async function handleRefreshTelegram() {
+    if (!profile) return;
     try {
-      await autoRotateMutation.mutateAsync({
-        id: autoRotateFor.id,
-        enabled,
-        minutes: enabled ? autoRotateMinutes : null,
-      });
-      toast.success(enabled ? `Rotating every ${autoRotateMinutes}m` : "Auto-rotation off");
-      setAutoRotateFor(null);
+      const result = await refreshTelegramMutation.mutateAsync(profile.id);
+      toast.success(
+        result.changed
+          ? `Now @${result.telegram_username ?? "—"}`
+          : strings.clients.refreshTelegramSame,
+      );
     } catch (err) {
       toast.error(apiErrorMessage(err));
     }
@@ -219,6 +211,18 @@ export function ClientDossier({ clientId, onClose }: ClientDossierProps) {
                 <IconMail />
                 {strings.clients.message}
               </Button>
+              {/* Telegram never announces a rename, so a stored handle is only as fresh as
+                  this person's last visit. Identity is the numeric id and never moves — but
+                  support searching for the handle they were just given finds nobody. */}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleRefreshTelegram}
+                isLoading={refreshTelegramMutation.isPending}
+                title={strings.clients.refreshTelegramHint}
+              >
+                {strings.clients.refreshTelegram}
+              </Button>
               <Button
                 variant={profile.banned ? "primary" : "danger"}
                 size="sm"
@@ -250,12 +254,6 @@ export function ClientDossier({ clientId, onClose }: ClientDossierProps) {
             onSaveNote={handleSaveNote}
             isSavingNote={noteMutation.isPending}
             onIssueAccessClick={() => setIssueOpen(true)}
-            onAutoRotateClick={(access) => {
-              // Opens on whatever this access already runs, so "every 45 minutes" does not
-              // silently become the default because the dialog reset itself.
-              setAutoRotateFor(access);
-              setAutoRotateMinutes(access.auto_rotate_minutes ?? 30);
-            }}
           />
         )}
       </SlideOver>
@@ -297,45 +295,6 @@ export function ClientDossier({ clientId, onClose }: ClientDossierProps) {
           onChange={(e) => setMessageText(e.target.value)}
           placeholder={strings.clients.messagePlaceholder}
           rows={4}
-        />
-      </Modal>
-
-      <Modal
-        open={autoRotateFor !== null}
-        onClose={() => setAutoRotateFor(null)}
-        title={strings.clients.autoRotate}
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setAutoRotateFor(null)}>
-              {strings.common.cancel}
-            </Button>
-            {/* Off is its own action rather than a zero in the field: an interval of zero
-                has no meaning, and "off" should not have to be spelled as a number. */}
-            <Button
-              variant="quiet"
-              onClick={() => handleAutoRotate(false)}
-              isLoading={autoRotateMutation.isPending}
-            >
-              {strings.clients.autoRotateOff}
-            </Button>
-            <Button
-              variant="primary"
-              onClick={() => handleAutoRotate(true)}
-              isLoading={autoRotateMutation.isPending}
-            >
-              {strings.common.save}
-            </Button>
-          </>
-        }
-      >
-        <Input
-          type="number"
-          min={1}
-          max={1440}
-          label={strings.clients.autoRotateMinutes}
-          hint={strings.clients.autoRotateHint}
-          value={autoRotateMinutes}
-          onChange={(e) => setAutoRotateMinutes(Number(e.target.value))}
         />
       </Modal>
 
@@ -425,7 +384,6 @@ function DossierBody({
   onSaveNote,
   isSavingNote,
   onIssueAccessClick,
-  onAutoRotateClick,
 }: {
   data: ClientDossierData;
   note: string;
@@ -434,7 +392,6 @@ function DossierBody({
   onSaveNote: () => void;
   isSavingNote: boolean;
   onIssueAccessClick: () => void;
-  onAutoRotateClick: (access: ClientAccess) => void;
 }) {
   const { profile } = data;
 
@@ -530,27 +487,7 @@ function DossierBody({
                 ]
                   .filter(Boolean)
                   .join(" · ")}
-                trailing={
-                  <div className="flex items-center gap-2">
-                    {/* Only on a live access — a schedule on a revoked or expired one is a
-                        setting for something that no longer runs. The label doubles as the
-                        current state, so an operator asked "is his rotating?" answers from
-                        this row instead of opening anything. */}
-                    {a.status === "active" || a.status === "expiring" ? (
-                      <Button
-                        variant="quiet"
-                        size="sm"
-                        onClick={() => onAutoRotateClick(a)}
-                        title={strings.clients.autoRotateHint}
-                      >
-                        {a.auto_rotate_minutes
-                          ? `${strings.clients.autoRotate} ${a.auto_rotate_minutes}m`
-                          : `${strings.clients.autoRotate} ${strings.common.off}`}
-                      </Button>
-                    ) : null}
-                    <StatusBadge status={a.status} />
-                  </div>
-                }
+                trailing={<StatusBadge status={a.status} />}
               />
             ))}
           </RowList>

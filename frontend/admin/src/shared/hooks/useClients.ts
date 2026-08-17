@@ -74,6 +74,17 @@ export function useMessageClient() {
   });
 }
 
+export function useRefreshTelegram() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => clientsApi.refreshTelegram(id),
+    onSuccess: () => {
+      // Both the dossier header and the row in the list render the handle.
+      qc.invalidateQueries({ queryKey: ["clients"] });
+    },
+  });
+}
+
 export function useIssueAccess() {
   const qc = useQueryClient();
   return useMutation({
