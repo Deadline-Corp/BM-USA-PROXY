@@ -35,10 +35,10 @@ const SETTING_LABELS: Record<string, string> = {
   pool_low_watermark: "Pool low-stock alert (free slots)",
   // Comma-separated destinations for operator alerts: client messages, reseller enquiries,
   // low stock, the nightly reconciliation. Adds to OPS_ALERT_CHAT_ID rather than replacing
-  // it. A person must be given as their NUMERIC telegram id (shown next to their handle on
-  // the Clients screen) and must have pressed Start on the bot — an @handle only addresses
-  // a public channel, and for a person it silently reaches nobody.
-  ops_alert_chats: "Operator alert chats — numeric telegram ids, comma-separated",
+  // it. @handles are resolved to ids server-side (see services/ops_alerts.py), so an
+  // operator writes the name they actually know. The person still has to have pressed
+  // Start on the bot — Telegram does not let a bot open a conversation.
+  ops_alert_chats: "Operator alert chats — @handles or ids, comma-separated",
   bot_channel_url: "Channel link",
   bot_support_url: "Support link",
 };
@@ -60,8 +60,19 @@ const REFERRAL_KEYS = ["referral_pct", "referral_min_payout_usd", "referral_hold
 // so the backend no longer accepts the key, and a leftover row in the settings table would
 // otherwise render a field that 400s the moment anyone edits anything in this panel.
 const RETIRED_KEYS = ["operator_refund_limit_usd", "operator_payout_limit_usd"];
+
+// Written by the code, never by a person. `welcome_image_file_id` is Telegram's own id for
+// the greeting photo, cached so /start resends it instead of re-uploading the bytes; the
+// upload panel below clears it on every replace. Showing it as an editable text box put a
+// value nobody can produce by hand next to settings that invite editing — and a wrong id
+// there means the bot sends somebody else's photo, or fails to send one at all.
+const INTERNAL_KEYS = ["welcome_image_file_id"];
+
 const isManaged = (key: string) =>
-  key.startsWith("notify_texts:") || key === "tos" || RETIRED_KEYS.includes(key);
+  key.startsWith("notify_texts:") ||
+  key === "tos" ||
+  RETIRED_KEYS.includes(key) ||
+  INTERNAL_KEYS.includes(key);
 
 /** Everything except the referral keys — the catch-all half of the bag. */
 export function AppSettingsPanel() {
