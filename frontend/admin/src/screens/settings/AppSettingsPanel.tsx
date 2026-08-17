@@ -40,12 +40,18 @@ const SETTING_LABELS: Record<string, string> = {
   // it. @handles are resolved to ids server-side (see services/ops_alerts.py), so an
   // operator writes the name they actually know. The person still has to have pressed
   // Start on the bot — Telegram does not let a bot open a conversation.
-  ops_alert_chats: "Operator alert chats — @handles or ids, comma-separated",
+  ops_alert_chats: "Alert chats (@handles or ids)",
   bot_channel_url: "Channel link",
   bot_support_url: "Support link",
 };
 
 const labelFor = (key: string) => SETTING_LABELS[key] ?? key.replace(/_/g, " ");
+
+/** Shown inside the empty field. Carries the shape of a value where spelling it out in the
+ *  label would push that label onto a second line and knock the row out of alignment. */
+const SETTING_PLACEHOLDERS: Record<string, string> = {
+  ops_alert_chats: "@support, @owner — comma-separated",
+};
 
 /** The affiliate programme's three dials, in the order the Referrals screen used to show
  * them — commission first, since that is the one anybody actually comes here to change.
@@ -296,6 +302,7 @@ function SettingsGroupPanel({
                 <Input
                   key={key}
                   label={labelFor(key)}
+                  placeholder={SETTING_PLACEHOLDERS[key]}
                   value={String(value)}
                   size={1}
                   onChange={(e) => setDraft((prev) => ({ ...(prev ?? data), [key]: e.target.value }))}

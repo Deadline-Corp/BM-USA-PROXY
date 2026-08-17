@@ -14,9 +14,14 @@ export function FieldShell({ label, error, hint, children, htmlFor }: FieldShell
   return (
     <div className="flex flex-col gap-1.5">
       {label && (
+        // One line, always. A label that wraps pushes its own input down while the fields
+        // beside it stay put, so a row of settings stops lining up — and in a grid of
+        // three that is visible immediately. Anything too long to fit is cut with the
+        // full text kept in the tooltip rather than silently rearranging the form.
         <label
           htmlFor={htmlFor}
-          className="text-[.74rem] uppercase tracking-[.06em] text-text-3 font-semibold"
+          title={label}
+          className="truncate text-[.74rem] uppercase tracking-[.06em] text-text-3 font-semibold"
         >
           {label}
         </label>
