@@ -10,6 +10,8 @@ phone hands two customers the same device. See sync.sync_external_holds.
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -55,6 +57,48 @@ async def allocate(
     return (row[0], row[1]) if row else None
 
 
+_AVAILABILITY_SQL = text(
+    """
+    SELECT l.id, l.city, l.state_code, c.carrier, count(*) AS free
+    FROM connections c
+    JOIN locations l ON l.id = c.location_id
+    WHERE c.is_sellable AND c.online_status = 'online'
+      AND c.external_access_count = 0
+      AND NOT EXISTS (
+        SELECT 1 FROM accesses a
+        WHERE a.connection_id = c.id
+          AND a.status IN ('provisioning','active','expiring')
+      )
+    GROUP BY l.id, l.city, l.state_code, c.carrier
+    ORDER BY l.city
+    """
+)
+
+
+async def available_locations(session: AsyncSession) -> list[dict[str, Any]]:
+    """Cities that can be sold from right now, each with the carriers it can be sold on.
+
+    Deliberately the allocator's own definition of free — same WHERE clause as `allocate`
+    — so a picker built from this cannot offer a combination the allocator would then
+    refuse. Anything with nothing free is absent rather than listed as zero: a choice that
+    only leads to "no free connection" is not a choice.
+
+    A connection with no carrier recorded still counts toward the city (it can be handed
+    out when no carrier is asked for) but names no carrier of its own.
+    """
+    rows = (await session.execute(_AVAILABILITY_SQL)).all()
+    by_location: dict[int, dict[str, Any]] = {}
+    for loc_id, city, state, carrier, free in rows:
+        entry = by_location.setdefault(
+            int(loc_id),
+            {"id": str(loc_id), "city": city, "state_code": state, "free": 0, "carriers": []},
+        )
+        entry["free"] += int(free)
+        if carrier:
+            entry["carriers"].append({"carrier": carrier, "free": int(free)})
+    return list(by_location.values())
+
+
 async def count_available(
     session: AsyncSession, *, location_id: int | None = None, carrier: str | None = None
 ) -> int:
@@ -63,7 +107,7 @@ async def count_available(
             """
             SELECT count(*) FROM connections c
             WHERE c.is_sellable AND c.online_status = 'online'
-      AND c.external_access_count = 0
+              AND c.external_access_count = 0
               AND (CAST(:location_id AS bigint) IS NULL OR c.location_id = CAST(:location_id AS bigint))
               AND (CAST(:carrier AS text) IS NULL OR c.carrier = CAST(:carrier AS text))
               AND NOT EXISTS (

@@ -147,11 +147,19 @@ export interface ClientDossier {
   messages: ConversationMessage[];
 }
 
+export interface PoolCarrierAvailability {
+  carrier: string;
+  free: number;
+}
+
+/** A city that can be issued from right now. Only cities with something free are
+ *  returned, so an empty list means the pool has nothing to sell at all. */
 export interface PoolLocation {
   id: string;
   city: string;
   state_code: string;
-  connections: number;
+  free: number;
+  carriers: PoolCarrierAvailability[];
 }
 
 export interface IssueAccessRequest {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { SlideOver } from "@/shared/components/SlideOver";
 import { Button } from "@/shared/components/Button";
@@ -32,8 +32,6 @@ import { CopyInline } from "@/shared/components/CopyInline";
 import { OrderNumber } from "@/shared/components/OrderNumber";
 import type { ClientDossier as ClientDossierData, ConversationMessage } from "@/shared/api/types";
 
-// The carriers the pool allows, mirroring the DB check constraint on connections.carrier.
-const CARRIERS = ["T-Mobile", "Verizon", "AT&T"] as const;
 
 interface ClientDossierProps {
   clientId: string | null;
@@ -60,6 +58,32 @@ export function ClientDossier({ clientId, onClose }: ClientDossierProps) {
   const [issueTariff, setIssueTariff] = useState("");
   const [issueLocationId, setIssueLocationId] = useState("");
   const [issueCarrier, setIssueCarrier] = useState("");
+
+  // Carriers that can actually be issued, narrowed to the chosen city. Sourced from the
+  // same availability the city list uses, so the two dropdowns can never describe a
+  // combination the allocator would refuse.
+  const availableCarriers = useMemo(() => {
+    const locations = locationsQuery.data ?? [];
+    const scoped = issueLocationId
+      ? locations.filter((l) => l.id === issueLocationId)
+      : locations;
+    const totals = new Map<string, number>();
+    for (const loc of scoped) {
+      for (const c of loc.carriers) totals.set(c.carrier, (totals.get(c.carrier) ?? 0) + c.free);
+    }
+    return [...totals]
+      .map(([carrier, free]) => ({ carrier, free }))
+      .sort((a, b) => a.carrier.localeCompare(b.carrier));
+  }, [locationsQuery.data, issueLocationId]);
+
+  // Picking a city can invalidate the carrier chosen before it. Left alone, the form would
+  // still submit that pair and the issue would fail on a constraint the operator can no
+  // longer see in the list.
+  useEffect(() => {
+    if (issueCarrier && !availableCarriers.some((c) => c.carrier === issueCarrier)) {
+      setIssueCarrier("");
+    }
+  }, [availableCarriers, issueCarrier]);
 
   const profile = data?.profile;
 
@@ -282,7 +306,12 @@ export function ClientDossier({ clientId, onClose }: ClientDossierProps) {
           {/* City and carrier were accepted by the endpoint but had nowhere to be chosen,
               so every operator-issued access took whatever the allocator happened to pick.
               Any means exactly that — no constraint — which is the sane default when the
-              customer did not ask for a specific geo. */}
+              customer did not ask for a specific geo.
+
+              Both lists come from what is actually free right now, and the carrier list
+              narrows to the chosen city: offering a combination the allocator would refuse
+              turns a considered choice into a failed issue with no explanation. The count
+              beside each option is how many phones back it. */}
           <div className="grid grid-cols-2 gap-4">
             <Select
               label={strings.clients.issueCity}
@@ -292,7 +321,7 @@ export function ClientDossier({ clientId, onClose }: ClientDossierProps) {
               <option value="">{strings.common.all}</option>
               {locationsQuery.data?.map((loc) => (
                 <option key={loc.id} value={loc.id}>
-                  {loc.state_code ? `${loc.city}, ${loc.state_code}` : loc.city} · {loc.connections}
+                  {loc.state_code ? `${loc.city}, ${loc.state_code}` : loc.city} · {loc.free}
                 </option>
               ))}
             </Select>
@@ -302,9 +331,9 @@ export function ClientDossier({ clientId, onClose }: ClientDossierProps) {
               onChange={(e) => setIssueCarrier(e.target.value)}
             >
               <option value="">{strings.common.all}</option>
-              {CARRIERS.map((c) => (
-                <option key={c} value={c}>
-                  {c}
+              {availableCarriers.map((c) => (
+                <option key={c.carrier} value={c.carrier}>
+                  {c.carrier} · {c.free}
                 </option>
               ))}
             </Select>
