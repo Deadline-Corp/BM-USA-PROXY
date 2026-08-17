@@ -384,17 +384,20 @@ export function CatalogScreen() {
           value={locationId === ANY ? "" : String(locationId)}
           onChange={(e) => setLocationId(e.target.value === "" ? ANY : Number(e.target.value))}
         >
-          <option value="">
-            {strings.common.any}
-            {catalogQuery.data ? ` · ${catalogQuery.data.any_city_free.any}` : ""}
-          </option>
-          {/* The free count rides along in the label: a city with nothing free is the one
-              thing a buyer needs to know before choosing it. */}
-          {(catalogQuery.data?.locations ?? []).map((loc) => (
-            <option key={loc.id} value={String(loc.id)}>
-              {formatCityState(loc.city, loc.state_code)} · {loc.free.any}
-            </option>
-          ))}
+          <option value="">{strings.common.any}</option>
+          {/* No counts — a buyer choosing a city does not need the size of our fleet. But a
+              city with nothing free still has to be distinguishable, or picking it fails at
+              checkout with "sold out" and no warning; those are marked and unselectable
+              rather than hidden, so the coverage on offer stays visible. */}
+          {(catalogQuery.data?.locations ?? []).map((loc) => {
+            const soldOut = loc.free.any === 0;
+            return (
+              <option key={loc.id} value={String(loc.id)} disabled={soldOut}>
+                {formatCityState(loc.city, loc.state_code)}
+                {soldOut ? ` — ${strings.catalog.slotsSoldOut}` : ""}
+              </option>
+            );
+          })}
         </select>
 
         <label
