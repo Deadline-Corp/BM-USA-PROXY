@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import secrets
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -12,6 +12,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import Conflict, ValidationError
+from app.core.logging import log
 from app.models import TosAcceptance, User
 from app.services import settings as settings_svc
 
@@ -102,3 +103,64 @@ async def accept_terms(
     email = (answers or {}).get("email")
     if email:
         user.email = email
+
+
+async def refresh_handles(
+    session: AsyncSession, bot: Any, *, batch: int = 300, active_days: int = 90
+) -> dict[str, int]:
+    """Re-read handles from Telegram for the clients checked longest ago.
+
+    Telegram never announces a rename, and the data it attaches to a bot message or a
+    mini-app request is cached by the client: measured 2026-08-17, somebody who had renamed
+    themselves hours earlier still arrived as their old handle, while getChat answered with
+    the new one straight away. So a visit alone is not enough to keep the console honest —
+    support searches for the handle a customer just quoted and finds nobody.
+
+    Walks in batches, oldest check first (never-checked first), so the cost per pass is
+    fixed whatever the size of the client list and the whole list still comes round.
+    Restricted to clients seen in the last `active_days`: somebody who has not opened the
+    app in a year does not need their handle polled forever.
+
+    One failure does not stop the walk — a person who blocked the bot or deleted their
+    account answers with an error, and that is a fact about them, not a fault here. They
+    are still stamped as checked so the walk moves on rather than retrying them every pass.
+    """
+    cutoff = datetime.now(UTC) - timedelta(days=active_days)
+    rows = (
+        await session.execute(
+            select(User)
+            .where(User.last_seen_at.is_not(None), User.last_seen_at >= cutoff)
+            .order_by(User.handle_checked_at.asc().nullsfirst())
+            .limit(batch)
+        )
+    ).scalars().all()
+
+    now = datetime.now(UTC)
+    checked = changed = failed = 0
+    for user in rows:
+        try:
+            chat = await bot.get_chat(user.tg_user_id)
+        except Exception as exc:  # noqa: BLE001 — blocked/deleted accounts are expected
+            user.handle_checked_at = now
+            failed += 1
+            log.info("handles.refresh_failed", tg_user_id=user.tg_user_id, error=str(exc))
+            continue
+        checked += 1
+        user.handle_checked_at = now
+        if chat.username != user.tg_username:
+            log.info(
+                "handles.renamed",
+                tg_user_id=user.tg_user_id,
+                was=user.tg_username,
+                now=chat.username,
+            )
+            user.tg_username = chat.username
+            changed += 1
+        # Names move too, and the console shows them beside the handle.
+        if chat.first_name:
+            user.first_name = chat.first_name
+        if chat.last_name:
+            user.last_name = chat.last_name
+
+    log.info("handles.refresh", checked=checked, changed=changed, failed=failed)
+    return {"checked": checked, "changed": changed, "failed": failed}

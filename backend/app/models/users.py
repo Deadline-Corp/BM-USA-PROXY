@@ -44,6 +44,10 @@ class User(Base):
         BigInteger, ForeignKey("posts.id", use_alter=True, name="fk_users_source_post_id_posts")
     )
     is_bot_blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    # When we last asked Telegram what this person's handle is. Not the same as last_seen_at:
+    # a visit tells us what the *client* had cached in its init-data, which lags a rename by
+    # however long that cache lives. NULL means never asked, and sorts first.
+    handle_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     operator_note: Mapped[str | None] = mapped_column(Text)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = created_at_col()

@@ -38,6 +38,27 @@ async def expiry_sweeper(ctx: dict) -> dict[str, int]:
     return result
 
 
+async def refresh_client_handles(ctx: dict) -> dict[str, int] | dict[str, str]:
+    """Keep the console's @handles honest — Telegram never announces a rename."""
+    from app.bot.factory import get_bot
+    from app.services.users import refresh_handles
+
+    bot = get_bot()
+    if bot is None:
+        await _beat(ctx, "refresh_client_handles")
+        return {"skipped": "no bot token"}
+    try:
+        async with SessionFactory() as s:
+            result = await refresh_handles(s, bot)
+            await s.commit()
+    finally:
+        # A fresh Bot per call means a fresh aiohttp session; leaving it open leaks a
+        # connector per pass, and this one runs forever.
+        await bot.session.close()
+    await _beat(ctx, "refresh_client_handles")
+    return result
+
+
 async def pool_watermark(ctx: dict) -> dict[str, Any]:
     async with SessionFactory() as s:
         result = await check_pool_watermark(s)
