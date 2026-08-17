@@ -63,6 +63,11 @@ export function CatalogScreen() {
     [methods, payChain],
   );
   const chosenMethod = payCoins.find((m) => `${m.asset}/${m.network}` === payCoin) ?? null;
+  // A rail only has to be *chosen* when the plan costs something and more than one is
+  // configured. With a single rail (today's production) or a free plan there is nothing to
+  // ask, so the sheet shows city and carrier alone.
+  const needsPaymentChoice = methods.length > 1 && (payingFor?.price_usd ?? 0) > 0;
+  const effectiveMethod = needsPaymentChoice ? chosenMethod : (methods[0] ?? null);
   const [resellerSheetOpen, setResellerSheetOpen] = useState(false);
   const [resellerMessage, setResellerMessage] = useState("");
   const [orderError, setOrderError] = useState<string | null>(null);
@@ -70,27 +75,25 @@ export function CatalogScreen() {
 
 
   /**
-   * Buy is a two-step flow: pick the coin, then the invoice is created.
+   * Buy is a two-step flow: settle what is being bought, then the invoice is created.
    *
-   * The coin used to be an optional row at the top of the catalog, which is exactly the
-   * kind of control people skip — you press Buy and land on an invoice in a currency you
-   * never chose, with no way back. Making it a blocking step costs one tap and removes
-   * the whole failure mode. With a single rail enabled there is nothing to choose, so the
-   * step is skipped rather than shown as a list of one.
+   * Both halves of that first step used to live above the plan list as permanent controls,
+   * which is exactly the kind of thing people skip — you press Buy and land on an invoice
+   * in a currency you never chose, on a city you never looked at. Asking once, at the
+   * moment it matters, costs one tap and removes the whole failure mode.
    */
   function handleBuy(tariff: Tariff) {
     if (!requireTos()) return;
     setOrderError(null);
-    if (methods.length > 1) {
-      // Start clean: a selection left over from a previous, abandoned purchase is exactly
-      // the sort of thing that quietly sends the next order down the wrong rail.
-      setPayChain(methods.length && payChains.length === 1 ? payChains[0].chain : "");
-      setPayCoin("");
-      setPayingFor(tariff);
-      setPaySheetOpen(true);
-      return;
-    }
-    void placeOrder(tariff, methods[0] ?? null);
+    // Always opens, even for a free plan on a single rail. The sheet is where the city and
+    // carrier are chosen now, so skipping it when there is no payment decision would take
+    // the geo choice away entirely — which is what the catalogue dropdowns used to carry.
+    // Start clean: a selection left over from a previous, abandoned purchase is exactly the
+    // sort of thing that quietly sends the next order down the wrong rail.
+    setPayChain(payChains.length === 1 ? payChains[0].chain : "");
+    setPayCoin("");
+    setPayingFor(tariff);
+    setPaySheetOpen(true);
   }
 
   async function placeOrder(tariff: Tariff, method: PaymentMethod | null) {
@@ -166,63 +169,6 @@ export function CatalogScreen() {
             {strings.catalog.title}
           </b>
           <span className="text-xs text-text-3">{strings.app.tagline}</span>
-        </div>
-      </div>
-
-      {/* ── city / carrier selectors ──
-          Dropdowns rather than buttons opening a sheet, matching the network/coin pickers
-          in the pay sheet: one control vocabulary for "choose one of a short list" across
-          the app. Both default to Any, which is also what the allocator does with no
-          preference — the buyer is choosing a constraint, not filling a required field. */}
-      <div className="mb-4 grid grid-cols-2 gap-2">
-        <div>
-          <label
-            htmlFor="catalog-city"
-            className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-3"
-          >
-            <MapPin size={12} className="shrink-0" aria-hidden="true" />
-            {strings.catalog.cityFilterLabel}
-          </label>
-          <select
-            id="catalog-city"
-            className="w-full rounded border border-border bg-surface px-3 py-2.5 text-[13.5px] text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-            value={locationId === ANY ? "" : String(locationId)}
-            onChange={(e) => setLocationId(e.target.value === "" ? ANY : Number(e.target.value))}
-          >
-            <option value="">
-              {strings.common.any}
-              {catalogQuery.data ? ` · ${catalogQuery.data.any_city_free.any}` : ""}
-            </option>
-            {/* The free count rides along in the label, as it did in the old sheet: a city
-                with nothing free is the one thing a buyer needs to know before choosing. */}
-            {(catalogQuery.data?.locations ?? []).map((loc) => (
-              <option key={loc.id} value={String(loc.id)}>
-                {formatCityState(loc.city, loc.state_code)} · {loc.free.any}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label
-            htmlFor="catalog-carrier"
-            className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-3"
-          >
-            <Radio size={12} className="shrink-0" aria-hidden="true" />
-            {strings.catalog.carrierFilterLabel}
-          </label>
-          <select
-            id="catalog-carrier"
-            className="w-full rounded border border-border bg-surface px-3 py-2.5 text-[13.5px] text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-            value={carrier === ANY ? "" : carrier}
-            onChange={(e) => setCarrier(e.target.value === "" ? ANY : (e.target.value as Carrier))}
-          >
-            <option value="">{strings.common.any}</option>
-            {(catalogQuery.data?.carriers ?? []).map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
         </div>
       </div>
 
@@ -417,12 +363,67 @@ export function CatalogScreen() {
           <p className="mb-3 text-[12.5px] leading-relaxed text-text-2">
             {payingFor.name} — <Num className="font-semibold text-text">{formatUsd(payingFor.price_usd)}</Num>
             {". "}
-            {strings.catalog.payWithSheetHint}
+            {needsPaymentChoice ? strings.catalog.payWithSheetHint : strings.catalog.buySheetHint}
           </p>
         ) : null}
-        {/* Network first, coin second. The coin list stays disabled until a network is
-            chosen — with a dozen rails a flat list showing "USDT" four times over tells
-            the buyer nothing about which one they would actually be sending to. */}
+
+        {/* Where the proxy should be, asked here rather than above the plan list. On the
+            catalogue they sat as two permanent dropdowns nobody had asked a question of
+            yet; the choice only matters once a plan is being bought, so it belongs in the
+            step that buying opens. Any means no constraint — the allocator's own default. */}
+        <label
+          htmlFor="buy-city"
+          className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-3"
+        >
+          <MapPin size={12} className="shrink-0" aria-hidden="true" />
+          {strings.catalog.cityFilterLabel}
+        </label>
+        <select
+          id="buy-city"
+          className="mb-3 w-full rounded border border-border bg-surface px-3 py-2.5 text-[13.5px] text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          value={locationId === ANY ? "" : String(locationId)}
+          onChange={(e) => setLocationId(e.target.value === "" ? ANY : Number(e.target.value))}
+        >
+          <option value="">
+            {strings.common.any}
+            {catalogQuery.data ? ` · ${catalogQuery.data.any_city_free.any}` : ""}
+          </option>
+          {/* The free count rides along in the label: a city with nothing free is the one
+              thing a buyer needs to know before choosing it. */}
+          {(catalogQuery.data?.locations ?? []).map((loc) => (
+            <option key={loc.id} value={String(loc.id)}>
+              {formatCityState(loc.city, loc.state_code)} · {loc.free.any}
+            </option>
+          ))}
+        </select>
+
+        <label
+          htmlFor="buy-carrier"
+          className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-3"
+        >
+          <Radio size={12} className="shrink-0" aria-hidden="true" />
+          {strings.catalog.carrierFilterLabel}
+        </label>
+        <select
+          id="buy-carrier"
+          className="mb-3 w-full rounded border border-border bg-surface px-3 py-2.5 text-[13.5px] text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          value={carrier === ANY ? "" : carrier}
+          onChange={(e) => setCarrier(e.target.value === "" ? ANY : (e.target.value as Carrier))}
+        >
+          <option value="">{strings.common.any}</option>
+          {(catalogQuery.data?.carriers ?? []).map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+
+        {/* Network first, coin second, and only when there is a choice to make: with a
+            single rail enabled this is a list of one, which is a question with no answer
+            to give. Network first because with a dozen rails a flat list showing "USDT"
+            four times over tells the buyer nothing about which one they would be sending. */}
+        {needsPaymentChoice ? (
+          <>
         <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
           {strings.catalog.payNetworkLabel}
         </label>
@@ -458,16 +459,23 @@ export function CatalogScreen() {
             </option>
           ))}
         </select>
+          </>
+        ) : null}
 
         <Button
           variant="primary"
           block
-          disabled={!chosenMethod || pendingTariff !== null}
+          // A free plan needs no rail at all, and a single configured rail is not a choice
+          // to be made — in both cases the only thing this sheet was waiting for is the
+          // city and carrier above.
+          disabled={(needsPaymentChoice && !chosenMethod) || pendingTariff !== null}
           onClick={() => {
-            if (payingFor && chosenMethod) void placeOrder(payingFor, chosenMethod);
+            if (payingFor) void placeOrder(payingFor, effectiveMethod);
           }}
         >
-          {strings.catalog.payContinue}
+          {needsPaymentChoice || (payingFor?.price_usd ?? 0) > 0
+            ? strings.catalog.payContinue
+            : strings.catalog.buyContinue}
         </Button>
       </Sheet>
 
