@@ -244,6 +244,8 @@ export interface PoolCitySummary {
   nodes_free: number;
   /** An access is live on it. */
   nodes_busy: number;
+  /** Held by an access made in the iproxy console. */
+  nodes_held: number;
   /** Offline, silent, or withheld by an operator. */
   nodes_unavailable: number;
 }
@@ -252,6 +254,9 @@ export interface PoolSummary {
   slots_total: number;
   slots_used: number;
   slots_free: number;
+  /** Occupied by a proxy-access created inside the iproxy console rather than sold by us.
+   *  Its own bucket: releasing it means going into iproxy, not anything in this console. */
+  slots_held: number;
   slots_unavailable: number;
   cities: PoolCitySummary[];
 }

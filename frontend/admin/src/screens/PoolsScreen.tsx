@@ -63,6 +63,7 @@ export function PoolsScreen() {
   const totalSlots = summary?.slots_total ?? 0;
   const usedSlots = summary?.slots_used ?? 0;
   const freeSlots = summary?.slots_free ?? 0;
+  const heldSlots = summary?.slots_held ?? 0;
   const unavailableSlots = summary?.slots_unavailable ?? 0;
   const usedPct = totalSlots > 0 ? Math.round((usedSlots / totalSlots) * 100) : 0;
   /** Share of the pool, for a bar segment. Unrounded so the three always fill the track. */
@@ -112,6 +113,10 @@ export function PoolsScreen() {
               cell of its own, so the three cells never added up to the total and the gap
               had no name. Unavailable is the one an operator has to act on — it is stock
               that cannot be sold. */}
+          {/* Held in iproxy is its own bucket, not a shade of Unavailable: the fix for
+              it is different from every other state — somebody opens the iproxy console
+              and releases the phone. Until then it earns nothing while looking like stock. */}
+          <SummaryCell label={strings.pools.busyByAdmin} value={heldSlots} tone="warning" />
           <SummaryCell label={strings.pools.unavailable} value={unavailableSlots} />
           <div className="flex-1 min-w-[220px] px-6 py-3.5 border-l border-border flex flex-col gap-1.5 justify-center">
             <div className="flex justify-between items-baseline">
@@ -134,6 +139,10 @@ export function PoolsScreen() {
                 style={{ width: `${pct(usedSlots)}%` }}
               />
               <div
+                className="h-full bg-warning/50 transition-[width] duration-300 ease-brand"
+                style={{ width: `${pct(heldSlots)}%` }}
+              />
+              <div
                 className="h-full bg-text-3 transition-[width] duration-300 ease-brand"
                 style={{ width: `${pct(unavailableSlots)}%` }}
               />
@@ -146,6 +155,10 @@ export function PoolsScreen() {
               </span>
               <span className="flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-warning" />Busy {usedSlots}
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-warning/50" />
+                {strings.pools.busyByAdmin} {heldSlots}
               </span>
               <span className="flex items-center gap-1">
                 {/* Not "Offline": this bucket also holds phones reporting 'unknown' and
@@ -239,10 +252,28 @@ export function PoolsScreen() {
   );
 }
 
-function SummaryCell({ label, value, tone }: { label: string; value: number; tone?: "accent" | "success" }) {
-  const toneClass = tone === "accent" ? "text-accent" : tone === "success" ? "text-success" : "text-text";
+function SummaryCell({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone?: "accent" | "success" | "warning";
+}) {
+  const toneClass =
+    tone === "accent"
+      ? "text-accent"
+      : tone === "success"
+        ? "text-success"
+        : tone === "warning"
+          ? "text-warning"
+          : "text-text";
   return (
-    <div className="flex flex-col gap-0.5 px-6 py-3.5 min-w-[90px] border-l border-border first:border-l-0">
+    // Every cell the same width regardless of its label or how many digits it holds:
+    // they read as one row of comparable numbers, and the row does not reflow when a
+    // count crosses into double figures.
+    <div className="flex w-[132px] shrink-0 flex-col gap-0.5 px-6 py-3.5 border-l border-border first:border-l-0">
       <span className="text-[.69rem] uppercase tracking-[.08em] text-text-3">{label}</span>
       <span className={`font-mono tabular-nums text-[1.55rem] font-semibold leading-none tracking-[-0.02em] ${toneClass}`}>
         <Num value={value} />

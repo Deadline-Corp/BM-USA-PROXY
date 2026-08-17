@@ -1086,18 +1086,19 @@ async def pool_summary(admin: CurrentAdmin, session: DbSession) -> dict[str, Any
     while their cards on the same screen read "Offline".
 
     So the buckets are defined by what an operator can do with a connection, and every
-    connection falls in exactly one:
+    connection falls in exactly one, tested in this order:
       busy        — an access is live on it. Sold capacity, whether or not the phone is
                     answering right now; a device dropping off does not un-sell it.
-      free        — sellable, online, nothing on it, and nothing holding it in iproxy.
-                    This is what the allocator can hand out this second, and the only
-                    number that answers "can we sell?".
-      unavailable — everything else: offline, silent, withheld by an operator, or held by
-                    a proxy-access somebody created straight in the iproxy console.
+      held        — occupied by a proxy-access created inside the iproxy console rather
+                    than sold by us. Its own bucket because the answer to it is different
+                    from every other: somebody has to go into iproxy and release it, and
+                    until they do it earns nothing while looking like stock.
+      free        — sellable, online, and nothing on it either way. What the allocator can
+                    hand out this second, and the only number that answers "can we sell?".
+      unavailable — everything else: offline, silent, or withheld by an operator.
 
-    That last case is why `free` checks external_access_count as well: a phone occupied
-    from the iproxy side has no row here saying so, and counting it free promises capacity
-    the allocator will refuse to hand out.
+    Busy wins over held: if we sold it, the fact that iproxy also lists an access on it is
+    our own access being reported back, not a stranger's.
     """
     rows = await session.execute(
         text(
@@ -1120,7 +1121,14 @@ async def pool_summary(admin: CurrentAdmin, session: DbSession) -> dict[str, Any
                         SELECT 1 FROM accesses a
                         WHERE a.connection_id = c.id
                           AND a.status IN ('provisioning','active','expiring'))
-                ) AS busy
+                ) AS busy,
+                count(*) FILTER (
+                    WHERE c.external_access_count > 0
+                      AND NOT EXISTS (
+                        SELECT 1 FROM accesses a
+                        WHERE a.connection_id = c.id
+                          AND a.status IN ('provisioning','active','expiring'))
+                ) AS held
             FROM connections c
             LEFT JOIN locations l ON l.id = c.location_id
             GROUP BY l.city, l.state_code, c.carrier
@@ -1129,15 +1137,17 @@ async def pool_summary(admin: CurrentAdmin, session: DbSession) -> dict[str, Any
         )
     )
     cities: list[dict[str, Any]] = []
-    slots_total = slots_used = slots_free = slots_unavailable = 0
-    for city, state, carrier, total, free, busy in rows:
-        total, free, busy = int(total), int(free), int(busy)
-        # Derived, never counted separately: whatever is neither sold nor sellable is
-        # unavailable by definition, so the three can never fail to cover the pool.
-        unavailable = total - busy - free
+    slots_total = slots_used = slots_free = slots_held = slots_unavailable = 0
+    for city, state, carrier, total, free, busy, held in rows:
+        total, free, busy, held = int(total), int(free), int(busy), int(held)
+        # Derived, never counted separately: whatever is neither sold, held in iproxy nor
+        # sellable is unavailable by definition, so the four can never fail to cover the
+        # pool. free already excludes held (see the query), so there is no double count.
+        unavailable = total - busy - free - held
         slots_total += total
         slots_used += busy
         slots_free += free
+        slots_held += held
         slots_unavailable += unavailable
         cities.append(
             {
@@ -1151,6 +1161,7 @@ async def pool_summary(admin: CurrentAdmin, session: DbSession) -> dict[str, Any
                 # which made the map's "full" state unreachable arithmetic.
                 "nodes_free": free,
                 "nodes_busy": busy,
+                "nodes_held": held,
                 "nodes_unavailable": unavailable,
             }
         )
@@ -1158,6 +1169,7 @@ async def pool_summary(admin: CurrentAdmin, session: DbSession) -> dict[str, Any
         "slots_total": slots_total,
         "slots_used": slots_used,
         "slots_free": slots_free,
+        "slots_held": slots_held,
         "slots_unavailable": slots_unavailable,
         "cities": cities,
     }
