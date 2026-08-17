@@ -35,9 +35,10 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import log
-from app.models import Access, Connection, Location
+from app.models import Access, Connection, Location, StateCity
 from app.services.carriers import carrier_from_ip
 from app.services.provisioning.iproxy import IproxyClient
+from app.services.provisioning.state_from_name import state_from_name
 
 # iproxy reports the exit-IP city but not its state, so the state is filled in here for the
 # cities we actually sell. This is a lookup table, NOT a filter — that distinction is the
@@ -91,8 +92,15 @@ async def _resolve_location(
     session: AsyncSession,
     city: str | None,
     cache: dict[str, int | None] | None = None,
+    *,
+    state: str | None = None,
 ) -> int | None:
     """City name → location id, upserting the row the first time a city is seen.
+
+    ``state`` overrides the lookup table when the caller already knows it — which is the
+    case when the city came from the state written into a connection's name. Without it a
+    city like Las Vegas would be filed under whatever _CITY_STATE happens to hold rather
+    than under the state the client actually sold it as.
 
     An unknown city is stored with an empty state rather than discarded — see _CITY_STATE.
     Empty string, not NULL: the table's unique index is (city, state_code), and in Postgres
@@ -109,9 +117,13 @@ async def _resolve_location(
     name = city.strip()
     if not name:
         return None
-    if cache is not None and name in cache:
-        return cache[name]
-    state = _CITY_STATE.get(name.lower(), "")
+    # Keyed by city alone in the common case, and by "city|STATE" only when the caller
+    # supplied one — the same city can be resolved both ways in one pass (Las Vegas from a
+    # mapped state, Las Vegas from an exit IP) and those are different rows.
+    cache_key = name if state is None else f"{name}|{state.upper()}"
+    if cache is not None and cache_key in cache:
+        return cache[cache_key]
+    state = state.upper() if state else _CITY_STATE.get(name.lower(), "")
     await session.execute(
         insert(Location)
         .values(city=name, state_code=state, is_active=True)
@@ -122,7 +134,7 @@ async def _resolve_location(
     )
     resolved = int(loc_id) if loc_id is not None else None
     if cache is not None:
-        cache[name] = resolved
+        cache[cache_key] = resolved
     return resolved
 
 
@@ -220,6 +232,15 @@ async def sync_pool(session: AsyncSession, client: IproxyClient | None = None) -
         ).all()
     }
 
+    # One read of the client's state→city mapping for the whole pass — it is nine rows, and
+    # every phone consults it.
+    state_city_map: dict[str, str] = {
+        str(code): str(city)
+        for code, city in (
+            await session.execute(select(StateCity.state_code, StateCity.city))
+        ).all()
+    }
+
     seen = written = online = 0
     # Rows where nothing moved still need their freshness stamps, but not a statement each:
     # they are collected here and stamped in one UPDATE per group at the end.
@@ -242,12 +263,25 @@ async def sync_pool(session: AsyncSession, client: IproxyClient | None = None) -
             online += 1
         carrier = _carrier_for(status_row, device)
 
+        # The client sells by state and writes it into the name (`att113_NV`), so that is
+        # what a buyer is promised. It wins over the exit IP's own city: the IP resolves to
+        # wherever the carrier's pool happens to sit — Rolling Meadows, Sun Prairie — and
+        # nobody shops for those. `ip_city` remains the answer for a phone whose name says
+        # nothing, and for a state nobody has mapped yet (surfaced on the Cities screen).
+        sold_state = state_from_name(name)
+        sold_city = state_city_map.get(sold_state) if sold_state else None
+
         known = current.get(cid)
         # Resolved for every phone on every pass, not just new ones — this is what keeps a
         # rotated phone's city current. It costs no HTTP call: the city rides along in the
         # list response we already have, and the per-pass cache collapses a whole pool down
         # to one pair of statements per distinct city.
-        loc_id = await _resolve_location(session, app_data.get("ip_city"), location_cache)
+        if sold_city:
+            loc_id = await _resolve_location(
+                session, sold_city, location_cache, state=sold_state
+            )
+        else:
+            loc_id = await _resolve_location(session, app_data.get("ip_city"), location_cache)
 
         unchanged = (
             known is not None

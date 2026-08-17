@@ -68,6 +68,7 @@ export const strings = {
     clients: "Clients",
     requests: "Requests",
     pools: "Proxies pool",
+    cities: "Cities",
     packages: "Client packages",
     tariffs: "Plans",
     referrals: "Referrals",
@@ -190,6 +191,31 @@ export const strings = {
     busyByAdmin: "Held in iproxy",
     busyByAdminHint: "An access for this phone was created in the iproxy console, not here.",
     editConnection: "Edit connection",
+  },
+  cities: {
+    title: "Cities",
+    subtitle:
+      "Which city each state is sold as. Phones carry their state in the connection name (att113_NV); this decides what a buyer sees.",
+    mappingTitle: "State to city",
+    mappingHint:
+      "One city per state. A phone whose name declares a mapped state is sold as that city, whatever its exit IP resolves to.",
+    unmappedTitle: "States with no city yet",
+    unmappedHint:
+      "These appear in connection names but have nothing mapped, so those phones fall back to the city their exit IP resolves to. Click one to map it.",
+    add: "Add state",
+    edit: "Edit city",
+    colState: "State",
+    colCity: "City",
+    colConnections: "Phones",
+    colUpdated: "Updated",
+    stateHint: "Two-letter code, e.g. NV",
+    cityHint: "The city buyers see, e.g. Las Vegas",
+    empty: "No states mapped yet",
+    emptyHint: "Add one, and every phone named for that state is sold as its city.",
+    deleted: "Mapping removed",
+    deleteTitle: "Remove this mapping?",
+    deleteBody:
+      "Phones named for this state fall back to the city their exit IP resolves to. Nothing else changes and no access is affected.",
   },
   packages: {
     title: "Client packages",

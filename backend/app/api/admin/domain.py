@@ -31,6 +31,7 @@ from sqlalchemy import (
     select,
     text,
 )
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # A model attribute (`User.email`) is an InstrumentedAttribute, not a ColumnElement, even
@@ -66,6 +67,7 @@ from app.models import (
     Refund,
     Request,
     RequestComment,
+    StateCity,
     Tariff,
     TosAcceptance,
     User,
@@ -81,6 +83,7 @@ from app.services.provisioning.lifecycle import (
     revoke_access,
     swap_access,
 )
+from app.services.provisioning.state_from_name import US_STATE_CODES, state_from_name
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -778,6 +781,101 @@ async def message_client(
     await audit.write(session, admin_id=admin.id, action="client.message", entity="user",
                        entity_id=user.id)
     return {"queued": True}
+
+
+# ── cities (state → the city it is sold as) ─────────────────────────────
+class StateCityBody(BaseModel):
+    state_code: str = Field(min_length=2, max_length=2)
+    city: str = Field(min_length=1, max_length=80)
+
+
+def _normalise_state(code: str) -> str:
+    code = code.strip().upper()
+    if code not in US_STATE_CODES:
+        raise ValidationError(f"'{code}' is not a US state code")
+    return code
+
+
+@router.get("/cities")
+async def list_state_cities(admin: CurrentAdmin, session: DbSession) -> dict[str, Any]:
+    """The client's state→city mapping, plus what the pool is asking for.
+
+    `unmapped` is the useful half: states written into connection names that have no city
+    yet. Without it the screen is a list to maintain in the dark — a phone named `att113_MI`
+    would quietly keep its exit-IP city and nobody would know a row was missing.
+    """
+    rows = (
+        await session.execute(
+            select(StateCity.state_code, StateCity.city, StateCity.updated_at).order_by(
+                StateCity.state_code
+            )
+        )
+    ).all()
+    mapped = {code for code, _city, _ts in rows}
+
+    # Count phones per state as named, so an operator can see how much each row covers and
+    # which missing row matters most.
+    per_state: dict[str, int] = {}
+    for (name,) in (await session.execute(select(Connection.name))).all():
+        code = state_from_name(name)
+        if code:
+            per_state[code] = per_state.get(code, 0) + 1
+
+    return {
+        "items": [
+            {
+                "state_code": code,
+                "city": city,
+                "connections": per_state.get(code, 0),
+                "updated_at": ts.isoformat() if ts else None,
+            }
+            for code, city, ts in rows
+        ],
+        "unmapped": [
+            {"state_code": code, "connections": count}
+            for code, count in sorted(per_state.items(), key=lambda kv: -kv[1])
+            if code not in mapped
+        ],
+    }
+
+
+@router.put("/cities/{state_code}")
+async def upsert_state_city(
+    state_code: str, body: StateCityBody, admin: CurrentAdmin, session: DbSession
+) -> dict[str, Any]:
+    """Create or repoint one state. PUT because the state is the key — saving twice is the
+    same as saving once, and there is no way to end up with two cities for one state."""
+    code = _normalise_state(state_code)
+    if _normalise_state(body.state_code) != code:
+        raise ValidationError("state code in the URL and the body disagree")
+    city = body.city.strip()
+    await session.execute(
+        pg_insert(StateCity)
+        .values(state_code=code, city=city, updated_by=admin.id)
+        .on_conflict_do_update(
+            index_elements=["state_code"],
+            set_={"city": city, "updated_by": admin.id, "updated_at": func.now()},
+        )
+    )
+    await audit.write(session, admin_id=admin.id, action="state_city.save", entity="state_city",
+                       entity_id=code, after={"city": city})
+    return {"state_code": code, "city": city}
+
+
+@router.delete("/cities/{state_code}")
+async def delete_state_city(
+    state_code: str, admin: CurrentAdmin, session: DbSession
+) -> dict[str, bool]:
+    """Removing a row does not orphan anything: phones named for that state fall back to
+    the city their exit IP resolves to, which is what happened before any of this existed."""
+    code = _normalise_state(state_code)
+    row = await session.get(StateCity, code)
+    if row is None:
+        raise NotFound("no city mapped for this state")
+    await session.delete(row)
+    await audit.write(session, admin_id=admin.id, action="state_city.delete",
+                       entity="state_city", entity_id=code, before={"city": row.city})
+    return {"deleted": True}
 
 
 @router.get("/locations")

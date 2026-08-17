@@ -53,6 +53,8 @@ export const navGroups: NavGroupConfig[] = [
         badgeKey: "new_requests",
       },
       { to: "/pools", label: strings.nav.pools, icon: <IconPools /> },
+      // Next to the pool: it decides what the pool is sold as.
+      { to: "/cities", label: strings.nav.cities, icon: <IconPools /> },
       { to: "/tariffs", label: strings.nav.tariffs, icon: <IconTariffs /> },
       { to: "/referrals", label: strings.nav.referrals, icon: <IconReferrals /> },
       { to: "/ledger", label: strings.nav.ledger, icon: <IconLedger /> },

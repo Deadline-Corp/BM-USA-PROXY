@@ -30,6 +30,8 @@ import type {
   Payout,
   PayoutInstruction,
   PoolLocation,
+  StateCity,
+  StateCityList,
   PoolSummary,
   Post,
   PostAttribution,
@@ -125,6 +127,19 @@ export const tariffsApi = {
     apiClient.patch<Tariff>(`/tariffs/${id}`, body).then((r) => r.data),
   toggle: (id: string) =>
     apiClient.post<Tariff>(`/tariffs/${id}/toggle`).then((r) => r.data),
+};
+
+// ---------- Cities (state → the city it is sold as) ----------
+
+export const citiesApi = {
+  list: () => apiClient.get<StateCityList>("/cities").then((r) => r.data),
+  /** PUT because the state is the key: saving twice is the same as saving once. */
+  save: (state: string, city: string) =>
+    apiClient
+      .put<StateCity>(`/cities/${state}`, { state_code: state, city })
+      .then((r) => r.data),
+  remove: (state: string) =>
+    apiClient.delete<{ deleted: boolean }>(`/cities/${state}`).then((r) => r.data),
 };
 
 // ---------- Pool / Connections ----------

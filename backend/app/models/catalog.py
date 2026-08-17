@@ -55,6 +55,30 @@ class Location(Base):
     __table_args__ = (UniqueConstraint("city", "state_code", name="city_state"),)
 
 
+class StateCity(Base):
+    """Which city a state is sold as: "a phone whose name says NV is Las Vegas".
+
+    The client organises their farm by state and writes it into each connection's name
+    (`att113_NV`). iproxy exposes no group or state field of its own, and the exit IP's real
+    city is not what they want to advertise — Las Vegas is a market, Rolling Meadows is not.
+    So this table is the client's own decision, one row per state, editable in the console:
+    a farm of 2000 phones needs nine rows here rather than 2000 descriptions.
+
+    Deliberately not merged into `locations`: that table is every city the pool has ever
+    reported, discovered from exit IPs, while this one is a short, hand-kept mapping. One
+    city can appear in both without meaning the same thing.
+    """
+
+    __tablename__ = "state_cities"
+
+    # Two letters, uppercase, one row per state — the state IS the key, so the same state
+    # cannot be mapped to two cities by accident.
+    state_code: Mapped[str] = mapped_column(Text, primary_key=True)
+    city: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"))
+    updated_at: Mapped[datetime] = updated_at_col()
+
+
 class Connection(Base):
     __tablename__ = "connections"
 

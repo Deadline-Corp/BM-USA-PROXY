@@ -2,7 +2,7 @@
 
 from app.models.access import Access, AccessEvent, AccessVpnConfig
 from app.models.base import Base
-from app.models.catalog import Connection, Location, Tariff
+from app.models.catalog import Connection, Location, StateCity, Tariff
 from app.models.commerce import Invoice, Order, PaymentEvent, Refund
 from app.models.content import (
     Broadcast,
@@ -43,6 +43,7 @@ __all__ = [
     "Invoice",
     "InvoiceStatusHistory",
     "Location",
+    "StateCity",
     "MediaAsset",
     "NotificationOutbox",
     "OnchainDepositLedger",

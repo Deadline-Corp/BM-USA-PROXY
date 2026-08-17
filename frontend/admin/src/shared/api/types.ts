@@ -164,6 +164,23 @@ export interface PoolLocation {
   carriers: PoolCarrierAvailability[];
 }
 
+/** One state and the city it is sold as. The state is the key — one city per state. */
+export interface StateCity {
+  state_code: string;
+  city: string;
+  /** Phones whose name declares this state right now. Zero is legitimate: a row can be
+   *  prepared before the batch it covers arrives. */
+  connections: number;
+  updated_at: string | null;
+}
+
+export interface StateCityList {
+  items: StateCity[];
+  /** States already written into phone names with no city mapped — what the pool is asking
+   *  the operator for. Sorted by how many phones each one covers. */
+  unmapped: { state_code: string; connections: number }[];
+}
+
 export interface IssueAccessRequest {
   tariff_code: string;
   connection_id?: string;
