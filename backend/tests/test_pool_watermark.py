@@ -129,6 +129,30 @@ async def test_an_elapsed_interval_lets_it_look_again(session, monkeypatch) -> N
     assert result["alerted"] is True, "31 minutes on a 30-minute interval, and 7h since the last"
 
 
+async def test_the_repeat_gap_is_configurable(session, monkeypatch) -> None:
+    """Six hours was a constant; on a farm that adds phones hourly it is far too quiet."""
+    rec = _Recorder()
+    monkeypatch.setattr("app.services.ops_alerts.notify_ops", rec)
+    await _pool(session, free_phones=2)
+    await settings_svc.set_value(session, "pool_low_watermark", 6)
+    await settings_svc.set_value(session, "pool_check_interval_minutes", 1)
+    await settings_svc.set_value(session, "pool_alert_repeat_hours", 1)
+    await settings_svc.set_value(
+        session,
+        "pool_low_alert_state",
+        {
+            "low": True,
+            "notified_at": (datetime.now(UTC) - timedelta(hours=2)).isoformat(),
+            "checked_at": (datetime.now(UTC) - timedelta(minutes=5)).isoformat(),
+        },
+    )
+    await session.flush()
+
+    result = await check_pool_watermark(session)
+
+    assert result["alerted"] is True, "two hours since the last, on a one-hour repeat"
+
+
 async def test_a_zero_threshold_disables_it(session, monkeypatch) -> None:
     rec = _Recorder()
     monkeypatch.setattr("app.services.ops_alerts.notify_ops", rec)

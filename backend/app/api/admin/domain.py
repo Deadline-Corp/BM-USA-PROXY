@@ -3320,6 +3320,7 @@ _SETTINGS_WHITELIST: frozenset[str] = frozenset(
         "rotation_cooldown_sec",
         "pool_low_watermark",
         "pool_check_interval_minutes",
+        "pool_alert_repeat_hours",
         "ops_alert_chats",
         "attribution",
         "bot_channel_url",

@@ -79,6 +79,8 @@ def default_settings(tos_version: int = 1) -> dict[str, object]:
         # How often the low-stock check looks. The job itself runs every minute and
         # returns early until this has elapsed.
         "pool_check_interval_minutes": 5,
+        # How often the alert repeats itself while stock is still below the floor.
+        "pool_alert_repeat_hours": 6,
         # Who hears about client messages, reseller enquiries and low stock. Seeded empty
         # so the field exists in the admin Settings screen; anything set here is added to
         # OPS_ALERT_CHAT_ID rather than replacing it. See services/ops_alerts.py.

@@ -89,8 +89,8 @@ async def sweep_access_expiries(session: AsyncSession) -> dict[str, int]:
 
 
 _POOL_ALERT_STATE = "pool_low_alert_state"
-_POOL_ALERT_REPEAT_HOURS = 6
 POOL_CHECK_INTERVAL_SETTING = "pool_check_interval_minutes"
+POOL_REPEAT_HOURS_SETTING = "pool_alert_repeat_hours"
 
 
 async def check_pool_watermark(session: AsyncSession) -> dict[str, Any]:
@@ -109,10 +109,16 @@ async def check_pool_watermark(session: AsyncSession) -> dict[str, Any]:
     every few hours while stock stays low, and says so once when it recovers. A threshold
     of 0 (the default) disables the whole thing.
 
-    How often it looks is `pool_check_interval_minutes`, also from the console. The cron
-    fires every minute and this returns early until the interval has elapsed, rather than
-    the interval living in the worker's schedule: changing a number in Settings then takes
-    effect on the next minute instead of on the next deploy.
+    Two cadences, both from the console, because they answer different questions:
+    `pool_check_interval_minutes` is how often it looks — the delay before you hear about a
+    drop at all — and `pool_alert_repeat_hours` is how often it says it again while stock
+    stays low. Without the second, the same message would arrive on every check until
+    somebody added phones, and an alert that repeats every few minutes is an alert people
+    mute.
+
+    The cron fires every minute and this returns early until the check interval has
+    elapsed, rather than the interval living in the worker's schedule: a number typed in
+    Settings then takes effect on the next minute instead of on the next deploy.
     """
     threshold = int(await settings_svc.get(session, "pool_low_watermark", 0) or 0)
     if threshold <= 0:
@@ -121,6 +127,7 @@ async def check_pool_watermark(session: AsyncSession) -> dict[str, Any]:
     now = _utcnow()
     state = await settings_svc.get(session, _POOL_ALERT_STATE, {}) or {}
     interval = int(await settings_svc.get(session, POOL_CHECK_INTERVAL_SETTING, 5) or 5)
+    repeat_hours = int(await settings_svc.get(session, POOL_REPEAT_HOURS_SETTING, 6) or 6)
     checked_at = state.get("checked_at")
     if interval > 1 and checked_at:
         with contextlib.suppress(ValueError, TypeError):
@@ -141,7 +148,7 @@ async def check_pool_watermark(session: AsyncSession) -> dict[str, Any]:
         if was_low and notified_at:
             with contextlib.suppress(ValueError, TypeError):
                 due = datetime.fromisoformat(str(notified_at)) + timedelta(
-                    hours=_POOL_ALERT_REPEAT_HOURS
+                    hours=repeat_hours
                 ) <= now
         new_state["low"] = True
         if due:

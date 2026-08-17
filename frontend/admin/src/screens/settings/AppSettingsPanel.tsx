@@ -34,6 +34,7 @@ const SETTING_LABELS: Record<string, string> = {
   rotation_cooldown_sec: "IP rotation cooldown (seconds)",
   pool_low_watermark: "Pool low-stock alert (free slots)",
   pool_check_interval_minutes: "Pool check interval (minutes)",
+  pool_alert_repeat_hours: "Repeat the low-stock alert every (hours)",
   // Comma-separated destinations for operator alerts: client messages, reseller enquiries,
   // low stock, the nightly reconciliation. Adds to OPS_ALERT_CHAT_ID rather than replacing
   // it. @handles are resolved to ids server-side (see services/ops_alerts.py), so an
@@ -69,11 +70,18 @@ const RETIRED_KEYS = ["operator_refund_limit_usd", "operator_payout_limit_usd"];
 // there means the bot sends somebody else's photo, or fails to send one at all.
 const INTERNAL_KEYS = ["welcome_image_file_id"];
 
+// Left in the database, taken off the screen. Both have been empty since launch, so the
+// bot and mini app serve the defaults compiled in beside them (bot/handlers/start.py), and
+// two permanently blank fields invited an operator to paste something and change where
+// every Channel/Support button points. Put them back here if the links ever need editing.
+const HIDDEN_KEYS = ["bot_channel_url", "bot_support_url"];
+
 const isManaged = (key: string) =>
   key.startsWith("notify_texts:") ||
   key === "tos" ||
   RETIRED_KEYS.includes(key) ||
-  INTERNAL_KEYS.includes(key);
+  INTERNAL_KEYS.includes(key) ||
+  HIDDEN_KEYS.includes(key);
 
 /** Everything except the referral keys — the catch-all half of the bag. */
 export function AppSettingsPanel() {
