@@ -1161,11 +1161,18 @@ async def patch_connection(
 @router.post("/connections/sync")
 async def sync_connections(admin: CurrentAdmin, session: DbSession) -> dict[str, Any]:
     from app.core.config import settings
-    from app.services.provisioning.sync import sync_pool
+    from app.services.provisioning.sync import sync_external_holds, sync_pool
 
     if not settings.feature_real_provisioning:
         return {"synced": False, "detail": "real provisioning disabled (mock mode)"}
     result = await sync_pool(session)
+    # The button's promise is "make this screen match iproxy right now" — and holds are
+    # part of the screen. Without this walk a phone freed in the iproxy console stayed
+    # "Held in iproxy" here for up to five minutes until the cron's own pass reached it,
+    # which on 2026-08-19 read as the button doing nothing: the client freed a phone,
+    # pressed Sync now, and watched the stale hold sit there.
+    holds = await sync_external_holds(session)
+    result = {**result, "holds": holds}
     await audit.write(
         session, admin_id=admin.id, action="connection.sync", entity="pool",
         entity_id="iproxy", after=result,

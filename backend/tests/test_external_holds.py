@@ -142,3 +142,23 @@ async def test_a_phone_we_could_not_ask_keeps_its_previous_answer(session) -> No
         select(Connection.external_access_count).where(Connection.id == conns[0].id)
     )
     assert still_held == 2
+
+
+async def test_freeing_a_phone_in_iproxy_clears_the_hold_on_the_next_walk(session) -> None:
+    """The other direction — the one the client actually exercises.
+
+    A hold that appears must also disappear: the client frees the phone in the iproxy
+    console, the next walk finds no foreign accesses, and the count returns to zero. The
+    walk always writes what it saw, so this needs no special "clearing" code path — but
+    nothing proved it, and the Sync now button spent weeks not running the walk at all.
+    """
+    conns = await _pool(session)
+    held = conns[0]
+    held.external_access_count = 1
+
+    result = await sync_external_holds(session, _StubIproxy({}))  # type: ignore[arg-type]
+    await session.flush()
+    await session.refresh(held)
+
+    assert result == {"checked": 2, "held": 0}
+    assert held.external_access_count == 0

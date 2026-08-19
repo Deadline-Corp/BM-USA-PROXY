@@ -339,3 +339,38 @@ async def test_no_role_tier_left(engine, raw_client: AsyncClient) -> None:
     for path in ("/api/admin/settings", "/api/admin/terms", "/api/admin/admins"):
         r = await raw_client.get(path)
         assert r.status_code == 200, f"{path} → {r.status_code} {r.text[:200]}"
+
+
+async def test_sync_now_also_walks_external_holds(raw_client: AsyncClient, monkeypatch) -> None:
+    """The button's whole promise is "match iproxy right now" — holds included.
+
+    It used to run sync_pool alone, so a phone freed in the iproxy console stayed
+    "Held in iproxy" for up to five minutes until the worker cron's own walk reached
+    it. The client pressed the button and, correctly, reported it as doing nothing.
+    """
+    from app.api.admin import domain as admin_domain
+
+    called = {"pool": 0, "holds": 0}
+
+    async def fake_pool(session):
+        called["pool"] += 1
+        return {"connections": 0}
+
+    async def fake_holds(session):
+        called["holds"] += 1
+        return {"checked": 7, "held": 0}
+
+    import app.services.provisioning.sync as sync_mod
+
+    monkeypatch.setattr(sync_mod, "sync_pool", fake_pool)
+    monkeypatch.setattr(sync_mod, "sync_external_holds", fake_holds)
+    monkeypatch.setattr(settings, "feature_real_provisioning", True)
+
+    token = await _login(raw_client)
+    r = await raw_client.post(
+        "/api/admin/connections/sync", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert called == {"pool": 1, "holds": 1}
+    assert body["holds"] == {"checked": 7, "held": 0}
