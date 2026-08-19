@@ -71,9 +71,11 @@ export function useSwapAccess(publicId: string | undefined) {
   return useMutation({
     mutationFn: (body: SwapBody) => api.post<SwapResponse>(`/accesses/${publicId}/swap`, body),
     onSuccess: (data) => {
-      // Use the server-returned swap_left directly rather than re-deriving it.
+      // Use the server-returned unlock time directly rather than re-deriving it: the
+      // cooldown's length is the backend's rule, and a second copy of it here would be a
+      // second answer to "when can I swap again".
       queryClient.setQueryData<AccessDetail | undefined>(accessDetailQueryKey(publicId), (prev) =>
-        prev ? { ...prev, swap_left: data.swap_left } : prev,
+        prev ? { ...prev, swap_available_at: data.swap_available_at } : prev,
       );
       queryClient.invalidateQueries({ queryKey: accessDetailQueryKey(publicId) });
       queryClient.invalidateQueries({ queryKey: accessesQueryKey });

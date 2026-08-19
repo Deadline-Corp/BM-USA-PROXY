@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter
@@ -11,7 +12,7 @@ from sqlalchemy import func, select
 
 from app.api.deps import CurrentUser, DbSession
 from app.core.config import settings
-from app.core.errors import Conflict, Forbidden, NotFound, ValidationError
+from app.core.errors import Conflict, NotFound, RateLimited, ValidationError
 from app.models import FaqItem, Invoice, ReferralLedger, Request
 from app.services import accesses as accesses_svc
 from app.services import catalog as catalog_svc
@@ -324,14 +325,21 @@ async def swap(public_id: str, body: SwapBody, user: CurrentUser, session: DbSes
     access = await accesses_svc.get_owned(session, public_id, user.id)
     if access.status not in ("active", "expiring"):
         raise Conflict("access is not active")
-    tariff = await session.scalar(
-        select(catalog_svc.Tariff).where(catalog_svc.Tariff.code == access.tariff_code)
-    )
-    max_swaps = tariff.max_user_swaps if tariff else 0
-    if access.swap_count >= max_swaps:
-        raise Forbidden("no swaps left for this tariff")
+    # Was gated by the plan's max_user_swaps, which is 0 on every paid plan — so swap
+    # existed for trial buyers and nobody else, and the field it read is not editable in
+    # the admin anymore. One a day, on any live access, is the rule now.
+    ready = accesses_svc.swap_available_at(access)
+    if ready is not None:
+        retry_after = max(1, int((ready - datetime.now(UTC)).total_seconds()))
+        raise RateLimited("one swap per day", retry_after=retry_after)
     await swap_access(session, access=access, location_id=body.location_id, carrier=body.carrier)
-    return {"status": "swapped", "swap_left": max_swaps - access.swap_count}
+    # Stamped here rather than inside swap_access: the same function reissues an access for
+    # an admin, and an admin's repair should not spend the customer's swap for the day.
+    access.last_swap_at = datetime.now(UTC)
+    return {
+        "status": "swapped",
+        "swap_available_at": (access.last_swap_at + accesses_svc.SWAP_COOLDOWN).isoformat(),
+    }
 
 
 class ExtendBody(BaseModel):

@@ -37,7 +37,7 @@ import { CredentialRowsSkeleton } from "../shared/components/Skeleton";
 import { ErrorState } from "../shared/components/ErrorState";
 import { useCopyToClipboard } from "../shared/hooks/useCopyToClipboard";
 import { ApiError } from "../shared/api/client";
-import { formatCityState, maskSecret } from "../shared/lib/format";
+import { formatCityState, formatTimeLeft, maskSecret } from "../shared/lib/format";
 import { cacheInvoice } from "../shared/lib/invoiceCache";
 import type { Carrier, ConfigType } from "../shared/api/types";
 
@@ -72,6 +72,9 @@ export function AccessDetailScreen() {
   // Ticks once a second so the expiry progress bar animates smoothly. Called
   // unconditionally (before any early return) per the Rules-of-Hooks.
   const remainingMs = useCountdown(detailQuery.data?.expires_at);
+  // Ticks the swap button's own countdown. Called here, beside the expiry one and before
+  // any early return, for the same Rules-of-Hooks reason.
+  const swapCooldownMs = useCountdown(detailQuery.data?.swap_available_at);
 
   useEffect(() => {
     if (rotateCooldownUntil === null) return;
@@ -123,7 +126,7 @@ export function AccessDetailScreen() {
         location_id: swapLocationId === ANY ? undefined : swapLocationId,
         carrier: swapCarrier === ANY ? undefined : swapCarrier,
       });
-      showToast("Location swapped");
+      showToast(strings.access.swapDoneToast);
     } catch (e) {
       showToast(e instanceof ApiError ? e.message : strings.errors.generic, "error");
     }
@@ -307,12 +310,27 @@ export function AccessDetailScreen() {
               </Button>
             </div>
 
-            {access.swap_left > 0 ? (
-              <Button variant="ghost" block className="mt-2" onClick={() => setSwapSheetOpen(true)}>
-                <ArrowLeftRight size={15} aria-hidden="true" />
-                {strings.access.swap} (<Num>{access.swap_left}</Num> {strings.access.swapLeft})
-              </Button>
-            ) : null}
+            {/* Shown on every live access, not just the trial: the limit is one a day
+                rather than a handful per plan. Disabled with the wait on it while it
+                cools, because a button that only returns an error is worse than a
+                button that says when it will work. */}
+            <Button
+              variant="ghost"
+              block
+              className="mt-2"
+              disabled={swapCooldownMs > 0}
+              onClick={() => setSwapSheetOpen(true)}
+            >
+              <ArrowLeftRight size={15} aria-hidden="true" />
+              {swapCooldownMs > 0 ? (
+                <>
+                  {strings.access.swapNextIn}{" "}
+                  <Num>{formatTimeLeft(Math.floor(swapCooldownMs / 1000))}</Num>
+                </>
+              ) : (
+                strings.access.swap
+              )}
+            </Button>
           </>
         )}
 

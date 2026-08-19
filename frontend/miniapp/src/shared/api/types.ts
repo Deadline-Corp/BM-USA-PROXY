@@ -207,7 +207,8 @@ export type ConfigType = "ovpn" | "wg";
 export interface AccessDetail extends AccessSummary {
   current_ip: string | null;
   credentials: AccessCredentials;
-  swap_left: number;
+  /** ISO timestamp the next swap unlocks at, or null when one is available now. */
+  swap_available_at: string | null;
   configs_available: ConfigType[];
 }
 
@@ -218,7 +219,7 @@ export interface SwapBody {
 
 export interface SwapResponse {
   status: "swapped";
-  swap_left: number;
+  swap_available_at: string;
 }
 
 export interface ExtendBody {

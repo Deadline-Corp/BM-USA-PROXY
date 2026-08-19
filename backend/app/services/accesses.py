@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -9,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import Forbidden, NotFound
 from app.core.security import decrypt_credentials
-from app.models import Access, Connection, Location, Tariff
+from app.models import Access, Connection, Location
 from app.services import vpn_configs
 from app.services.carriers import carrier_from_ip
 from app.services.provisioning.base import ExitIp
@@ -17,6 +18,21 @@ from app.services.provisioning.registry import get_provisioner
 from app.services.provisioning.sync import resolve_sold_location
 
 _ACTIVE = ("provisioning", "active", "expiring")
+
+# One swap a day, per access. A swap moves the customer onto a different phone and burns
+# the one they leave behind for a moment, so it is the expensive neighbour of Rotate IP —
+# cheap enough to offer, not cheap enough to leave un-metered. Deliberately a constant and
+# not a Settings row: the same reasoning that removed the per-plan swap limit from the
+# admin plan form applies here. It is a product rule, not an operator dial.
+SWAP_COOLDOWN = timedelta(days=1)
+
+
+def swap_available_at(access: Access) -> datetime | None:
+    """When this access may next be swapped — ``None`` when it may be swapped right now."""
+    if access.last_swap_at is None:
+        return None
+    ready = access.last_swap_at + SWAP_COOLDOWN
+    return ready if ready > datetime.now(UTC) else None
 
 
 def _summary(access: Access, conn: Connection | None, loc: Location | None) -> dict[str, Any]:
@@ -85,8 +101,6 @@ async def _exit_ip(conn: Connection | None) -> ExitIp:
 async def detail_for_user(session: AsyncSession, public_id: str, user_id: int) -> dict[str, Any]:
     access, conn, loc = await _load(session, public_id, user_id)
     creds = decrypt_credentials(access.credentials_enc) if access.credentials_enc else {}
-    tariff = await session.scalar(select(Tariff).where(Tariff.code == access.tariff_code))
-    max_swaps = tariff.max_user_swaps if tariff else 0
     current_ip = None
     if access.status in ("active", "expiring"):
         exit_ip = await _exit_ip(conn)
@@ -131,7 +145,11 @@ async def detail_for_user(session: AsyncSession, public_id: str, user_id: int) -
             "password": creds.get("password"),
             "rotation_link": creds.get("rotation_link"),
         },
-        "swap_left": max(0, max_swaps - access.swap_count),
+        # A timestamp, not a count: the screen has to say "next swap in 4h 12m", and it
+        # can only do that from the moment the cooldown ends. None means "swap now".
+        "swap_available_at": (
+            ready.isoformat() if (ready := swap_available_at(access)) is not None else None
+        ),
         # Derived, not hardcoded. It was ["ovpn", "wg"] for every access in every state,
         # so a revoked or expired access still offered buttons for configs that can no
         # longer be issued — and, before 2026-08-12, for configs nothing issued at all.

@@ -1,18 +1,23 @@
 """End-to-end TWA customer flow against the real app (ASGI), test Postgres + Redis.
 
 Covers: catalog, Terms gate (428 → accept), buy → mock-pay → provisioning → My Access,
-trial one-per-user + swap semantics.
+trial one-per-user, and the one-swap-a-day rule.
 """
 
 from __future__ import annotations
+
+import uuid
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
 from app.api import deps
 from app.core.redis import redis_client
 from app.main import app
+from app.models import Access
 from httpx import ASGITransport, AsyncClient
 from scripts.seed import seed_dev_fixtures, seed_locations, seed_settings, seed_tariffs
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 IDENTITY = {
@@ -145,27 +150,26 @@ async def test_buy_pay_and_receive_access(client: AsyncClient) -> None:
     detail = (await client.get(f"/api/twa/accesses/{access_pid}")).json()
     assert detail["credentials"]["host"]
     assert detail["credentials"]["socks5_port"] == 1080
-    assert detail["swap_left"] == 0  # daily has no swaps
+    assert detail["swap_available_at"] is None  # never swapped → swap is available now
 
 
-async def test_trial_is_one_per_user_with_one_swap(client: AsyncClient) -> None:
+async def test_trial_is_one_per_user(client: AsyncClient) -> None:
     await _accept_terms(client)
     first = await client.post("/api/twa/orders", json={"tariff_code": "trial"})
     assert first.status_code == 200
     assert first.json()["order"]["status"] == "completed"  # free → instant issue
 
-    # trial access should allow exactly one swap
     accesses = (await client.get("/api/twa/accesses")).json()
     trial_access = accesses["active"][0]["public_id"]
     detail = (await client.get(f"/api/twa/accesses/{trial_access}")).json()
-    assert detail["swap_left"] == 1
+    assert detail["swap_available_at"] is None
 
     # a second trial is refused
     second = await client.post("/api/twa/orders", json={"tariff_code": "trial"})
     assert second.status_code == 422
 
 
-async def test_trial_swap_keeps_expiry_and_decrements(client: AsyncClient) -> None:
+async def test_swap_keeps_expiry_and_then_costs_a_day(client: AsyncClient) -> None:
     await _accept_terms(client)
     await client.post("/api/twa/orders", json={"tariff_code": "trial"})
     accesses = (await client.get("/api/twa/accesses")).json()
@@ -174,11 +178,42 @@ async def test_trial_swap_keeps_expiry_and_decrements(client: AsyncClient) -> No
 
     r = await client.post(f"/api/twa/accesses/{pid}/swap", json={})
     assert r.status_code == 200
+    unlocks_at = datetime.fromisoformat(r.json()["swap_available_at"])
+    assert timedelta(hours=23) < unlocks_at - datetime.now(UTC) <= timedelta(days=1)
+
     after = (await client.get(f"/api/twa/accesses/{pid}")).json()
-    assert after["swap_left"] == 0
     assert after["expires_at"] == before["expires_at"]  # timer unchanged
-    # second swap refused
-    assert (await client.post(f"/api/twa/accesses/{pid}/swap", json={})).status_code == 403
+    assert after["swap_available_at"] == r.json()["swap_available_at"]
+
+    second = await client.post(f"/api/twa/accesses/{pid}/swap", json={})
+    assert second.status_code == 429
+    assert int(second.headers["retry-after"]) > 0
+
+
+async def test_paid_access_may_swap_once_a_day(client: AsyncClient, engine) -> None:
+    """A paid plan could never swap: the gate read max_user_swaps, which is 0 on all of them.
+
+    The limit is time now, so this is the case that used to be a flat 403 and is the whole
+    point of the change — and it has to come back after the day passes, not only once.
+    """
+    await _accept_terms(client)
+    order = (await client.post("/api/twa/orders", json={"tariff_code": "daily"})).json()
+    await client.post(f"/api/twa/orders/{order['order']['public_id']}/_mock_pay")
+    pid = (await client.get("/api/twa/accesses")).json()["active"][0]["public_id"]
+
+    assert (await client.post(f"/api/twa/accesses/{pid}/swap", json={})).status_code == 200
+    assert (await client.post(f"/api/twa/accesses/{pid}/swap", json={})).status_code == 429
+
+    # Wind the clock back a day rather than waiting for one.
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with maker() as s:
+        access = await s.scalar(select(Access).where(Access.public_id == uuid.UUID(pid)))
+        assert access is not None
+        access.last_swap_at = datetime.now(UTC) - timedelta(days=1, seconds=1)
+        await s.commit()
+
+    assert (await client.get(f"/api/twa/accesses/{pid}")).json()["swap_available_at"] is None
+    assert (await client.post(f"/api/twa/accesses/{pid}/swap", json={})).status_code == 200
 
 
 async def test_wallet_handoff_redirects_into_the_scheme(client: AsyncClient, engine) -> None:

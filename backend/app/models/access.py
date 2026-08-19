@@ -54,6 +54,10 @@ class Access(Base):
     auto_rotate_minutes: Mapped[int | None] = mapped_column(Integer)
     rotations_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     swap_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # When this access was last swapped onto a different phone. The limit is one a day,
+    # which is a question about time — a counter can only answer "how many ever", and the
+    # two disagree the moment the answer is supposed to reset.
+    last_swap_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = created_at_col()
     updated_at: Mapped[datetime] = updated_at_col()
 
