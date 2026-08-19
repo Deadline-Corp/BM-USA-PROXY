@@ -348,7 +348,6 @@ async def test_sync_now_also_walks_external_holds(raw_client: AsyncClient, monke
     "Held in iproxy" for up to five minutes until the worker cron's own walk reached
     it. The client pressed the button and, correctly, reported it as doing nothing.
     """
-    from app.api.admin import domain as admin_domain
 
     called = {"pool": 0, "holds": 0}
 
