@@ -544,7 +544,12 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
         {message.text}
       </div>
       <span className="text-[.66rem] text-text-3 mt-0.5 px-0.5">
-        {outbound ? message.admin ?? strings.clients.conversationOperator : strings.clients.conversationClient}
+        {/* An outbound row with no admin behind it is the bot's automatic
+            acknowledgement. Labelling it "Operator" would tell whoever opens this
+            thread that a colleague has already answered, and nobody has. */}
+        {outbound
+          ? (message.admin ?? strings.clients.conversationAuto)
+          : strings.clients.conversationClient}
         {" · "}
         {formatDateTime(message.created_at)}
       </span>

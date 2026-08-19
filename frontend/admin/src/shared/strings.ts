@@ -164,6 +164,7 @@ export const strings = {
     conversationEmpty: "No messages yet",
     conversationClient: "Client",
     conversationOperator: "Operator",
+    conversationAuto: "Auto-reply",
   },
   pools: {
     title: "Proxies pool",
