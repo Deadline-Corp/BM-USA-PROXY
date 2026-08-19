@@ -60,15 +60,26 @@ USDC_BEP20 = "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d"
 USDC_SPL = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 
 # NOTE: BEP-20 USDT/USDC use 18 decimals (unlike their 6-decimal ERC-20 / TRC-20 forms).
+#
+# Stablecoins quote to FOUR decimals, not six, because the buyer has to be able to type the
+# amount. Exchange withdrawal forms cap the input: Bybit stops at four decimals for USDT,
+# so a quote of 30.603405 cannot be sent from there at all — the customer types 30.6034,
+# arrives short, and lands in manual resolution. Four decimals costs us nothing (0.0001
+# USDT is a hundredth of a cent) and is the difference between a payable invoice and one
+# that only works from a self-custody wallet.
+#
+# The volatile coins keep their precision on purpose: 0.0001 BTC is ~$10, and rounding a
+# quote to that would be a different bug than the one this fixes. Their own withdrawal
+# forms accept eight decimals, which is what they are quoted at.
 _SPECS: tuple[AssetSpec, ...] = (
     # ── stablecoins ────────────────────────────────────────────────────────
-    AssetSpec("USDT", "trc20", TRON, 6, True, 6, token_contract=USDT_TRC20),
-    AssetSpec("USDT", "erc20", ETHEREUM, 6, True, 6, token_contract=USDT_ERC20),
-    AssetSpec("USDT", "bep20", BSC, 18, True, 6, token_contract=USDT_BEP20),
-    AssetSpec("USDT", "spl", SOLANA, 6, True, 6, token_mint=USDT_SPL),
-    AssetSpec("USDC", "erc20", ETHEREUM, 6, True, 6, token_contract=USDC_ERC20),
-    AssetSpec("USDC", "bep20", BSC, 18, True, 6, token_contract=USDC_BEP20),
-    AssetSpec("USDC", "spl", SOLANA, 6, True, 6, token_mint=USDC_SPL),
+    AssetSpec("USDT", "trc20", TRON, 6, True, 4, token_contract=USDT_TRC20),
+    AssetSpec("USDT", "erc20", ETHEREUM, 6, True, 4, token_contract=USDT_ERC20),
+    AssetSpec("USDT", "bep20", BSC, 18, True, 4, token_contract=USDT_BEP20),
+    AssetSpec("USDT", "spl", SOLANA, 6, True, 4, token_mint=USDT_SPL),
+    AssetSpec("USDC", "erc20", ETHEREUM, 6, True, 4, token_contract=USDC_ERC20),
+    AssetSpec("USDC", "bep20", BSC, 18, True, 4, token_contract=USDC_BEP20),
+    AssetSpec("USDC", "spl", SOLANA, 6, True, 4, token_mint=USDC_SPL),
     # ── native coins (volatile) ────────────────────────────────────────────
     AssetSpec("SOL", "native", SOLANA, 9, False, 6),
     AssetSpec("BTC", "native", BITCOIN, 8, False, 8),

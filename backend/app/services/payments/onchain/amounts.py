@@ -17,8 +17,15 @@ from typing import Literal
 
 from app.services.payments.onchain.assets import AssetSpec
 
-# distinct uniquification buckets (delta occupies the last 3 quote-decimals)
-_DELTA_BUCKETS = 999
+# Distinct uniquification buckets — the delta occupies the last TWO quote-decimals.
+#
+# Three digits' worth would be ~$0.10 on a stablecoin now that stablecoins quote to four
+# decimals (see assets.py): a tenth of a percent of a $85 order, but ten times what it used
+# to be, and visible on a screen that says "send exactly this". Two digits keeps the nudge
+# under a cent. Fewer buckets means invoices collide more often, which costs nothing —
+# _ensure_unique_crypto_amount walks the amount up by one step until it is free, and the
+# partial-unique index is the hard backstop behind that.
+_DELTA_BUCKETS = 99
 
 Classification = Literal["paid", "overpaid", "underpaid"]
 
@@ -31,8 +38,8 @@ def _quantum(decimals: int) -> Decimal:
 def unique_delta(order_public_id: str, spec: AssetSpec) -> Decimal:
     """A small, deterministic, per-order amount added to make the expected amount unique.
 
-    Ranges over ``[1, 999] * 10**-quote_decimals`` — at most the last three quote decimals,
-    which is ≤ ~$0.001 for stablecoins and negligible for high-decimal volatile assets.
+    Ranges over ``[1, 99] * 10**-quote_decimals`` — at most the last two quote decimals,
+    which is ≤ ~$0.01 for stablecoins and negligible for high-decimal volatile assets.
     """
     digest = hashlib.sha256(order_public_id.encode("utf-8")).digest()
     bucket = 1 + (int.from_bytes(digest[:8], "big") % _DELTA_BUCKETS)
