@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Connection, Location, Order, Tariff, User
-
-CARRIERS = ["AT&T", "T-Mobile", "Verizon"]
+from app.models import Order, Tariff, User
+from app.services.provisioning import allocator
 
 
 async def trial_available(session: AsyncSession, user: User) -> bool:
@@ -23,67 +22,39 @@ async def trial_available(session: AsyncSession, user: User) -> bool:
     return used is None
 
 
-async def _availability(session: AsyncSession) -> dict[tuple[int | None, str | None], int]:
-    rows = await session.execute(
-        text(
-            """
-            SELECT c.location_id, c.carrier, count(*) AS free
-            FROM connections c
-            WHERE c.is_sellable AND c.online_status = 'online'
-              AND NOT EXISTS (
-                SELECT 1 FROM accesses a
-                WHERE a.connection_id = c.id
-                  AND a.status IN ('provisioning','active','expiring'))
-            GROUP BY c.location_id, c.carrier
-            """
-        )
-    )
-    return {(r[0], r[1]): int(r[2]) for r in rows}
-
-
-async def _stocked_location_ids(session: AsyncSession) -> set[int]:
-    """Locations that actually have a phone on them.
-
-    A city is offered to a buyer only if it holds stock. Cities are created automatically
-    from whatever city a phone reports, and a phone's city changes every time its IP
-    rotates — so the table accumulates places nothing is left in. Listing those is not a
-    harmless extra: every one of them is a city a buyer can pick and be told "sold out",
-    and on the live account nine of twelve listed cities held nothing at all.
-
-    Deliberately "has a sellable phone", not "has a free phone": a city where everything is
-    currently rented is still a city we sell, and making it blink out of the list whenever
-    the last phone is taken would be worse than showing it with nothing available.
-    """
-    rows = await session.execute(
-        select(Connection.location_id)
-        .where(Connection.is_sellable, Connection.location_id.is_not(None))
-        .distinct()
-    )
-    return {int(r[0]) for r in rows}
-
-
 async def get_catalog(session: AsyncSession, user: User) -> dict[str, Any]:
+    """What a buyer may choose from — and nothing else.
+
+    Cities, carriers and their counts all come from `allocator.available_locations`, which
+    is the same query the allocator itself runs. That matters more than it sounds: this
+    screen used to count "free" with its own SQL, which did not know about phones held
+    inside the iproxy console, and listed a city if it merely held a sellable phone. So a
+    buyer could pick Los Angeles, press Buy, and be told the location just sold out —
+    measured on production, the catalogue offered Los Angeles while the allocator had
+    nothing free there at all.
+
+    A city or a carrier with nothing free is absent rather than shown as zero. Offering a
+    choice whose only outcome is an error is not offering a choice.
+    """
     tariffs = (
         (await session.execute(
             select(Tariff).where(Tariff.is_active).order_by(Tariff.sort_order)
         )).scalars().all()
     )
-    stocked = await _stocked_location_ids(session)
-    locations = [
-        loc
-        for loc in (await session.execute(
-            select(Location).where(Location.is_active).order_by(Location.sort_order)
-        )).scalars().all()
-        if loc.id in stocked
-    ]
-    avail = await _availability(session)
+    available = await allocator.available_locations(session)
 
-    def city_free(loc_id: int) -> dict[str, int]:
-        per = {c: avail.get((loc_id, c), 0) for c in CARRIERS}
-        per["any"] = sum(per.values())
-        return per
+    # Only carriers somebody can actually be given, across the cities that have stock. The
+    # list used to be the three US networks, hardcoded, whether or not a single phone on
+    # one was free.
+    carriers_present = sorted({c["carrier"] for loc in available for c in loc["carriers"]})
 
-    total_free = sum(avail.values())
+    def per_carrier(loc: dict[str, Any]) -> dict[str, int]:
+        counts = {c["carrier"]: int(c["free"]) for c in loc["carriers"]}
+        # `any` is the city's own total, not the sum of the named carriers: a phone with no
+        # carrier recorded can still be handed out when the buyer does not ask for one.
+        return {**{c: counts.get(c, 0) for c in carriers_present}, "any": int(loc["free"])}
+
+    total_free = sum(int(loc["free"]) for loc in available)
     return {
         "tariffs": [
             {
@@ -98,24 +69,27 @@ async def get_catalog(session: AsyncSession, user: User) -> dict[str, Any]:
             }
             for t in tariffs
         ],
-        "carriers": CARRIERS,
+        "carriers": carriers_present,
         "locations": [
             {
-                "id": loc.id,
-                "city": loc.city,
-                "state_code": loc.state_code,
-                "free": city_free(loc.id),
+                "id": int(loc["id"]),
+                "city": loc["city"],
+                "state_code": loc["state_code"],
+                "free": per_carrier(loc),
             }
-            for loc in locations
+            for loc in sorted(available, key=lambda x: x["city"])
         ],
-        # "Any city" counts every free phone, including ones whose city is unknown and ones
-        # in a city not listed above — picking no city is exactly the buyer saying they do
-        # not care where it is. Summing the listed cities instead would under-report the
-        # option that is always available.
+        # "Any city" is every free phone, including ones whose carrier is unknown — picking
+        # no city is the buyer saying they do not care where it is.
         "any_city_free": {
             **{
-                carrier: sum(n for (_lid, c), n in avail.items() if c == carrier)
-                for carrier in CARRIERS
+                carrier: sum(
+                    int(c["free"])
+                    for loc in available
+                    for c in loc["carriers"]
+                    if c["carrier"] == carrier
+                )
+                for carrier in carriers_present
             },
             "any": total_free,
         },

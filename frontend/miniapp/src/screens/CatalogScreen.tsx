@@ -229,10 +229,13 @@ export function CatalogScreen() {
                 name={tariff.name}
                 meta={tariff.description}
                 price={<Num>{formatUsd(tariff.price_usd)}</Num>}
+                // The plan's own length, not the next one up. Each threshold used to be
+                // the bound of the tier below it, so every card was labelled one step too
+                // generous: Daily read "per week", Weekly read "per month".
                 priceSub={
-                  tariff.duration_minutes >= 24 * 60 * 7
+                  tariff.duration_minutes >= 24 * 60 * 28
                     ? strings.catalog.perMonth
-                    : tariff.duration_minutes >= 24 * 60
+                    : tariff.duration_minutes >= 24 * 60 * 7
                       ? strings.catalog.perWeek
                       : strings.catalog.perDay
                 }
