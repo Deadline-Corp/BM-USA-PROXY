@@ -13,13 +13,15 @@ export function useTermsGate() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // `returnTo` swaps "back to where you were" for "back to what you were doing"
+  // — see useRequireTos for why the catalogue needs the difference.
   return useCallback(
-    async <T,>(action: () => Promise<T>): Promise<T> => {
+    async <T,>(action: () => Promise<T>, returnTo?: string): Promise<T> => {
       try {
         return await action();
       } catch (error) {
         if (error instanceof ApiError && error.status === 428) {
-          rememberReturnTo(`${location.pathname}${location.search}`);
+          rememberReturnTo(returnTo ?? `${location.pathname}${location.search}`);
           navigate("/terms");
         }
         throw error;

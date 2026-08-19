@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { LayoutGrid, MapPin, Radio, Send, Briefcase, Users, MessageCircle, ChevronRight } from "lucide-react";
 import { useCatalog } from "../shared/hooks/useCatalog";
 import { useCreateOrder, usePaymentMethods } from "../shared/hooks/useOrder";
@@ -25,6 +25,11 @@ import type { Carrier, PaymentMethod, Tariff } from "../shared/api/types";
 
 const ANY = "any" as const;
 
+/** Where the Terms gate should drop the buyer back into this screen's purchase. */
+function buyReturnTo(tariff: Tariff): string {
+  return `/catalog?buy=${encodeURIComponent(tariff.code)}`;
+}
+
 export function CatalogScreen() {
   const catalogQuery = useCatalog();
   const createOrder = useCreateOrder();
@@ -33,6 +38,7 @@ export function CatalogScreen() {
   const requireTos = useRequireTos();
   const { showToast } = useToast();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const linksQuery = useAppLinks();
   const channelUrl = linksQuery.data?.channel_url ?? DEFAULT_CHANNEL_URL;
   const supportUrl = linksQuery.data?.support_url ?? DEFAULT_SUPPORT_URL;
@@ -73,6 +79,26 @@ export function CatalogScreen() {
   const [orderError, setOrderError] = useState<string | null>(null);
   const [pendingTariff, setPendingTariff] = useState<string | null>(null);
 
+  // Set by handleBuy before it hands off to the Terms gate, read back here once the
+  // gate returns. A query param rather than component state because accepting the
+  // Terms is a different route: everything on this screen is gone by the time the
+  // person is typing their email.
+  const resumeCode = searchParams.get("buy");
+  useEffect(() => {
+    if (!resumeCode) return;
+    const tariffs = catalogQuery.data?.tariffs;
+    // Wait for the catalogue AND the rail list; the param survives until they land.
+    // The sheet reads both the moment it opens, and this one opens by itself the
+    // instant the screen mounts — earlier than any human could have tapped Buy.
+    if (!tariffs || methodsQuery.isLoading) return;
+    // Consumed either way. A code that no longer matches a plan (deactivated while the
+    // person was reading the Terms) must not keep re-firing this on every render.
+    setSearchParams({}, { replace: true });
+    const tariff = tariffs.find((t) => t.code === resumeCode);
+    if (tariff) openBuySheet(tariff);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resumeCode, catalogQuery.data, methodsQuery.isLoading]);
+
 
   /**
    * Buy is a two-step flow: settle what is being bought, then the invoice is created.
@@ -83,7 +109,14 @@ export function CatalogScreen() {
    * moment it matters, costs one tap and removes the whole failure mode.
    */
   function handleBuy(tariff: Tariff) {
-    if (!requireTos()) return;
+    // Not the bare path: send the person back INTO this purchase after they accept,
+    // rather than to the plan list they started from. Pressing Buy, filling in an
+    // email and landing back on the catalogue reads as the purchase having failed.
+    if (!requireTos(buyReturnTo(tariff))) return;
+    openBuySheet(tariff);
+  }
+
+  function openBuySheet(tariff: Tariff) {
     setOrderError(null);
     // Always opens, even for a free plan on a single rail. The sheet is where the city and
     // carrier are chosen now, so skipping it when there is no payment decision would take
@@ -101,14 +134,19 @@ export function CatalogScreen() {
     setOrderError(null);
     setPendingTariff(tariff.code);
     try {
-      const response = await termsGate(() =>
-        createOrder.mutateAsync({
-          tariff_code: tariff.code,
-          location_id: locationId === ANY ? undefined : locationId,
-          carrier: carrier === ANY ? undefined : carrier,
-          asset: method?.asset,
-          network: method?.network,
-        }),
+      const response = await termsGate(
+        () =>
+          createOrder.mutateAsync({
+            tariff_code: tariff.code,
+            location_id: locationId === ANY ? undefined : locationId,
+            carrier: carrier === ANY ? undefined : carrier,
+            asset: method?.asset,
+            network: method?.network,
+          }),
+        // Same resume target as the Buy button: /me can say ToS are accepted while the
+        // server disagrees (a new Terms version published mid-session), and this is
+        // where that shows up — as a 428 on an order that was already underway.
+        buyReturnTo(tariff),
       );
       cacheInvoice(response.order.public_id, response.invoice);
       navigate(`/checkout/${response.order.public_id}`);

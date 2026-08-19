@@ -44,7 +44,7 @@ export function TermsScreen() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-app">
+    <div className="flex h-[var(--tg-vh)] flex-col bg-app">
       {/* ── header (no tab bar — full-screen gate) ── */}
       <div className="flex shrink-0 items-center gap-2.5 border-b border-border bg-surface px-4 py-3.5">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-accent/[.18] bg-accent/[.09] text-accent">
@@ -97,6 +97,17 @@ export function TermsScreen() {
                         }`}
                         value={value}
                         onChange={(e) => setAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))}
+                        onFocus={(e) => {
+                          // iOS fires focus before the keyboard has finished animating in,
+                          // and the viewport resize that shrinks the page lands after that
+                          // again. Wait for both, then put the field back where it can be
+                          // seen — the body scrolls, so there is room above the keyboard.
+                          const el = e.currentTarget;
+                          window.setTimeout(
+                            () => el.scrollIntoView({ block: "center", behavior: "smooth" }),
+                            350,
+                          );
+                        }}
                         onBlur={() => setTouched((prev) => ({ ...prev, [q.id]: true }))}
                       />
                       {showError ? (

@@ -14,12 +14,20 @@ export function useRequireTos() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  return useCallback(() => {
-    if (me?.tos_accepted === false) {
-      rememberReturnTo(`${location.pathname}${location.search}`);
-      navigate("/terms");
-      return false;
-    }
-    return true;
-  }, [me, navigate, location]);
+  // `returnTo` is for callers that can describe what the person was DOING rather
+  // than merely where they were standing. Coming back to a bare `/catalog` is how
+  // a first purchase used to end: you press Buy, fill in your email, accept — and
+  // land on the plan list again with nothing to show that you got anywhere. The
+  // catalogue passes `/catalog?buy=<plan>` and resumes into the buy sheet.
+  return useCallback(
+    (returnTo?: string) => {
+      if (me?.tos_accepted === false) {
+        rememberReturnTo(returnTo ?? `${location.pathname}${location.search}`);
+        navigate("/terms");
+        return false;
+      }
+      return true;
+    },
+    [me, navigate, location],
+  );
 }
