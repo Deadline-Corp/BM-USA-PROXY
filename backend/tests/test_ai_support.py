@@ -279,6 +279,58 @@ async def test_an_answer_does_not_swallow_the_next_escalations_acknowledgement(
     assert escalated.answers == [conversation._ACK_TEXT]
 
 
+async def test_a_burst_of_messages_pages_the_operator_once(bot_db, monkeypatch) -> None:
+    """Three lines in a row is one person needing help, not three.
+
+    A live test of an abusive customer produced five separate operator alerts in six
+    minutes; at that rate the alert that matters is the one nobody reads. Every message is
+    still on the thread in the dossier — only the paging is collapsed.
+    """
+    _enable(monkeypatch)
+    _answers(monkeypatch, None)
+
+    for i, text in enumerate(("вы у меня деньги украли", "приём", "ответь")):
+        await conversation.capture_message(_StubMessage(text, message_id=i))  # type: ignore[arg-type]
+
+    assert len(bot_db.ops_calls) == 1
+    assert "вы у меня деньги украли" in bot_db.ops_calls[0]
+
+
+async def test_a_reply_reopens_the_alerting(bot_db, monkeypatch) -> None:
+    """An operator mid-conversation must still hear that the client answered them.
+
+    This is the case a plain "one alert per hour" rule silently breaks: the operator
+    writes from the dossier, the client replies, and nobody is told — so the operator has
+    to sit watching the screen to notice.
+    """
+    _enable(monkeypatch)
+    _answers(monkeypatch, None)
+    await conversation.capture_message(_StubMessage("первый вопрос"))  # type: ignore[arg-type]
+    assert len(bot_db.ops_calls) == 1
+
+    user = await _user(bot_db)
+    async with bot_db() as s:
+        admin = AdminUser(
+            email="op2@bmusproxy.local",
+            display_name="Operator",
+            password_hash="x",
+            role="owner",
+            is_active=True,
+        )
+        s.add(admin)
+        await s.flush()
+        s.add(
+            ConversationMessage(
+                user_id=user.id, direction="out", body="Смотрю ваш заказ.", admin_id=admin.id
+            )
+        )
+        await s.commit()
+
+    await conversation.capture_message(_StubMessage("спасибо, жду", message_id=9))  # type: ignore[arg-type]
+
+    assert len(bot_db.ops_calls) == 2
+
+
 async def test_a_stale_promise_does_not_mute_the_bot_mid_conversation(
     bot_db, monkeypatch
 ) -> None:

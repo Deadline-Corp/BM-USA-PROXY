@@ -79,6 +79,42 @@ async def _ack_is_due(session: AsyncSession, user_id: int) -> bool:
     return last_answer is not None and last_answer > last_promise
 
 
+async def _starts_a_burst(session: AsyncSession, user_id: int) -> bool:
+    """Is this the first message of a run, or a follow-up to one already reported?
+
+    Deliberately "what was the last thing said on this thread" rather than a time window.
+    A real reply — an operator's or the assistant's — closes the run, so the next message
+    is news again. That keeps the case that matters most: an operator is mid-conversation,
+    the client answers them, and the operator hears about it without having to sit
+    watching the dossier.
+
+    The canned acknowledgement is invisible here, and has to be: it is our own reflex
+    rather than anybody engaging, and counting it closed the run after every single
+    message — which paged an operator for all three lines of a burst instead of one.
+
+    The inbound message is already committed by the caller, so the row before it is the
+    one being asked about.
+    """
+    recent = (
+        await session.scalars(
+            select(ConversationMessage.direction)
+            .where(
+                ConversationMessage.user_id == user_id,
+                ~(
+                    (ConversationMessage.direction == "out")
+                    & ConversationMessage.admin_id.is_(None)
+                    & ConversationMessage.via_ai.is_(False)
+                ),
+            )
+            .order_by(
+                ConversationMessage.created_at.desc(), ConversationMessage.id.desc()
+            )
+            .limit(2)
+        )
+    ).all()
+    return len(recent) < 2 or recent[1] == "out"
+
+
 async def _operator_active(session: AsyncSession, user_id: int) -> bool:
     """Has a human written to this client recently?
 
@@ -195,12 +231,19 @@ async def capture_message(message: Message) -> None:
         return
 
     async with SessionFactory() as session:
-        # Best-effort operator alert — never let a failed notify drop the stored message.
-        # Fans out to every operator chat (support + the owner's channel); see
-        # services/ops_alerts.py for where the list comes from.
-        with contextlib.suppress(Exception):
-            await ops_alerts.notify_ops(session, f"💬 New message from {who}:\n{body[:500]}")
         ack_due = await _ack_is_due(session, user_id)
+
+        # One alert per burst, not one per message: "hello", "are you there", "answer me"
+        # is one person needing help, and three pings for it is how the ping that matters
+        # gets ignored — a live test produced five in six minutes.
+        if await _starts_a_burst(session, user_id):
+            # Best-effort — never let a failed notify drop the stored message. Fans out to
+            # every operator chat (support + the owner's channel); see ops_alerts.py.
+            with contextlib.suppress(Exception):
+                await ops_alerts.notify_ops(session, f"💬 New message from {who}:\n{body[:500]}")
+        else:
+            log.info("bot.alert_collapsed", user_id=user_id)
+
         # Resolved here, while a session is still open: the operator's edited wording
         # lives in app_settings, and what gets sent must be what gets recorded below.
         ack_text = await render(session, ACK_TEMPLATE, {}) if ack_due else None
