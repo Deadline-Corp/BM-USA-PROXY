@@ -39,6 +39,14 @@ export function useDepositLedger(params: ListParams) {
   });
 }
 
+/** Invoices raised, paid or not — the counterpart to the deposit ledger. */
+export function useInvoices(params: ListParams) {
+  return useQuery({
+    queryKey: ["ledger", "invoices", params],
+    queryFn: () => paymentsApi.invoices(params),
+  });
+}
+
 export function useLedgerSummary() {
   return useQuery({
     queryKey: ["ledger", "summary"],

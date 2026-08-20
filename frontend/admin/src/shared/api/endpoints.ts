@@ -17,6 +17,7 @@ import type {
   DashboardSummary,
   DepositCandidates,
   DepositLedgerEntry,
+  InvoiceRow,
   DepositLedgerSummary,
   FaqItem,
   IssueAccessRequest,
@@ -202,6 +203,9 @@ export const paymentsApi = {
       .then((r) => r.data),
   ledgerSummary: () =>
     apiClient.get<DepositLedgerSummary>("/payments/ledger/summary").then((r) => r.data),
+  /** Every invoice raised — the "what is owed" side of the same screen. */
+  invoices: (params: ListParams) =>
+    apiClient.get<Paginated<InvoiceRow>>("/payments/invoices", { params }).then((r) => r.data),
   /** Orders this parked deposit plausibly belongs to, closest amount first. */
   depositCandidates: (depositId: number) =>
     apiClient

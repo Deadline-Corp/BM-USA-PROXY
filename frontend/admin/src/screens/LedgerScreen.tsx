@@ -13,6 +13,7 @@ import { formatChain, formatCryptoAmount, formatDateTime, formatNetwork } from "
 import { useDepositLedger, useLedgerSummary } from "@/shared/hooks/useLedger";
 import { useDebouncedValue } from "@/shared/hooks/useDebouncedValue";
 import { ResolveDepositModal } from "@/screens/payments/ResolveDepositModal";
+import { InvoicesPanel } from "@/screens/payments/InvoicesPanel";
 import { usePagination } from "@/shared/hooks/usePagination";
 import { strings } from "@/shared/strings";
 import type { DepositLedgerEntry } from "@/shared/api/types";
@@ -44,6 +45,7 @@ const RESOLVABLE = ["unmatched", "underpaid", "expired_deposit", "orphaned"];
 // hashes and addresses, which is what the old 4-character floor was protecting.
 
 export function LedgerScreen() {
+  const [tab, setTab] = useState<"deposits" | "invoices">("deposits");
   const { limit, offset, setOffset } = usePagination();
   const [status, setStatus] = useState("");
   const [chain, setChain] = useState("");
@@ -218,6 +220,22 @@ export function LedgerScreen() {
     <div>
       <PageHead title={strings.ledger.title} subtitle={strings.ledger.subtitle} />
 
+      {/* Two halves of the same subject, kept on one screen: what arrived, and what is
+          owed. Splitting them across the menu would leave the operator answering "did this
+          customer pay?" in one place and "what is he supposed to pay?" in another. */}
+      <div className="flex items-center gap-1 mb-4 bg-surface-2 border border-border rounded-lg p-1 w-fit">
+        <TabButton active={tab === "deposits"} onClick={() => setTab("deposits")}>
+          {strings.ledger.tabDeposits}
+        </TabButton>
+        <TabButton active={tab === "invoices"} onClick={() => setTab("invoices")}>
+          {strings.ledger.tabInvoices}
+        </TabButton>
+      </div>
+
+      {tab === "invoices" ? (
+        <InvoicesPanel />
+      ) : (
+      <>
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <SummaryChip label={strings.ledger.events24h} value={summary.data?.events_24h ?? 0} />
         <SummaryChip
@@ -299,7 +317,32 @@ export function LedgerScreen() {
       </Panel>
 
       <ResolveDepositModal deposit={resolving} onClose={() => setResolving(null)} />
+      </>
+      )}
     </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        "px-3.5 py-1.5 rounded-md text-[.82rem] font-semibold transition-colors duration-150 ease-brand flex items-center " +
+        (active ? "bg-surface text-text shadow-sm" : "text-text-2 hover:text-text")
+      }
+    >
+      {children}
+    </button>
   );
 }
 

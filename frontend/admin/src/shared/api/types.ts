@@ -375,6 +375,33 @@ export interface DepositCandidates {
   candidates: DepositCandidate[];
 }
 
+/** An invoice raised for an order, whether or not money ever arrived for it.
+ *
+ *  The deposit ledger answers "what came in"; this answers "what is owed", which is the
+ *  question an operator could previously only reach by opening clients one at a time. */
+export interface InvoiceRow {
+  id: string;
+  order_number: number;
+  order_public_id: string;
+  user: string | null;
+  /** Invoice status: created / pending / confirming / paid / expired / … */
+  status: string;
+  /** The order's own status — an invoice can be paid while provisioning is still running. */
+  order_status: string;
+  amount_usd: number;
+  crypto_amount: number | null;
+  crypto_currency: string | null;
+  crypto_network: string | null;
+  chain: string | null;
+  pay_address: string | null;
+  /** How many proxies the order buys — one invoice can cover several. */
+  quantity: number;
+  tariff_code: string;
+  created_at: string;
+  expires_at: string;
+  paid_at: string | null;
+}
+
 export interface DepositLedgerEntry {
   id: string;
   /**

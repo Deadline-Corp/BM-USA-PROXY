@@ -2020,6 +2020,115 @@ async def list_deposit_ledger(
     return {"items": items, "total": total}
 
 
+@router.get("/payments/invoices")
+async def list_invoices(
+    admin: CurrentAdmin,
+    session: DbSession,
+    status: str | None = None,
+    chain: str | None = None,
+    asset: str | None = None,
+    q: str | None = None,
+    since: str | None = None,
+    before: str | None = None,
+    sort: str = "created_at",
+    order: str = "desc",
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Every invoice raised, whether or not money ever arrived for it.
+
+    The ledger beside this one answers "what came in"; nothing answered "what is owed".
+    An operator wanting the invoices still waiting had to open clients one at a time and
+    read each dossier, which is not a list anybody can work from — and the awaiting ones
+    are exactly the set worth watching, since that is where a customer sits with an
+    address in front of them.
+
+    Same filters as the ledger, because the operator arrives with the same things in hand:
+    an order number, a coin, a date range.
+    """
+    stmt = select(Invoice, Order).join(Order, Order.id == Invoice.order_id)
+    count_stmt = select(func.count()).select_from(Invoice).join(Order, Order.id == Invoice.order_id)
+    conds: list[ColumnElement[bool]] = []
+    if status:
+        # "awaiting" is the question this screen exists for: everything raised where the
+        # money has not landed, across the three statuses that mean it.
+        if status == "awaiting":
+            conds.append(Invoice.status.in_(("created", "pending", "confirming")))
+        else:
+            conds.append(Invoice.status == status)
+    if chain:
+        conds.append(Invoice.chain == chain)
+    if asset:
+        conds.append(Invoice.crypto_currency == asset.upper())
+    if since:
+        conds.append(Invoice.created_at >= _parse_day(since))
+    if before:
+        conds.append(Invoice.created_at < _parse_day(before) + timedelta(days=1))
+    if q and q.strip():
+        from app.services.payments.onchain.assets import CHAINS, SPECS
+
+        needle_raw = q.strip()
+        if needle_raw.lower() in CHAINS:
+            conds.append(Invoice.chain == needle_raw.lower())
+        elif needle_raw.upper() in {spec.asset for spec in SPECS.values()}:
+            conds.append(Invoice.crypto_currency == needle_raw.upper())
+        elif needle_raw.lstrip("#").isdigit():
+            # The order number in this table's own column — what a buyer quotes.
+            conds.append(Order.id == int(needle_raw.lstrip("#")))
+        else:
+            # A handle, or the receiving address off a screenshot the buyer sent.
+            needle = f"%{needle_raw}%"
+            conds.append(
+                or_(
+                    Invoice.pay_address.ilike(needle),
+                    Invoice.matched_txid.ilike(needle),
+                    Order.user_id.in_(
+                        select(User.id).where(User.tg_username.ilike(needle.lstrip("@")))
+                    ),
+                )
+            )
+    for cond in conds:
+        stmt = stmt.where(cond)
+        count_stmt = count_stmt.where(cond)
+
+    sort_col = {
+        "created_at": Invoice.created_at,
+        "expires_at": Invoice.expires_at,
+        "amount_usd": Invoice.amount_usd,
+        "status": Invoice.status,
+        "chain": Invoice.chain,
+    }.get(sort, Invoice.created_at)
+    direction = sort_col.asc() if order == "asc" else sort_col.desc()
+    stmt = stmt.order_by(direction, Invoice.id.desc())
+    limit, offset = _page(limit, offset)
+    total = int(await session.scalar(count_stmt) or 0)
+    rows = (await session.execute(stmt.limit(limit).offset(offset))).all()
+    user_display_map = await _user_display_map(session, [o.user_id for _inv, o in rows])
+    items = [
+        {
+            "id": str(inv.id),
+            "order_number": order_row.id,
+            "order_public_id": str(order_row.public_id),
+            "user": user_display_map.get(order_row.user_id),
+            "status": inv.status,
+            "order_status": order_row.status,
+            "amount_usd": float(inv.amount_usd),
+            "crypto_amount": float(inv.crypto_amount) if inv.crypto_amount is not None else None,
+            "crypto_currency": inv.crypto_currency,
+            "crypto_network": inv.crypto_network,
+            "chain": inv.chain,
+            "pay_address": inv.pay_address,
+            "quantity": int(order_row.quantity or 1),
+            "tariff_code": order_row.tariff_code,
+            "created_at": inv.created_at.isoformat(),
+            "expires_at": inv.expires_at.isoformat(),
+            "paid_at": inv.paid_at.isoformat() if inv.paid_at else None,
+        }
+        for inv, order_row in rows
+    ]
+    return {"items": items, "total": total}
+
+
 class AttachDeposit(BaseModel):
     order_public_id: str
     note: str | None = None
