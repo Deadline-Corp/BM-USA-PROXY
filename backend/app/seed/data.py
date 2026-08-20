@@ -94,8 +94,10 @@ def default_settings(tos_version: int = 1) -> dict[str, object]:
         "tos": {
             "version": tos_version,
             "text_md": tos_text_v1(),
-            "questions": [
-                {"id": "email", "label": "Email", "type": "email", "required": True},
-            ],
+            # No questions by default. Acceptance is the signature; an email box in front
+            # of it was one more thing to type before buying, and the address it collected
+            # was never the one support actually reaches people on — that is Telegram.
+            # The mechanism stays: an operator can add questions back on the Terms screen.
+            "questions": [],
         },
     }

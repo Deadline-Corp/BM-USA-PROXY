@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import { ShieldCheck } from "lucide-react";
@@ -20,6 +20,30 @@ export function TermsScreen() {
 
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
+
+  // Accept unlocks only once the agreement has actually been scrolled through. A consent
+  // button you can press without the text having moved is a button people press without
+  // reading, which is the whole thing this screen exists to avoid.
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [readToEnd, setReadToEnd] = useState(false);
+
+  const checkReadToEnd = useCallback(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    // A few pixels of slack: sub-pixel heights and the rubber-band bounce on iOS mean the
+    // sum lands a fraction short of the bottom often enough to strand people otherwise.
+    // Short terms that fit on screen have nothing to scroll and count as read on sight —
+    // without that branch the button could never unlock at all.
+    if (el.scrollHeight - el.scrollTop - el.clientHeight <= 24) setReadToEnd(true);
+  }, []);
+
+  // Only once the agreement itself is in the DOM. Measuring while the loading skeleton was
+  // up compared the height of five grey bars against the viewport, decided it all fitted,
+  // and unlocked Accept before a word of the terms had been rendered.
+  useEffect(() => {
+    if (!termsQuery.data) return;
+    checkReadToEnd();
+  }, [checkReadToEnd, termsQuery.data]);
 
   const questions = termsQuery.data?.questions ?? [];
 
@@ -59,7 +83,7 @@ export function TermsScreen() {
       </div>
 
       {/* ── scrollable body ── */}
-      <div className="scrollbar-thin flex-1 overflow-y-auto px-4 py-4">
+      <div ref={bodyRef} onScroll={checkReadToEnd} className="scrollbar-thin flex-1 overflow-y-auto px-4 py-4">
         {termsQuery.isLoading ? (
           <div className="flex flex-col gap-2">
             <div className="h-4 w-3/4 animate-pulse rounded bg-surface-2" />
@@ -129,11 +153,16 @@ export function TermsScreen() {
         <Button
           variant="primary"
           block
-          disabled={!termsQuery.data || !isValid || acceptTerms.isPending}
+          disabled={!termsQuery.data || !isValid || !readToEnd || acceptTerms.isPending}
           onClick={handleAccept}
         >
           {acceptTerms.isPending ? strings.terms.accepting : strings.terms.accept}
         </Button>
+        {/* Without this the disabled button is a dead end with no stated reason — the one
+            thing on screen the person came here to press, greyed out and silent. */}
+        {termsQuery.data && !readToEnd ? (
+          <p className="mt-2 text-center text-[12.5px] text-text-3">{strings.terms.scrollToEnd}</p>
+        ) : null}
       </div>
     </div>
   );

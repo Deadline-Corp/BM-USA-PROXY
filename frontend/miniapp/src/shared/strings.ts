@@ -315,6 +315,7 @@ export const strings = {
     emailInvalid: "Enter a valid email address.",
     accept: "I accept",
     accepting: "Accepting…",
+    scrollToEnd: "Scroll to the end of the terms to continue",
   },
 
   sheet: {
