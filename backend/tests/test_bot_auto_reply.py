@@ -123,6 +123,49 @@ async def test_an_operator_reply_holds_the_bot_back(bot_db) -> None:
     assert reply.answers == []
 
 
+async def test_the_wording_follows_the_operators_own_text(bot_db) -> None:
+    """The line is editable on the Notifications screen like every other bot message.
+
+    It was a constant in the source until an operator asked to change it, which meant a
+    deploy to reword a sentence — and left the bot answering in English while the
+    assistant beside it answered in the client's own language.
+    """
+    from app.services import settings as settings_svc
+
+    custom = "Спасибо за сообщение! Оператор скоро ответит."
+    async with bot_db() as s:
+        await settings_svc.set_value(s, f"notify_texts:{conversation.ACK_TEMPLATE}", custom)
+        await s.commit()
+
+    message = _StubMessage("здравствуйте")
+    await conversation.capture_message(message)  # type: ignore[arg-type]
+
+    assert message.answers == [custom]
+    rows = await _thread(bot_db)
+    # Sent and recorded must agree — the dossier is what an operator reads to find out
+    # what this client was actually told.
+    assert rows[-1].body == custom
+
+
+async def test_a_blank_override_falls_back_to_the_built_in_text(bot_db) -> None:
+    """Clearing the field restores the default rather than silencing the bot.
+
+    Same rule as the rest of the templates. Without it, an operator emptying the box to
+    "turn it off" would put the bot back to answering nothing at all, which is the exact
+    silence this reply was added to fix.
+    """
+    from app.services import settings as settings_svc
+
+    async with bot_db() as s:
+        await settings_svc.set_value(s, f"notify_texts:{conversation.ACK_TEMPLATE}", "")
+        await s.commit()
+
+    message = _StubMessage("hello")
+    await conversation.capture_message(message)  # type: ignore[arg-type]
+
+    assert message.answers == [conversation._ACK_TEXT]
+
+
 async def test_a_failed_send_records_no_reply(bot_db) -> None:
     """Otherwise the thread would claim the client was answered when they were not."""
 

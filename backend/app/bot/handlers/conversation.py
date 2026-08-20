@@ -18,6 +18,7 @@ from aiogram.types import Message
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.bot.notifier import DEFAULT_TEXTS, render
 from app.core.db import SessionFactory
 from app.core.logging import log
 from app.models import ConversationMessage
@@ -30,7 +31,12 @@ router = Router(name="conversation")
 # bot looked exactly like writing into a void: the message was stored and the operators
 # were pinged, but nothing came back, so the only signal available to the person was
 # silence — which reads as "nobody is there".
-_ACK_TEXT = "Thank you for your message. Our operator will get back to you shortly."
+#
+# The wording is operator-editable on the Notifications screen like every other message
+# the bot sends; this constant is only the built-in default it falls back to. Blanking the
+# field restores this text rather than silencing the bot — same rule as the other templates.
+ACK_TEMPLATE = "bot_auto_reply"
+_ACK_TEXT = DEFAULT_TEXTS[ACK_TEMPLATE]
 
 # How long one acknowledgement covers. Somebody typing three lines in a row gets one
 # reply, not three, and somebody already mid-conversation with a human is not told again
@@ -176,14 +182,17 @@ async def capture_message(message: Message) -> None:
         with contextlib.suppress(Exception):
             await ops_alerts.notify_ops(session, f"💬 New message from {who}:\n{body[:500]}")
         ack_due = await _ack_is_due(session, user_id)
+        # Resolved here, while a session is still open: the operator's edited wording
+        # lives in app_settings, and what gets sent must be what gets recorded below.
+        ack_text = await render(session, ACK_TEMPLATE, {}) if ack_due else None
 
     # Outside the session, and sent before it is recorded: a reply we failed to send must
     # not leave a row claiming we sent it. The reverse order costs a duplicate ack at
     # worst, and only if recording fails right after the send succeeded.
-    if not ack_due:
+    if not ack_text:
         return
     try:
-        await message.answer(_ACK_TEXT)
+        await message.answer(ack_text)
     except Exception as exc:  # noqa: BLE001 — the client's message is already safe
         log.warning("bot.ack_send_failed", user_id=user_id, error=str(exc))
         return
@@ -192,7 +201,7 @@ async def capture_message(message: Message) -> None:
             session.add(
                 # No admin_id: nobody typed this. The dossier labels such a row as the
                 # automatic reply it is, rather than crediting an operator with it.
-                ConversationMessage(user_id=user_id, direction="out", body=_ACK_TEXT)
+                ConversationMessage(user_id=user_id, direction="out", body=ack_text)
             )
             await session.commit()
     except Exception as exc:  # noqa: BLE001

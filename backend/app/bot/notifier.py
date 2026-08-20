@@ -38,6 +38,10 @@ DEFAULT_TEXTS: dict[str, str] = {
     "payout_rejected": "Your payout request was rejected: {reason}",
     "config_delivered": "Here is your {config_type} config. Import the file into your VPN app.",
     "operator_message": "{text}",
+    # What the bot says when it has nothing else to say — a message it did not answer
+    # itself is on its way to a human. Delivered inline by the bot handler, not through
+    # the outbox, but the text lives here so operators can edit it like any other.
+    "bot_auto_reply": "Thank you for your message. Our operator will get back to you shortly.",
 }
 
 _APP_BUTTON_CODES = {

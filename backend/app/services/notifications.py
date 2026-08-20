@@ -30,6 +30,9 @@ TEMPLATES = {
     "payout_rejected",
     "config_delivered",
     "operator_message",
+    # Sent straight from the bot handler rather than through this outbox — it is listed
+    # here so it appears on the Notifications screen and survives the settings whitelist.
+    "bot_auto_reply",
 }
 
 
