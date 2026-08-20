@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { Panel } from "@/shared/components/Panel";
 import { Button } from "@/shared/components/Button";
+import { Switch } from "@/shared/components/Switch";
 import { Input } from "@/shared/components/form/Input";
 import { Skeleton } from "@/shared/components/Skeleton";
 import { ErrorState } from "@/shared/components/ErrorState";
@@ -85,6 +86,10 @@ const HIDDEN_KEYS = ["bot_channel_url", "bot_support_url"];
 const isManaged = (key: string) =>
   key.startsWith("notify_texts:") ||
   key === "tos" ||
+  // The assistant's keys are booleans plus a chat handle — they have their own panel
+  // below. In the generic grid they would render as text boxes where "true" and "yes"
+  // and "" all look equally plausible.
+  key.startsWith("ai_assistant_") ||
   RETIRED_KEYS.includes(key) ||
   INTERNAL_KEYS.includes(key) ||
   HIDDEN_KEYS.includes(key);
@@ -97,6 +102,89 @@ export function AppSettingsPanel() {
       select={(key) => !REFERRAL_KEYS.includes(key)}
       footnote="Terms of Service and notification message texts are edited on their own screens — see the Terms of service panel below and the Notifications page."
     />
+  );
+}
+
+/** The AI assistant's two switches.
+ *
+ * Its own panel rather than two more rows in the key/value grid: these are the only
+ * settings on this screen that change what clients are told, and both are booleans —
+ * a text input holding the word "false" is not a switch anybody trusts.
+ *
+ * Each toggle saves on the spot. There is no draft to lose and no Save button to miss,
+ * which matters most for the enable switch: the operator flipping it off is usually doing
+ * so because the assistant is saying something they want stopped now.
+ */
+export function AiAssistantPanel() {
+  const toast = useToast();
+  const { data, isLoading, isError, refetch } = useAppSettings();
+  const updateMutation = useUpdateAppSettings();
+  const [pending, setPending] = useState<string | null>(null);
+
+  // Absent keys are the defaults, not "off": nothing writes them until a toggle is first
+  // used, and the backend reads them the same way (services/ai_support.py::get_config).
+  const flag = (key: string, fallback: boolean) => {
+    const value = (data as Record<string, unknown> | undefined)?.[key];
+    return value === undefined ? fallback : value === true || value === "true";
+  };
+
+  async function toggle(key: string, next: boolean) {
+    setPending(key);
+    try {
+      await updateMutation.mutateAsync({ [key]: next } as Partial<AppSettings>);
+    } catch (err) {
+      toast.error(apiErrorMessage(err));
+    } finally {
+      setPending(null);
+    }
+  }
+
+  const rows = [
+    {
+      key: "ai_assistant_enabled",
+      label: strings.settings.aiAssistantEnabled,
+      hint: strings.settings.aiAssistantEnabledHint,
+      value: flag("ai_assistant_enabled", false),
+    },
+    {
+      key: "ai_assistant_ping_ops",
+      label: strings.settings.aiAssistantPing,
+      hint: strings.settings.aiAssistantPingHint,
+      value: flag("ai_assistant_ping_ops", true),
+    },
+  ];
+
+  return (
+    <Panel>
+      <Panel.Head
+        title={strings.settings.aiAssistant}
+        subtitle={strings.settings.aiAssistantSubtitle}
+      />
+      <Panel.Body>
+        {isLoading ? (
+          <Skeleton className="h-20" />
+        ) : isError ? (
+          <ErrorState onRetry={refetch} />
+        ) : (
+          <div className="flex flex-col gap-4">
+            {rows.map((row) => (
+              <div key={row.key} className="flex items-start gap-3">
+                <Switch
+                  label={row.label}
+                  checked={row.value}
+                  disabled={pending !== null}
+                  onChange={(e) => toggle(row.key, e.target.checked)}
+                />
+                <div className="min-w-0">
+                  <div className="text-[.9rem] font-medium text-text">{row.label}</div>
+                  <p className="text-[.78rem] text-text-3">{row.hint}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Panel.Body>
+    </Panel>
   );
 }
 

@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import SessionFactory
 from app.core.logging import log
 from app.models import ConversationMessage
-from app.services import ops_alerts
+from app.services import ai_support, ops_alerts
 from app.services.users import upsert_from_telegram
 
 router = Router(name="conversation")
@@ -44,9 +44,31 @@ async def _ack_is_due(session: AsyncSession, user_id: int) -> bool:
         select(func.max(ConversationMessage.created_at)).where(
             ConversationMessage.user_id == user_id,
             ConversationMessage.direction == "out",
+            # An AI answer does not count as the promise being kept. It is an answer to the
+            # question that was asked, not a statement that an operator is coming — and the
+            # next message may well be the one the assistant refused. Counting it here left
+            # that escalation with no reply to the client at all.
+            ConversationMessage.via_ai.is_(False),
         )
     )
     return last_out is None or datetime.now(UTC) - last_out >= _ACK_COOLDOWN
+
+
+async def _operator_active(session: AsyncSession, user_id: int) -> bool:
+    """Has a human written to this client recently?
+
+    The assistant stays out of a conversation an operator is already having: answering
+    over the top of a person mid-thread is worse than saying nothing, and the operator
+    has context the model does not.
+    """
+    last_human = await session.scalar(
+        select(func.max(ConversationMessage.created_at)).where(
+            ConversationMessage.user_id == user_id,
+            ConversationMessage.direction == "out",
+            ConversationMessage.admin_id.is_not(None),
+        )
+    )
+    return last_human is not None and datetime.now(UTC) - last_human < _ACK_COOLDOWN
 
 
 def _identity(message: Message) -> dict[str, Any]:
@@ -58,6 +80,42 @@ def _identity(message: Message) -> dict[str, Any]:
         "last_name": u.last_name if u else None,
         "lang": (u.language_code if u else None) or "en",
     }
+
+
+async def _deliver_ai_answer(
+    message: Message,
+    *,
+    user_id: int,
+    who: str,
+    question: str,
+    answer: str,
+    cfg: ai_support.AiSupportConfig,
+) -> bool:
+    """Send an AI answer and record it. False means "escalate after all".
+
+    Sent before it is recorded, for the same reason the acknowledgement below is: a reply
+    that never reached Telegram must not leave a row on the thread claiming it did.
+    """
+    try:
+        # parse_mode=None — the text is model-written prose, and a stray "<" both injects
+        # markup and can make the send itself fail.
+        await message.answer(answer, parse_mode=None)
+    except Exception as exc:  # noqa: BLE001 — the client's message is already safe
+        log.warning("ai_support.send_failed", user_id=user_id, error=str(exc))
+        return False
+    try:
+        async with SessionFactory() as session:
+            session.add(
+                ConversationMessage(
+                    user_id=user_id, direction="out", body=answer, via_ai=True
+                )
+            )
+            await session.commit()
+            if cfg.ping_ops:
+                await ai_support.notify_ai_answered(session, cfg, who, question, answer)
+    except Exception as exc:  # noqa: BLE001 — the client has their answer either way
+        log.warning("ai_support.record_failed", user_id=user_id, error=str(exc))
+    return True
 
 
 @router.message(F.text & ~F.text.startswith("/"))
@@ -83,14 +141,40 @@ async def capture_message(message: Message) -> None:
         # the operator searching for this person afterwards needs the identifier that
         # cannot. Same reason the dossier keys off it.
         who = f"{display} (tg {user.tg_user_id})"
+        user_id = user.id
 
+        # The assistant gets first refusal on the message. It answers the handful of
+        # simple product questions operators were retyping all day and hands back None for
+        # everything else — money, access, stock, complaints — which falls through to the
+        # operator path below exactly as before this existed.
+        # Belt and braces: try_answer already swallows its own failures, and this catches
+        # anything that gets past it — a bad settings row, a broken import. The assistant
+        # is an optimisation on top of the operator path, and must never be able to take
+        # that path down with it.
+        ai_answer: str | None = None
+        ai_cfg = ai_support.AiSupportConfig(enabled=False, ping_ops=False, ping_chat="")
+        try:
+            ai_cfg = await ai_support.get_config(session)
+            if ai_cfg.enabled and not await _operator_active(session, user_id):
+                ai_answer = await ai_support.try_answer(session, user, body)
+        except Exception as exc:  # noqa: BLE001 — fall through to the operator
+            log.warning("ai_support.layer_failed", user_id=user_id, error=str(exc))
+            ai_answer = None
+
+    # Answered: no operator fan-out and no acknowledgement — there is nothing for a human
+    # to pick up, and "an operator will get back to you" after an answer reads as the
+    # answer not counting. A send that fails returns False and escalates instead.
+    if ai_answer is not None and await _deliver_ai_answer(
+        message, user_id=user_id, who=who, question=body, answer=ai_answer, cfg=ai_cfg
+    ):
+        return
+
+    async with SessionFactory() as session:
         # Best-effort operator alert — never let a failed notify drop the stored message.
         # Fans out to every operator chat (support + the owner's channel); see
         # services/ops_alerts.py for where the list comes from.
         with contextlib.suppress(Exception):
             await ops_alerts.notify_ops(session, f"💬 New message from {who}:\n{body[:500]}")
-
-        user_id = user.id
         ack_due = await _ack_is_due(session, user_id)
 
     # Outside the session, and sent before it is recorded: a reply we failed to send must

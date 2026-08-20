@@ -544,11 +544,12 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
         {message.text}
       </div>
       <span className="text-[.66rem] text-text-3 mt-0.5 px-0.5">
-        {/* An outbound row with no admin behind it is the bot's automatic
-            acknowledgement. Labelling it "Operator" would tell whoever opens this
-            thread that a colleague has already answered, and nobody has. */}
+        {/* An outbound row with no admin behind it is either the bot's automatic
+            acknowledgement or an AI answer. Labelling either "Operator" would tell
+            whoever opens this thread that a colleague has already answered, and nobody
+            has; labelling them the same as each other hides what the client was told. */}
         {outbound
-          ? (message.admin ?? strings.clients.conversationAuto)
+          ? (message.admin ?? (message.via_ai ? strings.clients.conversationAi : strings.clients.conversationAuto))
           : strings.clients.conversationClient}
         {" · "}
         {formatDateTime(message.created_at)}

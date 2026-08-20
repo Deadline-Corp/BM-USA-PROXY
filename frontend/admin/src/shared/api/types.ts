@@ -136,6 +136,8 @@ export interface ConversationMessage {
   text: string;
   /** Display name of the operator who sent an "out" message; null for "in". */
   admin: string | null;
+  /** An "out" message written by the AI assistant rather than a person or the canned ack. */
+  via_ai: boolean;
   created_at: string;
 }
 

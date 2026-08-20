@@ -8,6 +8,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     ForeignKey,
     Index,
@@ -15,6 +16,7 @@ from sqlalchemy import (
     LargeBinary,
     Text,
     UniqueConstraint,
+    false,
     func,
     text,
 )
@@ -121,6 +123,12 @@ class ConversationMessage(Base):
     admin_id: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"))  # 'out' only
     tg_message_id: Mapped[int | None] = mapped_column(BigInteger)  # 'in' only
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Written by the AI support assistant rather than by a human or the canned
+    # acknowledgement. Three kinds of outbound row now exist and the dossier has to tell
+    # them apart; the acknowledgement rule also keys off it (see bot/handlers/conversation.py).
+    via_ai: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=false(), default=False
+    )
     created_at: Mapped[datetime] = created_at_col()
 
     __table_args__ = (

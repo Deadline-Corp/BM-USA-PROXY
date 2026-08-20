@@ -89,6 +89,16 @@ async def _resolve_handles(session: AsyncSession, chats: list[str]) -> list[str]
     return out
 
 
+async def resolve_chat(session: AsyncSession, chat: str) -> str:
+    """One chat through the same @handle → id lookup the fan-out uses.
+
+    For callers that address a single named chat rather than the whole operator list (the
+    AI assistant's courtesy copy), so a handle configured there resolves by the same rules
+    and an unresolvable one fails the same visible way.
+    """
+    return (await _resolve_handles(session, [chat]))[0]
+
+
 async def ops_chat_ids(session: AsyncSession) -> list[str]:
     """Every chat that should hear about operator-facing events, de-duplicated.
 

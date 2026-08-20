@@ -1,6 +1,7 @@
 import { PageHead } from "@/shared/components/PageHead";
 import { strings } from "@/shared/strings";
 import {
+  AiAssistantPanel,
   AppSettingsPanel,
   ReferralSettingsPanel,
   WelcomeImagePanel,
@@ -16,6 +17,7 @@ export function SettingsScreen() {
 
       <div className="flex flex-col gap-4">
         <AppSettingsPanel />
+        <AiAssistantPanel />
         <WelcomeImagePanel />
         <ReferralSettingsPanel />
         <TermsPanel />

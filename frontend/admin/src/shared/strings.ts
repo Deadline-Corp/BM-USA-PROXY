@@ -165,6 +165,7 @@ export const strings = {
     conversationClient: "Client",
     conversationOperator: "Operator",
     conversationAuto: "Auto-reply",
+    conversationAi: "AI assistant",
   },
   pools: {
     title: "Proxies pool",
@@ -405,6 +406,14 @@ export const strings = {
     title: "Settings",
     subtitle: "App configuration, terms, admins, and audit trail.",
     appSettings: "App settings",
+    aiAssistant: "AI assistant",
+    aiAssistantSubtitle:
+      "Answers simple product questions in the bot — price, cities, carriers, protocols, speed. Anything about payments, access, stock or a complaint still goes to an operator.",
+    aiAssistantEnabled: "Answer clients automatically",
+    aiAssistantEnabledHint:
+      "Off: every message to the bot goes straight to an operator, as before.",
+    aiAssistantPing: "Copy answers to support",
+    aiAssistantPingHint: "Sends each AI answer to @usproxy_support so you can see what it says.",
     welcomeImage: "Welcome image",
     welcomeImageHint:
       "Sent as a photo with the bot's /start greeting, the same buttons in the caption. JPEG, PNG, or WebP, up to 5 MB.",

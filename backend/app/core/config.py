@@ -65,6 +65,17 @@ class Settings(BaseSettings):
     # (public addresses only): [{"network":"trc20","address":"T..."}]
     onchain_payout_sources: str | None = None
 
+    # AI support assistant (bot answers simple product questions; see services/ai_support.py).
+    # Absent key = the whole layer stays asleep and every message goes to an operator, which
+    # is also the behaviour the two admin toggles fall back to.
+    # Deliberately NOT named ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL: those are the SDK's
+    # own conventional names, they are already set globally on machines with Anthropic
+    # tooling installed, and a real environment variable outranks the .env file. Measured
+    # here — a stray ANTHROPIC_BASE_URL silently sent every request to the wrong host.
+    ai_support_api_key: str | None = None
+    ai_support_base_url: str | None = None
+    ai_support_model: str = "claude-haiku-4-5"
+
     # Feature flags
     feature_real_payments: bool = False
     feature_real_provisioning: bool = False  # real iproxy issuance (decoupled from payments)

@@ -667,6 +667,10 @@ async def client_dossier(client_id: int, admin: CurrentAdmin, session: DbSession
                 "direction": m.direction,
                 "text": m.body,
                 "admin": admin_display.get(m.admin_id) if m.admin_id else None,
+                # Outbound rows have three authors now — an operator, the canned
+                # acknowledgement, and the assistant. Without this the dossier shows the
+                # last two identically, and nobody can tell what the client was actually told.
+                "via_ai": bool(m.via_ai),
                 "created_at": m.created_at.isoformat(),
             }
             for m in msgs
@@ -3388,6 +3392,13 @@ _SETTINGS_WHITELIST: frozenset[str] = frozenset(
         "attribution",
         "bot_channel_url",
         "bot_support_url",
+        # AI support assistant — two operator toggles plus the single chat its courtesy
+        # copies go to (see services/ai_support.py). The chat is editable through the API
+        # but deliberately not on screen: it defaults to the support handle, and the panel
+        # offers the two decisions an operator actually makes.
+        "ai_assistant_enabled",
+        "ai_assistant_ping_ops",
+        "ai_assistant_ping_chat",
     }
 )
 

@@ -22,6 +22,7 @@ dependencies = [
     "sentry-sdk[fastapi]>=2.5",
     "email-validator>=2.1",
     "python-multipart>=0.0.9",
+    "anthropic>=0.40",
 ]
 
 [project.optional-dependencies]
