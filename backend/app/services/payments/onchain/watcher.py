@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import log
@@ -376,6 +376,36 @@ async def revalidate_finalized(
     return reorged
 
 
+# How long after an invoice's deadline we keep watching its chain. Somebody who sends an
+# hour late still sent us money, and the watcher finding it is the difference between an
+# order an operator can settle and a payment nobody can see. A day covers the human cases
+# (wrong app, exchange queue, went to bed) while still leaving the chain unwatched almost
+# all of the time on a shop doing a handful of invoices a week.
+_LATE_PAYMENT_GRACE = timedelta(hours=24)
+
+
+async def _deposits_expected(session: AsyncSession, chain: str) -> bool:
+    """Is any deposit still worth looking for on this chain?
+
+    True while an invoice is open, and for a day after the last one lapsed. False the rest
+    of the time, which on a small shop is almost always — and every tick that answers
+    False costs one cheap block-height call instead of a log scan.
+    """
+    cutoff = datetime.now(UTC) - _LATE_PAYMENT_GRACE
+    found = await session.scalar(
+        select(Invoice.id)
+        .where(
+            Invoice.chain == chain,
+            or_(
+                Invoice.status.in_(("pending", "confirming")),
+                Invoice.expires_at >= cutoff,
+            ),
+        )
+        .limit(1)
+    )
+    return found is not None
+
+
 async def run_chain_tick(
     session: AsyncSession,
     client: ChainClient,
@@ -399,7 +429,17 @@ async def run_chain_tick(
 
     transfers: list[IncomingTransfer] = []
     to_block = cursor.last_scanned_block
-    if methods and head >= from_block:
+    # Nothing is owed on this chain: skip the log scan, which is the expensive call by an
+    # order of magnitude, and carry the cursor forward to the head instead. A deposit
+    # cannot belong to an invoice that does not exist yet, so nothing is lost by not
+    # looking — and the cursor staying current is what stops a backlog forming for the
+    # next real payment to crawl through.
+    expecting = await _deposits_expected(session, client.chain)
+    if methods and head >= from_block and not expecting:
+        cursor.last_scanned_block = head
+        cursor.updated_at = datetime.now(UTC)
+        to_block = head
+    elif methods and head >= from_block:
         to_block = min(head, from_block + max_blocks - 1)
         transfers = await client.scan(from_block=from_block, to_block=to_block, methods=methods)
         for transfer in transfers:
