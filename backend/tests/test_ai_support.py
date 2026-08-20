@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest_asyncio
 from app.bot.handlers import conversation
-from app.models import AdminUser, ConversationMessage, Tariff, User
+from app.models import AdminUser, ConversationMessage, Location, StateCity, Tariff, User
 from app.services import ai_support
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -428,6 +428,33 @@ async def test_history_is_alternating_turns_the_api_will_accept(session) -> None
     assert [t["role"] for t in turns] == ["user", "assistant", "user"]
     assert turns[0]["content"] == "привет\nвы работаете?"
     assert turns[-1]["content"] == "сколько стоит?"
+
+
+async def test_the_fact_sheet_states_coverage_separately_from_stock(session) -> None:
+    """"Which states do you have" is not "what is free right now".
+
+    Asked the first, the assistant answered from live stock alone and told the customer it
+    only knew current availability — about a coverage list the client publishes on their
+    own site. Coverage comes from the operator's state→city mapping, not from the
+    locations table, which fills itself with whatever city an exit IP reported and on
+    production held a hundred rows like "Ames" with no state at all.
+    """
+    session.add_all(
+        [
+            StateCity(state_code="NV", city="Las Vegas"),
+            StateCity(state_code="TX", city="Dallas"),
+            Location(city="Ames", state_code=""),  # junk the rotation left behind
+        ]
+    )
+    await session.commit()
+
+    facts = await ai_support.build_facts(session)
+
+    assert "Las Vegas (NV)" in facts
+    assert "Dallas (TX)" in facts
+    assert "Ames" not in facts
+    # And the two lists must not be presented as the same thing.
+    assert "we sell from" in facts
 
 
 async def test_the_fact_sheet_quotes_the_live_catalogue(session) -> None:

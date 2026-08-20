@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import log
-from app.models import ConversationMessage, Tariff, User
+from app.models import Connection, ConversationMessage, StateCity, Tariff, User
 from app.services import ops_alerts
 from app.services import settings as settings_svc
 
@@ -84,9 +84,14 @@ English). In Russian address the customer as "вы".
 - 1-3 short sentences, polite and to the point. No emoji, no sales pressure, no markdown.
 - Purchases, free-trial activation and access management all happen in this bot's mini app \
 (the "Open app" button) — point the customer there when they ask how to buy.
+- Coverage and availability are different questions and the facts list them separately. \
+"Which states/cities/carriers do you have" is answered in full from the coverage lines — \
+that is what we sell and it does not change minute to minute. Only "what can I buy right \
+now" is answered from the free-this-second lines. Never tell a customer you only know \
+current stock: the coverage list is right there.
 - Never promise guaranteed uptime, undetectability, that blocks are bypassed, refunds, \
-discounts, or that a specific city+carrier pair is in stock right now. For stock questions \
-say live availability is shown in the app's catalog.
+discounts, or that a specific city+carrier pair is free at this moment — for that, say \
+live availability is shown in the app's catalog.
 
 WHEN TO ESCALATE — reply with the single word ESCALATE and nothing else if ANY of these \
 apply:
@@ -195,12 +200,26 @@ async def build_facts(session: AsyncSession) -> str:
             plans.append(f"{t.name} — {price}{span}")
         lines.append("- Plans: " + "; ".join(plans) + ".")
 
+    # Where we sell, as the operator has declared it — the state→city mapping they
+    # maintain in the console, which is also what the client advertises. NOT the locations
+    # table: that fills itself with whatever city an exit IP reported as phones rotate, and
+    # on production it held a hundred rows like "Ames" and "Antigo" with no state at all.
+    # Asked "which states do you have", the assistant used to answer from live stock alone
+    # and told the customer it only knew what was free — about a list we publish.
+    with contextlib.suppress(Exception):
+        coverage = list(
+            await session.execute(select(StateCity.state_code, StateCity.city))
+        )
+        if coverage:
+            places = sorted(f"{city} ({state})" for state, city in coverage)
+            lines.append("- States/cities we sell from: " + "; ".join(places) + ".")
+
     with contextlib.suppress(Exception):
         available = await allocator.available_locations(session)
-        # Only what is free this second. The catalogue also lists cities that are stocked
-        # but fully rented, which is right for a picker that can grey them out — said aloud
-        # by the assistant, "we have Chicago" would be a promise about a phone somebody
-        # else is using.
+        # A separate, smaller list: what can be bought this second. The catalogue also
+        # lists cities that are stocked but fully rented, which is right for a picker that
+        # greys them out — said aloud, "we have Chicago" would be a promise about a phone
+        # somebody else is already using.
         cities = sorted(
             f"{loc['city']}, {loc['state_code']}" for loc in available if int(loc["free"]) > 0
         )
@@ -208,9 +227,27 @@ async def build_facts(session: AsyncSession) -> str:
             {c["carrier"] for loc in available for c in loc["carriers"] if int(c["free"]) > 0}
         )
         if cities:
-            lines.append("- Cities with stock right now: " + "; ".join(cities) + ".")
+            lines.append("- Free to buy right this second: " + "; ".join(cities) + ".")
         if carriers:
-            lines.append("- Carriers available right now: " + ", ".join(carriers) + ".")
+            lines.append("- Carriers free right this second: " + ", ".join(carriers) + ".")
+
+    # Every carrier we hold a phone on, free or not — the answer to "which networks do you
+    # have", which is a different question from "what can I buy now". Read from the pool
+    # rather than written here, for the same reason the prices are.
+    with contextlib.suppress(Exception):
+        all_carriers = sorted(
+            c
+            for c in (
+                await session.scalars(
+                    select(Connection.carrier)
+                    .where(Connection.is_sellable, Connection.carrier.is_not(None))
+                    .distinct()
+                )
+            ).all()
+            if c
+        )
+        if all_carriers:
+            lines.append("- Carriers we work with: " + ", ".join(all_carriers) + ".")
 
     return "\n".join(lines)
 
