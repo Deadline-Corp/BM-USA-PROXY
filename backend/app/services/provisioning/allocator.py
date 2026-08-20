@@ -106,21 +106,29 @@ _UNPLACED_SQL = text(
 )
 
 
-async def available_locations(session: AsyncSession) -> list[dict[str, Any]]:
-    """Cities we sell from, each with the carriers it holds and how many are free now.
+async def available_locations(
+    session: AsyncSession, *, include_sold_out: bool = False
+) -> list[dict[str, Any]]:
+    """Cities that can be sold from, each with its carriers and how many are free now.
 
-    A city appears when it is switched on in the console AND holds at least one sellable
-    phone — whether or not that phone is free this second, which is why ``free`` can be 0.
-    Sold out and not-stocked are different answers and the picker shows them differently:
-    dropping a city the moment its last phone was taken made the menu flicker with demand,
-    while a city that has never held a phone must never be offered at all.
+    Two callers want two different lists, which is why the flag is explicit rather than a
+    default anybody can drift:
 
-    ``free`` is the allocator's own definition — the same predicate `allocate` uses — so a
-    non-zero count here cannot become "no free connection" at checkout.
+    * The **buyer's catalogue** passes ``include_sold_out=True``. A city whose phones are
+      all rented is still a city we sell; the app lists it greyed out and unselectable, so
+      the shop does not appear to shrink every time somebody else buys — with three
+      stocked cities, losing one to a sale halves the visible coverage.
+    * The **operator's Issue-access picker** takes the default. It has no greyed-out
+      state, so a city offered there is one the allocator has to be able to serve;
+      anything else is learned from a failed issue.
+
+    Either way ``free`` is the allocator's own definition — the same predicate `allocate`
+    uses — so a non-zero count cannot turn into "no free connection" at checkout, and a
+    city that has never held a sellable phone is absent from both lists.
 
     A connection with no carrier recorded still counts toward the city (it can be handed
     out when no carrier is asked for) but names no carrier of its own. A connection with no
-    *city* is not here at all — see `unplaced_free_counts`.
+    *city* is in neither list — see `unplaced_free_counts`.
     """
     rows = (await session.execute(_AVAILABILITY_SQL)).all()
     by_location: dict[int, dict[str, Any]] = {}
@@ -130,9 +138,12 @@ async def available_locations(session: AsyncSession) -> list[dict[str, Any]]:
             {"id": str(loc_id), "city": city, "state_code": state, "free": 0, "carriers": []},
         )
         entry["free"] += int(free)
-        if carrier:
+        if carrier and (int(free) > 0 or include_sold_out):
             entry["carriers"].append({"carrier": carrier, "free": int(free)})
-    return list(by_location.values())
+    cities = list(by_location.values())
+    if include_sold_out:
+        return cities
+    return [c for c in cities if c["free"] > 0]
 
 
 async def unplaced_free_counts(session: AsyncSession) -> dict[str, int]:

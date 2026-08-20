@@ -55,13 +55,18 @@ async def test_trial_tariff_has_one_swap(session) -> None:
     assert float(trial.price_usd) == 0.0
 
 
-async def test_tos_seeded_with_email_question(session) -> None:
+async def test_tos_is_seeded_with_no_questions_to_answer(session) -> None:
+    """Acceptance is the signature; the email box in front of it is gone.
+
+    It was one more thing to type before buying and collected an address support never
+    used — these customers are reached on Telegram. The mechanism is untouched, so an
+    operator can add a question back on the Terms screen; it is only the seeded one that
+    has gone.
+    """
     await seed_settings(session)
     await session.flush()
     tos = await session.scalar(select(AppSetting).where(AppSetting.key == "tos"))
     assert tos is not None
     assert tos.value["version"] == 1
     assert "Terms of Service" in tos.value["text_md"]
-    questions = tos.value["questions"]
-    assert [q["id"] for q in questions] == ["email"]
-    assert questions[0]["required"] is True
+    assert tos.value["questions"] == []

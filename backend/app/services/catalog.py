@@ -41,7 +41,9 @@ async def get_catalog(session: AsyncSession, user: User) -> dict[str, Any]:
             select(Tariff).where(Tariff.is_active).order_by(Tariff.sort_order)
         )).scalars().all()
     )
-    available = await allocator.available_locations(session)
+    # Sold-out cities included on purpose — the picker greys them out rather than hiding
+    # them, so the coverage on offer does not shrink every time somebody else buys.
+    available = await allocator.available_locations(session, include_sold_out=True)
     # Sellable phones with no city of their own. They can only ever be handed out under
     # "Any city", so they are counted there and nowhere else — leaving them out understated
     # what was actually on the shelf.
@@ -50,8 +52,12 @@ async def get_catalog(session: AsyncSession, user: User) -> dict[str, Any]:
     # Only carriers somebody can actually be given, across the cities that have stock. The
     # list used to be the three US networks, hardcoded, whether or not a single phone on
     # one was free.
+    # Carriers are filtered to those with something free, cities are not. The difference
+    # is what the picker can do with them: a sold-out city is shown greyed out and cannot
+    # be chosen, while the carrier dropdown has no such state — listing a carrier with
+    # nothing free there is a choice whose only outcome is "no free connection".
     carriers_present = sorted(
-        {c["carrier"] for loc in available for c in loc["carriers"]}
+        {c["carrier"] for loc in available for c in loc["carriers"] if int(c["free"]) > 0}
         | {carrier for carrier in unplaced if carrier != "any"}
     )
 

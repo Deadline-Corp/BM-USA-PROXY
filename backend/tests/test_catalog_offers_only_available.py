@@ -43,7 +43,15 @@ def _phone(cid: str, loc: Location, carrier: str, **kw) -> Connection:
     return Connection(**{**base, **kw})
 
 
-async def test_a_city_with_nothing_free_is_not_offered(session) -> None:
+async def test_a_city_with_nothing_free_cannot_be_picked(session) -> None:
+    """The city is listed, and its count says nothing is free — the picker greys it out.
+
+    This used to assert the city vanished. It stopped being right when the shop shrank to
+    three stocked cities: hiding one the moment its last phone went made the coverage look
+    like it had shrunk, and the menu moved under the buyer as other people bought. What
+    the original incident actually required is that the buyer cannot *choose* a city the
+    allocator would refuse, and a zero count is what the app disables the option on.
+    """
     user = await _user(session)
     la = await _city(session, "Los Angeles", "CA")
     vegas = await _city(session, "Las Vegas", "NV")
@@ -58,11 +66,13 @@ async def test_a_city_with_nothing_free_is_not_offered(session) -> None:
 
     catalog = await get_catalog(session, user)
 
-    assert [loc["city"] for loc in catalog["locations"]] == ["Las Vegas"]
-    assert catalog["any_city_free"]["any"] == 1
+    by_city = {loc["city"]: loc for loc in catalog["locations"]}
+    assert by_city["Los Angeles"]["free"]["any"] == 0, "held by iproxy is not free"
+    assert by_city["Las Vegas"]["free"]["any"] == 1
+    assert catalog["any_city_free"]["any"] == 1, "and it must not inflate the total"
 
 
-async def test_a_sold_phone_takes_its_city_off_the_list(session) -> None:
+async def test_a_sold_phone_leaves_its_city_visible_but_unpickable(session) -> None:
     user = await _user(session)
     vegas = await _city(session, "Las Vegas", "NV")
     phone = _phone("lv-2", vegas, "Verizon")
@@ -87,7 +97,11 @@ async def test_a_sold_phone_takes_its_city_off_the_list(session) -> None:
 
     catalog = await get_catalog(session, user)
 
-    assert catalog["locations"] == []
+    assert [loc["city"] for loc in catalog["locations"]] == ["Las Vegas"]
+    assert catalog["locations"][0]["free"]["any"] == 0
+    assert catalog["any_city_free"]["any"] == 0
+    # The carrier list is still free-only: unlike a city, the carrier dropdown has no
+    # sold-out state, so a carrier listed there is a choice that has to work.
     assert catalog["carriers"] == [], "no phone free means no carrier to choose either"
 
 
