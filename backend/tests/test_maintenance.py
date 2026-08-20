@@ -94,23 +94,44 @@ async def _access_span(
     return acc
 
 
-async def test_trial_gets_no_expiry_warnings(session) -> None:
-    # Total granted = 1h (trial): no warnings even though it's within the 1h window.
-    acc = await _access_span(session, started_h_ago=0.5, expires_in_h=0.5, idx=11)
+async def test_a_trial_is_warned_ten_minutes_out(session) -> None:
+    """The whole reason the warning moved from an hour to ten minutes.
+
+    A one-hour trial can never be given an hour's notice — the warning would fire the
+    instant it was issued — so trials were excluded and the client's most numerous
+    customers reached the end of their test with no word at all.
+    """
+    acc = await _access_span(session, started_h_ago=0.85, expires_in_h=0.1, idx=11)
     await sweep_access_expiries(session)
-    assert acc.warned_1h_at is None
-    assert acc.warned_24h_at is None
-    assert await _outbox(session, acc.user_id, "access_expiring_1h") == 0
+    assert acc.warned_1h_at is not None
+    # A free plan is told it can buy one, not to "make a payment to extend".
+    assert await _outbox(session, acc.user_id, "trial_expiring_10m") == 1
+    assert await _outbox(session, acc.user_id, "access_expiring_10m") == 0
     assert await _outbox(session, acc.user_id, "access_expiring_24h") == 0
 
 
-async def test_daily_gets_only_1h_warning(session) -> None:
-    # Total granted = 24h (daily), 1h from expiry: only the 1h warning, never the 24h one.
-    acc = await _access_span(session, started_h_ago=23, expires_in_h=1, idx=12)
+async def test_a_trial_is_left_alone_an_hour_out(session) -> None:
+    """The old hour-wide window is gone: at issue time a trial hears nothing."""
+    acc = await _access_span(session, started_h_ago=0, expires_in_h=1, idx=15)
     await sweep_access_expiries(session)
+    assert acc.warned_1h_at is None
+    assert await _outbox(session, acc.user_id, "trial_expiring_10m") == 0
+
+
+async def test_a_paid_plan_gets_the_paid_wording(session) -> None:
+    """Same moment, different sentence — a buyer renews, they do not "buy a plan"."""
+    acc = await _access_span(session, started_h_ago=23.9, expires_in_h=0.1, idx=12)
+    tariff = await session.scalar(select(Tariff).where(Tariff.code == acc.tariff_code))
+    assert tariff is not None
+    tariff.price_usd = 10
+    await session.flush()
+
+    await sweep_access_expiries(session)
+
     assert acc.warned_1h_at is not None
-    assert acc.warned_24h_at is None
-    assert await _outbox(session, acc.user_id, "access_expiring_1h") == 1
+    assert await _outbox(session, acc.user_id, "access_expiring_10m") == 1
+    assert await _outbox(session, acc.user_id, "trial_expiring_10m") == 0
+    # Daily still never gets the 24h notice — it would land at issue time.
     assert await _outbox(session, acc.user_id, "access_expiring_24h") == 0
 
 

@@ -25,8 +25,21 @@ DEFAULT_TEXTS: dict[str, str] = {
     "welcome": "Welcome to <b>BM USA Proxy</b>! Tap below to open the app.",
     "access_issued": "Your proxy is ready! Open the app to view your access.",
     "provisioning_delayed": "We're preparing your proxy — it'll be ready shortly.",
-    "access_expiring_24h": "Your proxy expires in 24 hours. Extend it in the app.",
-    "access_expiring_1h": "Your proxy expires in 1 hour. Extend it now to stay connected.",
+    "access_expiring_24h": (
+        "Your proxy access is expiring in 24 hrs. Don't forget to make a payment to extend.\n"
+        "Please contact us if you have any questions or issues."
+    ),
+    # The last call, ten minutes out, in two wordings: somebody on a free trial is told
+    # they can buy a plan, somebody already paying is told to renew. Sending the trial's
+    # sentence to a paying customer reads as though their plan never existed.
+    "access_expiring_10m": (
+        "Your proxy access will end in 10 mins. Don't forget to make a payment to extend.\n"
+        "Please contact us if you have any questions or issues."
+    ),
+    "trial_expiring_10m": (
+        "Your free trial will end in 10 mins, you can buy a plan to extend proxy.\n"
+        "Please contact us if you have any questions or issues."
+    ),
     "access_expired": "Your proxy has expired. Grab a new one in the app.",
     "access_extended": "Your proxy was extended — enjoy!",
     "access_reissued": "Your proxy was reissued — open the app for the new credentials.",
@@ -45,7 +58,7 @@ DEFAULT_TEXTS: dict[str, str] = {
 }
 
 _APP_BUTTON_CODES = {
-    "access_issued", "access_expiring_24h", "access_expiring_1h",
+    "access_issued", "access_expiring_24h", "access_expiring_10m", "trial_expiring_10m",
     "access_expired", "access_extended", "access_reissued",
 }
 

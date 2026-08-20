@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import log
-from app.models import Access, AccessEvent, Connection, Invoice, Order
+from app.models import Access, AccessEvent, Connection, Invoice, Order, Tariff
 from app.services import ops_alerts
 from app.services import settings as settings_svc
 from app.services.notifications import enqueue
@@ -23,9 +23,19 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+# How long before the end the last warning goes out. An hour was both too late to be
+# useful on a monthly plan and impossible on the one-hour trial — a 60-minute access would
+# have been warned the instant it was issued, so trials were excluded and got no warning
+# at all. Ten minutes is short enough that every plan, trial included, can be told.
+FINAL_WARNING = timedelta(minutes=10)
+
+
 async def sweep_access_expiries(session: AsyncSession) -> dict[str, int]:
-    """Warn at 24h/1h, expire+revoke when due. Idempotent via warned_* + dedupe keys."""
+    """Warn at 24h and 10 min, expire+revoke when due. Idempotent via warned_* + dedupe."""
     now = _utcnow()
+    # One lookup per plan per sweep, not per access — the sweep walks every live access
+    # and they share a handful of plans between them.
+    free_plans: dict[str, bool] = {}
     rows = (
         await session.execute(
             select(Access).where(Access.status.in_(("active", "expiring")))
@@ -60,16 +70,16 @@ async def sweep_access_expiries(session: AsyncSession) -> dict[str, int]:
             )
             expired += 1
         elif (
-            _allow_1h_warning(access)
-            and access.expires_at <= now + timedelta(hours=1)
+            access.expires_at <= now + FINAL_WARNING
             and access.warned_1h_at is None
         ):
             access.status = "expiring"
             access.warned_1h_at = now
             await enqueue(
-                session, user_id=access.user_id, template_code="access_expiring_1h",
+                session, user_id=access.user_id,
+                template_code=await _final_warning_template(session, access, free_plans),
                 payload={"access_public_id": str(access.public_id)},
-                dedupe_key=f"exp1:{access.id}",
+                dedupe_key=f"exp10:{access.id}",
             )
             warned += 1
         elif (
@@ -223,11 +233,21 @@ def _granted_minutes(access: Access) -> float | None:
     return (access.expires_at - access.starts_at).total_seconds() / 60.0
 
 
-def _allow_1h_warning(access: Access) -> bool:
-    """Skip the 1h warning for trial-length access (≤1h total) — a 1h proxy would
-    otherwise get warned the instant it's issued."""
-    total = _granted_minutes(access)
-    return total is None or total > 60
+async def _final_warning_template(
+    session: AsyncSession, access: Access, cache: dict[str, bool]
+) -> str:
+    """Which wording the last warning uses — a free trial is told to buy a plan, a paid
+    plan is told to renew.
+
+    Decided on the plan's price rather than on the literal code "trial", so renaming that
+    plan (or adding a second free one) cannot quietly start telling buyers to "buy a plan
+    to extend" something they are already paying for.
+    """
+    code = access.tariff_code
+    if code not in cache:
+        price = await session.scalar(select(Tariff.price_usd).where(Tariff.code == code))
+        cache[code] = price is not None and float(price) == 0
+    return "trial_expiring_10m" if cache[code] else "access_expiring_10m"
 
 
 def _allow_24h_warning(access: Access) -> bool:
