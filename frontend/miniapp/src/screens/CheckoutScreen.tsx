@@ -321,6 +321,27 @@ export function CheckoutScreen() {
             </div>
 
             {invoice.pay_address ? <PayAddressRow address={invoice.pay_address} /> : null}
+
+            {/* Inside the invoice card and directly under the address, because that is
+                where the buyer is looking in the seconds before they authorise the
+                transfer — a notice further down the page is read after the money has
+                gone. Red rather than the usual amber: this is the one mistake on this
+                screen that costs the buyer their automatic delivery. */}
+            <div className="flex items-start gap-2.5 border-t border-danger/25 bg-danger/[.06] px-4 py-3.5">
+              <AlertTriangle
+                size={17}
+                className="mt-px shrink-0 text-danger"
+                aria-hidden="true"
+              />
+              <div className="min-w-0">
+                <b className="block text-[13.5px] font-semibold text-danger">
+                  {strings.checkout.exactAmountTitle}
+                </b>
+                <p className="mt-0.5 text-[12.5px] leading-relaxed text-text-2">
+                  {strings.checkout.exactAmountBody}
+                </p>
+              </div>
+            </div>
           </div>
 
           {/* Actions disappear once the deposit is on-chain: "I've sent it" is answered by

@@ -166,6 +166,12 @@ export const strings = {
     cancelledTitle: "Order cancelled",
     cancelledBody: "This order was cancelled.",
     qrHint: "Scan with your phone",
+    // The single most common way a payment goes wrong: the buyer sends the invoiced
+    // amount, their exchange takes its fee out of it, and less arrives than we asked for
+    // — so the watcher cannot match the deposit and the order falls to an operator.
+    exactAmountTitle: "Send the exact amount",
+    exactAmountBody:
+      "Some exchanges and wallets take their fee out of the transfer, so less arrives than you sent. Add the network fee on top so we receive exactly the amount above — otherwise access is not issued automatically and your payment waits for an operator.",
     openInWallet: "Open in wallet",
     iHavePaid: "I've sent the payment",
     iHavePaidWaiting: "Watching the blockchain…",
