@@ -34,7 +34,7 @@ export function TariffCard({
       className={clsx(
         "flex flex-col gap-2.5 rounded-lg border p-4 shadow-card transition-colors duration-[180ms] ease-out",
         highlight
-          ? "border-accent bg-surface-2 shadow-[0_0_0_1px_rgba(25,80,121,.28),0_16px_40px_-22px_rgba(20,50,74,.14)]"
+          ? "border-accent bg-surface-2 shadow-[0_0_0_1px_rgba(48,80,197,.30),0_16px_40px_-22px_rgba(18,27,64,.14)]"
           : "border-border bg-surface",
       )}
     >

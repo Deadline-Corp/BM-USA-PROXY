@@ -9,19 +9,23 @@ export default {
       colors: {
         bg: "#F3FBFF",
         surface: "#FFFFFF",
-        "surface-2": "#EDF3F8",
+        "surface-2": "#EEF1F9",
         border: {
-          DEFAULT: "#D8E6F0",
-          2: "#C4D9E9",
+          DEFAULT: "#D9E0F2",
+          2: "#C7D0EC",
         },
+        // Ink family follows the client's approved mockup: near-black indigo
+        // headings, indigo-gray secondary text (hue ~228 across the board).
         text: {
-          DEFAULT: "#14324A",
-          2: "#4E6B81",
-          3: "#7C95A8",
+          DEFAULT: "#121B40",
+          2: "#4F5C88",
+          3: "#7F8AAB",
         },
+        // Vivid royal-indigo from the mockup's labels/icons/prices, one notch
+        // desaturated per the client's "синий чуть приглушеннее".
         accent: {
-          DEFAULT: "#195079",
-          2: "#124063",
+          DEFAULT: "#3050C5",
+          2: "#2743A9",
         },
         "on-accent": "#FFFFFF",
         success: "#1E9E6A",
@@ -41,10 +45,10 @@ export default {
         xl: "26px",
       },
       boxShadow: {
-        DEFAULT: "0 10px 28px -14px rgba(20,50,74,.18)",
-        soft: "0 6px 20px -10px rgba(20,50,74,.12)",
-        card: "0 6px 20px -10px rgba(20,50,74,.12)",
-        highlight: "0 16px 40px -22px rgba(20,50,74,.14)",
+        DEFAULT: "0 10px 28px -14px rgba(18,27,64,.18)",
+        soft: "0 6px 20px -10px rgba(18,27,64,.12)",
+        card: "0 6px 20px -10px rgba(18,27,64,.12)",
+        highlight: "0 16px 40px -22px rgba(18,27,64,.14)",
         cta: "0 12px 26px -12px rgba(205,56,51,.5)",
       },
       fontFamily: {
@@ -70,9 +74,9 @@ export default {
         ease: "cubic-bezier(.16,1,.3,1)",
       },
       backgroundImage: {
-        app: `radial-gradient(1100px 700px at 18% -8%, rgba(25,80,121,.06), transparent 60%),
-              radial-gradient(900px 600px at 110% 10%, rgba(194,65,60,.04), transparent 55%),
-              linear-gradient(160deg, #EAF4FB 0%, #F3FBFF 100%)`,
+        app: `radial-gradient(1100px 700px at 18% -8%, rgba(48,80,197,.06), transparent 60%),
+              radial-gradient(900px 600px at 110% 10%, rgba(205,56,51,.04), transparent 55%),
+              linear-gradient(160deg, #EDF1FB 0%, #F4F8FF 100%)`,
       },
       keyframes: {
         "m-fade": {

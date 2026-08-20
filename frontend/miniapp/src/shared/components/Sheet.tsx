@@ -27,13 +27,13 @@ export function Sheet({ open, onClose, title, children, footer }: SheetProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center" role="dialog" aria-modal="true" aria-label={title}>
       <div
-        className="absolute inset-0 bg-[#14324A]/40 animate-[m-fade_.2s_cubic-bezier(.16,1,.3,1)]"
+        className="absolute inset-0 bg-[#121B40]/40 animate-[m-fade_.2s_cubic-bezier(.16,1,.3,1)]"
         onClick={onClose}
         aria-hidden="true"
       />
       <div
         className={clsx(
-          "relative z-10 flex max-h-[80vh] w-full max-w-[420px] flex-col rounded-t-xl border border-b-0 border-border bg-surface shadow-[0_-16px_40px_-16px_rgba(20,50,74,.28)]",
+          "relative z-10 flex max-h-[80vh] w-full max-w-[420px] flex-col rounded-t-xl border border-b-0 border-border bg-surface shadow-[0_-16px_40px_-16px_rgba(18,27,64,.28)]",
           "animate-[m-fade_.22s_cubic-bezier(.16,1,.3,1)]",
         )}
       >
