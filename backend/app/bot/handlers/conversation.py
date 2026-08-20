@@ -15,7 +15,7 @@ from typing import Any
 
 from aiogram import F, Router
 from aiogram.types import Message
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.notifier import DEFAULT_TEXTS, render
@@ -46,18 +46,37 @@ _ACK_COOLDOWN = timedelta(hours=1)
 
 
 async def _ack_is_due(session: AsyncSession, user_id: int) -> bool:
-    last_out = await session.scalar(
-        select(func.max(ConversationMessage.created_at)).where(
+    """Whether to tell this client an operator is coming.
+
+    The promise is the last thing said to them that a person stands behind — a canned
+    acknowledgement or an operator's own reply. An AI answer is not one: it answers the
+    question that was asked and says nothing about a human.
+
+    Two rules, and the second exists because of a real silence on production. Somebody had
+    a six-message conversation with the assistant, said something abusive, and heard
+    nothing at all for the next six minutes — the assistant refused (correctly), operators
+    were alerted (correctly), and the acknowledgement was suppressed by a promise made
+    forty minutes earlier, before that conversation had even started. From the outside the
+    bot simply went mute mid-chat. So a promise is spent once the bot has answered
+    something after it: whatever it covered, it did not cover this.
+    """
+    now = datetime.now(UTC)
+
+    def _last(via_ai: bool) -> Select[tuple[datetime]]:
+        return select(func.max(ConversationMessage.created_at)).where(
             ConversationMessage.user_id == user_id,
             ConversationMessage.direction == "out",
-            # An AI answer does not count as the promise being kept. It is an answer to the
-            # question that was asked, not a statement that an operator is coming — and the
-            # next message may well be the one the assistant refused. Counting it here left
-            # that escalation with no reply to the client at all.
-            ConversationMessage.via_ai.is_(False),
+            ConversationMessage.via_ai.is_(via_ai),
         )
-    )
-    return last_out is None or datetime.now(UTC) - last_out >= _ACK_COOLDOWN
+
+    last_promise = await session.scalar(_last(False))
+    if last_promise is None or now - last_promise >= _ACK_COOLDOWN:
+        return True
+    # Still inside the hour — but if the assistant has spoken since, the conversation has
+    # moved on and this refusal needs a promise of its own. Three refusals in a row still
+    # produce one, because the first one's acknowledgement then becomes the newest promise.
+    last_answer = await session.scalar(_last(True))
+    return last_answer is not None and last_answer > last_promise
 
 
 async def _operator_active(session: AsyncSession, user_id: int) -> bool:

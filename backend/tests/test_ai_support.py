@@ -279,6 +279,35 @@ async def test_an_answer_does_not_swallow_the_next_escalations_acknowledgement(
     assert escalated.answers == [conversation._ACK_TEXT]
 
 
+async def test_a_stale_promise_does_not_mute_the_bot_mid_conversation(
+    bot_db, monkeypatch
+) -> None:
+    """Measured on production, and it read as the bot being broken.
+
+    Somebody was acknowledged, went quiet, came back forty minutes later and had a normal
+    conversation with the assistant, then said something it refused. The refusal was
+    correct and the operators were alerted — but the acknowledgement was suppressed by that
+    forty-minute-old promise, so the client heard nothing at all after chatting fluently.
+    A promise is spent once the bot has answered something after it.
+    """
+    _enable(monkeypatch)
+    _answers(monkeypatch, None)
+    first = _StubMessage("вопрос про оплату")
+    await conversation.capture_message(first)  # type: ignore[arg-type]
+    assert first.answers == [conversation._ACK_TEXT]  # the promise is made here
+
+    # …the conversation moves on, and the assistant handles it itself.
+    _answers(monkeypatch, "Месяц стоит $85.")
+    await conversation.capture_message(_StubMessage("сколько стоит?", message_id=2))  # type: ignore[arg-type]
+
+    # …then something it will not touch, still well inside the one-hour window.
+    _answers(monkeypatch, None)
+    refused = _StubMessage("вы у меня деньги украли", message_id=3)
+    await conversation.capture_message(refused)  # type: ignore[arg-type]
+
+    assert refused.answers == [conversation._ACK_TEXT]
+
+
 async def test_a_canned_acknowledgement_still_suppresses_the_next_one(
     bot_db, monkeypatch
 ) -> None:
