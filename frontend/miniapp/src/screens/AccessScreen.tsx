@@ -116,7 +116,7 @@ export function AccessScreen() {
             </div>
           ) : (
             <EmptyState
-              icon={<Zap size={28} strokeWidth={1.5} />}
+              icon={<Zap size={24} strokeWidth={1.5} />}
               title={strings.access.noAccessTitle}
               body={strings.access.noAccessBody}
               action={

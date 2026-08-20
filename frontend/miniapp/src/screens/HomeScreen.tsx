@@ -10,7 +10,7 @@ import {
   Clock,
 } from "lucide-react";
 import { useMe } from "../shared/hooks/useMe";
-import { BrandLogo } from "../shared/components/BrandLogo";
+import botLogo from "../assets/bot-logo.jpg";
 import { useActiveOrders } from "../shared/hooks/useOrder";
 import { useAccesses } from "../shared/hooks/useAccesses";
 import { useCatalog } from "../shared/hooks/useCatalog";
@@ -45,8 +45,8 @@ export function HomeScreen() {
     <div className="flex flex-col">
       {/* ── header ── */}
       <div className="mb-5 flex items-center gap-3">
-        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-surface shadow-soft">
-          <BrandLogo size={26} />
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-[14px] bg-white shadow-soft">
+          <img src={botLogo} alt="" className="h-10 w-10 object-contain" />
         </span>
         <div className="min-w-0 flex-1">
           {meQuery.isLoading ? (
@@ -167,7 +167,7 @@ export function HomeScreen() {
         </Card>
       ) : (
         <EmptyState
-          icon={<Zap size={28} strokeWidth={1.5} />}
+          icon={<Zap size={24} strokeWidth={1.5} />}
           title={strings.home.noAccessTitle}
           body={strings.home.noAccessBody}
           action={
