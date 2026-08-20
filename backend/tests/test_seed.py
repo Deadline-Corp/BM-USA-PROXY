@@ -21,6 +21,30 @@ async def test_seed_is_idempotent(session) -> None:
     assert locations == 9
 
 
+async def test_a_price_the_operator_changed_survives_the_next_deploy(session) -> None:
+    """The seed runs on every boot, so this is what a deploy does to the client's pricing.
+
+    It used to overwrite every column, and the client sold Daily at $4 while this file
+    said $10 — so each deploy quietly put it back to $10 and the sale price had to be
+    re-entered. Plans belong to whoever edits them in the console once they exist.
+    """
+    await seed_tariffs(session)
+    await session.flush()
+
+    daily = await session.scalar(select(Tariff).where(Tariff.code == "daily"))
+    assert daily is not None
+    daily.price_usd = 4
+    daily.name = "Daily (promo)"
+    await session.flush()
+
+    await seed_tariffs(session)  # the next deploy
+    await session.flush()
+    await session.refresh(daily)
+
+    assert float(daily.price_usd) == 4.0
+    assert daily.name == "Daily (promo)"
+
+
 async def test_trial_tariff_has_one_swap(session) -> None:
     await seed_tariffs(session)
     await session.flush()

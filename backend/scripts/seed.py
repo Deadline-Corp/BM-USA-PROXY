@@ -29,22 +29,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def seed_tariffs(session: AsyncSession) -> None:
+    """Create the plans that do not exist yet, and never touch the ones that do.
+
+    This used to overwrite every column on every boot, and the seed runs on each deploy —
+    so a price the client had set in the console was silently reset to the number written
+    here the next time anything shipped. Measured on production: Daily had been put back
+    to $10 while the client was selling it at $4, twice in one day.
+
+    A plan is operator-owned the moment it exists. New plans still arrive by being added
+    to TARIFFS; changing an existing one is a job for the Plans screen, not a deploy.
+    """
     for t in TARIFFS:
         stmt = insert(Tariff).values(**t)
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["code"],
-            set_={
-                "name": stmt.excluded.name,
-                "kind": stmt.excluded.kind,
-                "duration_minutes": stmt.excluded.duration_minutes,
-                "price_usd": stmt.excluded.price_usd,
-                "max_per_user": stmt.excluded.max_per_user,
-                "max_user_swaps": stmt.excluded.max_user_swaps,
-                "auto_issue": stmt.excluded.auto_issue,
-                "sort_order": stmt.excluded.sort_order,
-                "description": stmt.excluded.description,
-            },
-        )
+        stmt = stmt.on_conflict_do_nothing(index_elements=["code"])
         await session.execute(stmt)
 
 
