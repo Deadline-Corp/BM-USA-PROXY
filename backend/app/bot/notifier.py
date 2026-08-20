@@ -24,6 +24,9 @@ from app.services.notifications import pending_batch
 DEFAULT_TEXTS: dict[str, str] = {
     "welcome": "Welcome to <b>BM USA Proxy</b>! Tap below to open the app.",
     "access_issued": "Your proxy is ready! Open the app to view your access.",
+    # One message for a batch. Ten proxies issued one after another used to mean ten
+    # identical notifications, which reads as a malfunction rather than a delivery.
+    "accesses_issued": "Your {count} proxies are ready! Open the app to view them.",
     "provisioning_delayed": "We're preparing your proxy — it'll be ready shortly.",
     "access_expiring_24h": (
         "Your proxy access is expiring in 24 hrs. Don't forget to make a payment to extend.\n"
@@ -58,7 +61,8 @@ DEFAULT_TEXTS: dict[str, str] = {
 }
 
 _APP_BUTTON_CODES = {
-    "access_issued", "access_expiring_24h", "access_expiring_10m", "trial_expiring_10m",
+    "access_issued", "accesses_issued",
+    "access_expiring_24h", "access_expiring_10m", "trial_expiring_10m",
     "access_expired", "access_extended", "access_reissued",
 }
 

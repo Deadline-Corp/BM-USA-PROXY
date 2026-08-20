@@ -127,9 +127,15 @@ export const strings = {
     coverageLabel: "Coverage",
     payWithSheetTitle: "Set up your proxy",
     buySheetHint: "Pick where the proxy should be, or leave it on Any.",
-    payWithSheetHint: "Pick the network first, then the coin — the invoice is created for that one.",
+    payWithSheetHint: "The invoice is created for the coin you pick, on its own network.",
     payNetworkLabel: "Network",
     payNetworkPlaceholder: "Select a network…",
+    quantityLabel: "How many proxies",
+    availableNow: "Available with these options:",
+    shortfallTitle: "Not that many are free right now",
+    shortfallBody:
+      "You asked for {asked}, and {available} can be issued in this location right now. Continue and you buy {available}; the rest can be bought separately once more come free, or from another location.",
+    shortfallConfirm: "Continue with {count}",
     payCoinLabel: "Coin",
     payCoinPlaceholder: "Select a coin…",
     payCoinDisabled: "Choose a network first",
@@ -166,6 +172,7 @@ export const strings = {
     cancelledTitle: "Order cancelled",
     cancelledBody: "This order was cancelled.",
     qrHint: "Scan with your phone",
+    proxiesInThisOrder: "proxies in this order",
     // The single most common way a payment goes wrong: the buyer sends the invoiced
     // amount, their exchange takes its fee out of it, and less arrives than we asked for
     // — so the watcher cannot match the deposit and the order falls to an operator.

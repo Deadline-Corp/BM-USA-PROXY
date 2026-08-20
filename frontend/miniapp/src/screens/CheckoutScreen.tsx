@@ -307,6 +307,14 @@ export function CheckoutScreen() {
                   {strings.checkout.amountApprox} <Num>{formatUsd(invoice.amount_usd)}</Num> USD
                   {invoice.crypto_network ? ` · ${invoice.crypto_network}` : ""}
                 </span>
+                {/* A total for several proxies needs saying, or an invoice for $20 against
+                    a plan priced at $10 reads as a mistake — and the count may be lower
+                    than what was asked for, if the shelf was short. */}
+                {(orderQuery.data.quantity ?? 1) > 1 ? (
+                  <span className="text-[12.5px] font-medium text-text-2">
+                    <Num>{orderQuery.data.quantity}</Num> {strings.checkout.proxiesInThisOrder}
+                  </span>
+                ) : null}
               </div>
               {/* Caption matters more than it looks: with Telegram open on a desktop the
                   QR is the only comfortable way to pay, and nothing on screen said so. */}

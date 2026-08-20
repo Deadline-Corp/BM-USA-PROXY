@@ -27,7 +27,15 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-async def provision_access(session: AsyncSession, *, order: Order) -> Access:
+async def provision_access(
+    session: AsyncSession, *, order: Order, notify: bool = True
+) -> Access:
+    """Issue one proxy against `order`.
+
+    ``notify`` exists for multi-quantity orders: ten proxies issued one after another
+    would otherwise send the buyer ten identical "your proxy is ready" messages. The
+    caller doing the batch turns it off and sends one message naming the count.
+    """
     alloc = await allocate(session, location_id=order.location_id, carrier=order.carrier)
     if alloc is None:
         raise ProvisioningError("no free connection")
@@ -67,12 +75,13 @@ async def provision_access(session: AsyncSession, *, order: Order) -> Access:
     order.status = "completed"
     order.completed_at = now
     session.add(AccessEvent(access_id=access.id, type="issued", actor="system"))
-    await enqueue(
-        session,
-        user_id=order.user_id,
-        template_code="access_issued",
-        payload={"access_public_id": str(access.public_id)},
-    )
+    if notify:
+        await enqueue(
+            session,
+            user_id=order.user_id,
+            template_code="access_issued",
+            payload={"access_public_id": str(access.public_id)},
+        )
     return access
 
 

@@ -14,6 +14,7 @@ from app.models import NotificationOutbox
 TEMPLATES = {
     "welcome",
     "access_issued",
+    "accesses_issued",
     "provisioning_delayed",
     "invoice_expiring",
     "access_expiring_24h",

@@ -36,6 +36,9 @@ class Order(Base):
     tariff_id: Mapped[int] = mapped_column(ForeignKey("tariffs.id"), nullable=False)
     tariff_code: Mapped[str] = mapped_column(Text, nullable=False)
     duration_minutes: Mapped[int | None] = mapped_column(Integer)
+    # How many proxies this order buys. `amount_usd` is the total for all of them, not the
+    # unit price — a buyer taking ten pays once, and the watcher matches one deposit.
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1", default=1)
     amount_usd: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     location_id: Mapped[int | None] = mapped_column(ForeignKey("locations.id"))
     carrier: Mapped[str | None] = mapped_column(Text)

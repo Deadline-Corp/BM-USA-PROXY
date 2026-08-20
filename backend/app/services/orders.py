@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -16,8 +17,9 @@ from app.core.errors import (
     TermsNotAccepted,
     ValidationError,
 )
+from app.core.logging import log
 from app.models import Access, AccessEvent, Connection, Invoice, Order, Tariff, User
-from app.services import referral
+from app.services import ops_alerts, referral
 from app.services import settings as settings_svc
 from app.services.catalog import trial_available
 from app.services.notifications import enqueue
@@ -124,6 +126,11 @@ async def guard_order_attempt(session: AsyncSession, *, user_id: int, tariff_cod
     await order_guard(user_id)
 
 
+# Nobody self-serves more than this in one go, and a typo in a quantity box should not be
+# able to quote somebody five figures. Larger orders are a conversation with an operator.
+MAX_QUANTITY = 50
+
+
 async def create_order(
     session: AsyncSession,
     *,
@@ -133,7 +140,15 @@ async def create_order(
     carrier: str | None = None,
     asset: str | None = None,
     network: str | None = None,
+    quantity: int = 1,
 ) -> tuple[Order, Invoice | None]:
+    """Create an order for `quantity` proxies, trimmed to what is actually on the shelf.
+
+    Asking for ten where seven are free is not an error — it is a customer who wants ten.
+    They are sold the seven and told so; the app asks them to confirm that before this is
+    called, and the remaining three are a second purchase once stock returns. Trimming
+    here rather than rejecting is what keeps a sale on the table.
+    """
     if not await is_tos_accepted(session, user):
         raise TermsNotAccepted("accept the Terms of Use first")
 
@@ -168,15 +183,27 @@ async def create_order(
             if used >= tariff.max_per_user:
                 raise ValidationError("purchase limit reached for this tariff")
 
-    if await count_available(session, location_id=location_id, carrier=carrier) == 0:
+    if quantity < 1 or quantity > MAX_QUANTITY:
+        raise ValidationError(f"quantity must be between 1 and {MAX_QUANTITY}")
+    # A capped tariff is capped per user, so buying several at once would walk straight
+    # around it — the trial above being the one that matters.
+    if tariff.max_per_user is not None and quantity > 1:
+        raise ValidationError("this plan is limited to one per customer")
+
+    free_now = await count_available(session, location_id=location_id, carrier=carrier)
+    if free_now == 0:
         raise Conflict("sold out for the requested city/carrier")
+    granted = min(quantity, free_now)
 
     order = Order(
         user_id=user.id,
         tariff_id=tariff.id,
         tariff_code=tariff.code,
         duration_minutes=tariff.duration_minutes,
-        amount_usd=tariff.price_usd,
+        quantity=granted,
+        # The total, not the unit price: one invoice, one deposit, one amount for the
+        # watcher to match.
+        amount_usd=Decimal(str(tariff.price_usd)) * granted,
         location_id=location_id,
         carrier=carrier,
         referrer_user_id=user.referrer_user_id,
@@ -323,22 +350,60 @@ async def create_extension_order(
 
 
 async def _provision_or_review(session: AsyncSession, order: Order) -> None:
-    try:
-        order.status = "provisioning"
-        await provision_access(session, order=order)
-    except ProvisioningError:
-        # Release the connection held by the half-created access: mark it failed
-        # and record an event so the invariant (one live access per connection) frees up.
-        access = await session.scalar(
-            select(Access).where(
-                Access.order_id == order.id, Access.status == "provisioning"
+    """Issue every proxy the order paid for, and hand the shortfall to a human.
+
+    Stock is checked when the order is created, but the money arrives minutes later and
+    somebody else may have bought in between. Issuing what is left rather than failing the
+    whole order matters once an order can be ten: a buyer who paid for ten and can be given
+    eight should have eight working proxies now, not nothing while a human is found.
+
+    Whatever could not be issued leaves the order in manual_review with the accesses that
+    did succeed intact — the operator settles the difference, which is a refund or a
+    hand-issue depending on what came back into stock.
+    """
+    order.status = "provisioning"
+    issued = 0
+    wanted = max(1, int(order.quantity or 1))
+    failure: ProvisioningError | None = None
+
+    for _ in range(wanted):
+        try:
+            # Silent per proxy — one message naming the count goes out below, because ten
+            # copies of "your proxy is ready" is not ten times as useful as one.
+            await provision_access(session, order=order, notify=False)
+            issued += 1
+        except ProvisioningError as exc:
+            failure = exc
+            # Release the connection held by the half-created access: mark it failed and
+            # record an event so the invariant (one live access per connection) frees up.
+            access = await session.scalar(
+                select(Access).where(
+                    Access.order_id == order.id, Access.status == "provisioning"
+                )
             )
+            if access is not None:
+                access.status = "failed"
+                session.add(
+                    AccessEvent(access_id=access.id, type="provision_failed", actor="system")
+                )
+            break  # the pool is empty or the provider is down; the rest will fail too
+
+    if issued:
+        await enqueue(
+            session,
+            user_id=order.user_id,
+            template_code="access_issued" if issued == 1 else "accesses_issued",
+            payload={"count": issued},
         )
-        if access is not None:
-            access.status = "failed"
-            session.add(
-                AccessEvent(access_id=access.id, type="provision_failed", actor="system")
-            )
+
+    if issued < wanted:
+        log.warning(
+            "order.partially_provisioned",
+            order_id=order.id,
+            wanted=wanted,
+            issued=issued,
+            error=str(failure) if failure else None,
+        )
         order.status = "manual_review"
         await enqueue(
             session,
@@ -346,6 +411,12 @@ async def _provision_or_review(session: AsyncSession, order: Order) -> None:
             template_code="provisioning_delayed",
             payload={"order_public_id": str(order.public_id)},
         )
+        with contextlib.suppress(Exception):
+            await ops_alerts.notify_ops(
+                session,
+                f"⚠️ Order {order.public_id} paid for {wanted} but only {issued} could be "
+                f"issued ({order.tariff_code}). The rest needs a decision.",
+            )
 
 
 async def get_by_public_id(session: AsyncSession, public_id: str, *, user_id: int | None = None) -> Order:

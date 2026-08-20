@@ -16,7 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import log
 from app.models import Invoice, Order, PaymentEvent
-from app.services.orders import mark_paid
 from app.services.payments.base import PaymentEventDTO
 
 # forward-only ordering of invoice statuses (higher = later; never regress)
@@ -106,6 +105,12 @@ async def process_payment_event(session: AsyncSession, event_id: int) -> str:
                 select(Order).where(Order.id == invoice.order_id).with_for_update()
             )
             if order is not None:
+                # Imported here rather than at module scope: orders reaches the on-chain
+                # config, which reaches the watcher, which reaches this module — so a
+                # top-level import makes whichever of the two is loaded first fail. Tests
+                # were already working around it by importing orders inside functions.
+                from app.services.orders import mark_paid
+
                 await mark_paid(session, order=order, source=f"webhook:{event.provider}")
     elif new_status in ("underpaid", "overpaid"):
         invoice.status = "manual_review"

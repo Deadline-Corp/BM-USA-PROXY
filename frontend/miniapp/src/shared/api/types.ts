@@ -92,6 +92,8 @@ export interface OrderSummary {
   public_id: string;
   status: OrderStatus;
   amount_usd: number;
+  /** How many proxies were actually sold — can be fewer than asked for. */
+  quantity?: number;
 }
 
 export interface CreateOrderResponse {
@@ -106,6 +108,8 @@ export interface CreateOrderBody {
   /** Rail to quote the invoice in; omitted falls back to the server's first rail. */
   asset?: string;
   network?: string;
+  /** How many proxies. Trimmed server-side to what is free; the response says how many. */
+  quantity?: number;
 }
 
 export interface OrderStatusResponse {
@@ -114,6 +118,9 @@ export interface OrderStatusResponse {
   access_public_id: string | null;
   /** Payment details, so checkout survives a reload or a reopened mini app. */
   invoice: Invoice | null;
+  /** How many proxies this order buys — can be fewer than were asked for. */
+  quantity?: number;
+  tariff_code?: string;
 }
 
 /** An order still in flight — shown on Home so an unpaid one is never lost. */
@@ -135,10 +142,11 @@ export interface PaymentMethod {
   asset: string;
   network: string;
   chain: string;
-  /** "Tron", "BNB Chain (BSC)" — what the first dropdown shows. */
+  /** "Tron", "BNB Chain (BSC)" — groups the coin list. */
   chain_label: string;
-  /** "USDT — TRC-20", "BTC — native coin" — what the second dropdown shows. */
+  /** "USDT — TRC-20", "BTC — native coin". */
   coin_label: string;
+  /** "USDT — TRC-20 (Tron)" — the one row the buyer picks. */
   label: string;
   min_amount_usd: number;
 }

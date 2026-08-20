@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { LayoutGrid, MapPin, Radio, Send, Briefcase, Users, MessageCircle, ChevronRight } from "lucide-react";
+import { LayoutGrid, Layers, MapPin, Radio, Send, Briefcase, Users, MessageCircle, ChevronRight } from "lucide-react";
 import { useCatalog } from "../shared/hooks/useCatalog";
 import { useCreateOrder, usePaymentMethods } from "../shared/hooks/useOrder";
 import { DEFAULT_CHANNEL_URL, DEFAULT_SUPPORT_URL, useAppLinks } from "../shared/hooks/useLinks";
@@ -24,6 +24,10 @@ import { cacheInvoice } from "../shared/lib/invoiceCache";
 import type { Carrier, PaymentMethod, Tariff } from "../shared/api/types";
 
 const ANY = "any" as const;
+
+// Mirrors orders.MAX_QUANTITY on the backend, which is the one that actually enforces it.
+// Here it only stops the number box quoting a figure the server will refuse.
+const MAX_QUANTITY = 50;
 
 /** Where the Terms gate should drop the buyer back into this screen's purchase. */
 function buyReturnTo(tariff: Tariff): string {
@@ -54,26 +58,43 @@ export function CatalogScreen() {
   const paymentsUnconfigured = !methodsQuery.isLoading && methods.length === 0;
   const [paySheetOpen, setPaySheetOpen] = useState(false);
   const [payingFor, setPayingFor] = useState<Tariff | null>(null);
-  const [payChain, setPayChain] = useState<string>("");
   const [payCoin, setPayCoin] = useState<string>("");
+  const [quantity, setQuantity] = useState<string>("1");
+  const [shortfall, setShortfall] = useState<{ asked: number; available: number } | null>(null);
 
-  // Chains in configured order, deduplicated — the first dropdown.
-  const payChains = useMemo(() => {
-    const seen = new Map<string, string>();
-    for (const m of methods) if (!seen.has(m.chain)) seen.set(m.chain, m.chain_label);
-    return [...seen].map(([chain, label]) => ({ chain, label }));
-  }, [methods]);
-  // Coins on the chosen chain — the second dropdown, empty until a chain is picked.
-  const payCoins = useMemo(
-    () => methods.filter((m) => m.chain === payChain),
-    [methods, payChain],
+  // One list, grouped by network, rather than a network dropdown feeding a coin dropdown.
+  // Two controls to answer what is really one question ("what am I paying with?") is a
+  // step people got stuck on, and with a handful of rails the flat list is shorter than
+  // the pair of menus it replaces. Sorted by network so the same coin on different chains
+  // sits together instead of scattering.
+  const payOptions = useMemo(
+    () =>
+      [...methods].sort(
+        (a, b) =>
+          a.chain_label.localeCompare(b.chain_label) || a.coin_label.localeCompare(b.coin_label),
+      ),
+    [methods],
   );
-  const chosenMethod = payCoins.find((m) => `${m.asset}/${m.network}` === payCoin) ?? null;
+  const chosenMethod = payOptions.find((m) => `${m.asset}/${m.network}` === payCoin) ?? null;
   // A rail only has to be *chosen* when the plan costs something and more than one is
   // configured. With a single rail (today's production) or a free plan there is nothing to
-  // ask, so the sheet shows city and carrier alone.
+  // ask, so the sheet shows quantity, city and carrier alone.
   const needsPaymentChoice = methods.length > 1 && (payingFor?.price_usd ?? 0) > 0;
   const effectiveMethod = needsPaymentChoice ? chosenMethod : (methods[0] ?? null);
+
+  // How many are free under the current city+carrier choice, straight from the catalogue
+  // the screen already has — no extra request, and it is the same count the backend will
+  // trim against. "Any city" adds the phones that belong to no city at all.
+  const availableNow = useMemo(() => {
+    const data = catalogQuery.data;
+    if (!data) return 0;
+    const key = carrier === ANY ? "any" : carrier;
+    if (locationId === ANY) return Number(data.any_city_free?.[key] ?? 0);
+    const loc = data.locations.find((l) => l.id === locationId);
+    return Number(loc?.free?.[key] ?? 0);
+  }, [catalogQuery.data, locationId, carrier]);
+
+  const wantedQty = Math.max(1, Math.min(MAX_QUANTITY, Number.parseInt(quantity, 10) || 1));
   const [resellerSheetOpen, setResellerSheetOpen] = useState(false);
   const [resellerMessage, setResellerMessage] = useState("");
   const [orderError, setOrderError] = useState<string | null>(null);
@@ -116,20 +137,38 @@ export function CatalogScreen() {
     openBuySheet(tariff);
   }
 
+  /** Continue from the buy sheet: warn once if the shelf is short, then place the order. */
+  function handleContinue() {
+    if (!payingFor) return;
+    // Free plans are one per customer, so the quantity box never appears for them and
+    // there is nothing to reconcile.
+    const asked = payingFor.price_usd > 0 ? wantedQty : 1;
+    if (asked > availableNow && shortfall === null) {
+      setShortfall({ asked, available: availableNow });
+      return;
+    }
+    const finalQty = Math.min(asked, Math.max(1, availableNow));
+    setShortfall(null);
+    void placeOrder(payingFor, effectiveMethod, finalQty);
+  }
+
   function openBuySheet(tariff: Tariff) {
     setOrderError(null);
+    setQuantity("1");
+    setShortfall(null);
     // Always opens, even for a free plan on a single rail. The sheet is where the city and
     // carrier are chosen now, so skipping it when there is no payment decision would take
     // the geo choice away entirely — which is what the catalogue dropdowns used to carry.
     // Start clean: a selection left over from a previous, abandoned purchase is exactly the
     // sort of thing that quietly sends the next order down the wrong rail.
-    setPayChain(payChains.length === 1 ? payChains[0].chain : "");
-    setPayCoin("");
+    setPayCoin(
+      payOptions.length === 1 ? `${payOptions[0].asset}/${payOptions[0].network}` : "",
+    );
     setPayingFor(tariff);
     setPaySheetOpen(true);
   }
 
-  async function placeOrder(tariff: Tariff, method: PaymentMethod | null) {
+  async function placeOrder(tariff: Tariff, method: PaymentMethod | null, qty = 1) {
     setPaySheetOpen(false);
     setOrderError(null);
     setPendingTariff(tariff.code);
@@ -142,6 +181,7 @@ export function CatalogScreen() {
             carrier: carrier === ANY ? undefined : carrier,
             asset: method?.asset,
             network: method?.network,
+            quantity: qty,
           }),
         // Same resume target as the Buy button: /me can say ToS are accepted while the
         // server disagrees (a new Terms version published mid-session), and this is
@@ -408,6 +448,37 @@ export function CatalogScreen() {
           </p>
         ) : null}
 
+        {/* Quantity first: it is the one answer that changes the price, and asking it
+            after the city meant re-reading the availability line backwards. Hidden for
+            free plans, which are one per customer. */}
+        {payingFor && payingFor.price_usd > 0 ? (
+          <>
+            <label
+              htmlFor="buy-qty"
+              className="mb-1 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-text-3"
+            >
+              <Layers size={12} className="shrink-0" aria-hidden="true" />
+              {strings.catalog.quantityLabel}
+            </label>
+            <input
+              id="buy-qty"
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={MAX_QUANTITY}
+              className="num mb-1 w-full rounded border border-border bg-surface px-3.5 py-3 text-[15px] text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              value={quantity}
+              onChange={(e) => {
+                setQuantity(e.target.value);
+                setShortfall(null); // a new number deserves a fresh look at the shelf
+              }}
+            />
+            <p className="mb-3 text-[12.5px] text-text-3">
+              {strings.catalog.availableNow} <Num>{availableNow}</Num>
+            </p>
+          </>
+        ) : null}
+
         {/* Where the proxy should be, asked here rather than above the plan list. On the
             catalogue they sat as two permanent dropdowns nobody had asked a question of
             yet; the choice only matters once a plan is being bought, so it belongs in the
@@ -462,48 +533,55 @@ export function CatalogScreen() {
           ))}
         </select>
 
-        {/* Network first, coin second, and only when there is a choice to make: with a
-            single rail enabled this is a list of one, which is a question with no answer
-            to give. Network first because with a dozen rails a flat list showing "USDT"
-            four times over tells the buyer nothing about which one they would be sending. */}
+        {/* One list rather than a network menu feeding a coin menu. Two controls for what
+            is really one question ("what am I paying with?") is a step buyers stalled on,
+            and the coin alone is ambiguous — the same USDT exists on four chains — so each
+            row names both. Grouped by network so those four sit together. Shown only when
+            there is a choice: with a single rail this would be a list of one. */}
         {needsPaymentChoice ? (
           <>
-        <label className="mb-1 block text-[12px] font-semibold uppercase tracking-wide text-text-3">
-          {strings.catalog.payNetworkLabel}
-        </label>
-        <select
-          className="mb-3 w-full rounded border border-border bg-surface px-3.5 py-3 text-[15px] text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-          value={payChain}
-          onChange={(e) => {
-            setPayChain(e.target.value);
-            setPayCoin(""); // a new network invalidates whatever coin was picked
-          }}
-        >
-          <option value="">{strings.catalog.payNetworkPlaceholder}</option>
-          {payChains.map((c) => (
-            <option key={c.chain} value={c.chain}>{c.label}</option>
-          ))}
-        </select>
-
-        <label className="mb-1 block text-[12px] font-semibold uppercase tracking-wide text-text-3">
-          {strings.catalog.payCoinLabel}
-        </label>
-        <select
-          className="mb-4 w-full rounded border border-border bg-surface px-3.5 py-3 text-[15px] text-text disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-text-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-          value={payCoin}
-          disabled={!payChain}
-          onChange={(e) => setPayCoin(e.target.value)}
-        >
-          <option value="">
-            {payChain ? strings.catalog.payCoinPlaceholder : strings.catalog.payCoinDisabled}
-          </option>
-          {payCoins.map((m) => (
-            <option key={`${m.asset}/${m.network}`} value={`${m.asset}/${m.network}`}>
-              {m.coin_label}
-            </option>
-          ))}
-        </select>
+            <label
+              htmlFor="buy-coin"
+              className="mb-1 block text-[12px] font-semibold uppercase tracking-wide text-text-3"
+            >
+              {strings.catalog.payCoinLabel}
+            </label>
+            <select
+              id="buy-coin"
+              className="mb-4 w-full rounded border border-border bg-surface px-3.5 py-3 text-[15px] text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              value={payCoin}
+              onChange={(e) => setPayCoin(e.target.value)}
+            >
+              <option value="">{strings.catalog.payCoinPlaceholder}</option>
+              {payOptions.map((m) => (
+                <option key={`${m.asset}/${m.network}`} value={`${m.asset}/${m.network}`}>
+                  {/* The server already builds the combined label; formatting it a second
+                      time here is how the two drift apart. */}
+                  {m.label}
+                </option>
+              ))}
+            </select>
           </>
+        ) : null}
+
+        {/* Asked for more than exists: say so before taking any money, name the number
+            they will actually get, and make continuing a deliberate second press. The
+            rest is a separate purchase once stock returns — said here so nobody thinks
+            the missing ones are coming with this order. */}
+        {shortfall ? (
+          <div className="mb-3 rounded border border-warning/40 bg-warning/[.08] px-3.5 py-3">
+            <b className="block text-[14px] font-semibold text-text">
+              {strings.catalog.shortfallTitle}
+            </b>
+            <p className="mt-0.5 text-[13px] leading-relaxed text-text-2">
+              {/* A global regex, not a plain string replace: the count is named twice in
+                  this sentence, and replace() takes only the first — which left the
+                  second one reading "{available}" to the buyer. */}
+              {strings.catalog.shortfallBody
+                .replace(/\{asked\}/g, String(shortfall.asked))
+                .replace(/\{available\}/g, String(shortfall.available))}
+            </p>
+          </div>
         ) : null}
 
         <Button
@@ -511,15 +589,22 @@ export function CatalogScreen() {
           block
           // A free plan needs no rail at all, and a single configured rail is not a choice
           // to be made — in both cases the only thing this sheet was waiting for is the
-          // city and carrier above.
-          disabled={(needsPaymentChoice && !chosenMethod) || pendingTariff !== null}
-          onClick={() => {
-            if (payingFor) void placeOrder(payingFor, effectiveMethod);
-          }}
+          // quantity, city and carrier above.
+          disabled={
+            (needsPaymentChoice && !chosenMethod) ||
+            pendingTariff !== null ||
+            availableNow < 1
+          }
+          onClick={handleContinue}
         >
-          {needsPaymentChoice || (payingFor?.price_usd ?? 0) > 0
-            ? strings.catalog.payContinue
-            : strings.catalog.buyContinue}
+          {shortfall
+            ? strings.catalog.shortfallConfirm.replace(
+                "{count}",
+                String(shortfall.available),
+              )
+            : needsPaymentChoice || (payingFor?.price_usd ?? 0) > 0
+              ? strings.catalog.payContinue
+              : strings.catalog.buyContinue}
         </Button>
       </Sheet>
 

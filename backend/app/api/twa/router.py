@@ -66,6 +66,9 @@ class CreateOrder(BaseModel):
     # right by accident once more than one is enabled.
     asset: str | None = None
     network: str | None = None
+    # How many proxies. Trimmed server-side to what is actually free, so the app asking
+    # for ten where seven are left gets an order for seven and is told the number back.
+    quantity: int = 1
 
 
 # The buyer picks a chain first and a coin second, so those two need separate labels.
@@ -181,11 +184,13 @@ async def create_order(body: CreateOrder, user: CurrentUser, session: DbSession)
     order, invoice = await orders_svc.create_order(
         session, user=user, tariff_code=body.tariff_code,
         location_id=body.location_id, carrier=body.carrier,
-        asset=body.asset, network=body.network,
+        asset=body.asset, network=body.network, quantity=body.quantity,
     )
     return {
+        # `quantity` is what was actually sold, which can be less than what was asked for
+        # — the checkout screen shows it, so nobody discovers the trim by counting proxies.
         "order": {"public_id": str(order.public_id), "status": order.status,
-                  "amount_usd": float(order.amount_usd)},
+                  "amount_usd": float(order.amount_usd), "quantity": int(order.quantity)},
         "invoice": _invoice_view(invoice, str(order.public_id)),
     }
 
@@ -242,6 +247,11 @@ async def order_status(public_id: str, user: CurrentUser, session: DbSession) ->
         "status": order.status,
         "invoice_status": inv.status if inv else None,
         "access_public_id": access_pid,
+        # What was actually sold. The checkout screen names it beside the amount, because
+        # an invoice for $20 when the plan says $10 is otherwise unexplained — and it may
+        # be fewer than was asked for, if the shelf was short when the order was placed.
+        "quantity": int(order.quantity or 1),
+        "tariff_code": order.tariff_code,
         # Payment details, so the checkout screen survives a reload or a reopened mini app
         # instead of depending on sessionStorage written at order-creation time.
         "invoice": _invoice_view(inv, str(order.public_id)),
