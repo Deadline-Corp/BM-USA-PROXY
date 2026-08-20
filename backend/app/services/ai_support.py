@@ -197,8 +197,16 @@ async def build_facts(session: AsyncSession) -> str:
 
     with contextlib.suppress(Exception):
         available = await allocator.available_locations(session)
-        cities = sorted(f"{loc['city']}, {loc['state_code']}" for loc in available)
-        carriers = sorted({c["carrier"] for loc in available for c in loc["carriers"]})
+        # Only what is free this second. The catalogue also lists cities that are stocked
+        # but fully rented, which is right for a picker that can grey them out — said aloud
+        # by the assistant, "we have Chicago" would be a promise about a phone somebody
+        # else is using.
+        cities = sorted(
+            f"{loc['city']}, {loc['state_code']}" for loc in available if int(loc["free"]) > 0
+        )
+        carriers = sorted(
+            {c["carrier"] for loc in available for c in loc["carriers"] if int(c["free"]) > 0}
+        )
         if cities:
             lines.append("- Cities with stock right now: " + "; ".join(cities) + ".")
         if carriers:

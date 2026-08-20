@@ -42,11 +42,18 @@ async def get_catalog(session: AsyncSession, user: User) -> dict[str, Any]:
         )).scalars().all()
     )
     available = await allocator.available_locations(session)
+    # Sellable phones with no city of their own. They can only ever be handed out under
+    # "Any city", so they are counted there and nowhere else — leaving them out understated
+    # what was actually on the shelf.
+    unplaced = await allocator.unplaced_free_counts(session)
 
     # Only carriers somebody can actually be given, across the cities that have stock. The
     # list used to be the three US networks, hardcoded, whether or not a single phone on
     # one was free.
-    carriers_present = sorted({c["carrier"] for loc in available for c in loc["carriers"]})
+    carriers_present = sorted(
+        {c["carrier"] for loc in available for c in loc["carriers"]}
+        | {carrier for carrier in unplaced if carrier != "any"}
+    )
 
     def per_carrier(loc: dict[str, Any]) -> dict[str, int]:
         counts = {c["carrier"]: int(c["free"]) for c in loc["carriers"]}
@@ -89,9 +96,10 @@ async def get_catalog(session: AsyncSession, user: User) -> dict[str, Any]:
                     for c in loc["carriers"]
                     if c["carrier"] == carrier
                 )
+                + unplaced.get(carrier, 0)
                 for carrier in carriers_present
             },
-            "any": total_free,
+            "any": total_free + unplaced["any"],
         },
         "trial_available": await trial_available(session, user),
     }
