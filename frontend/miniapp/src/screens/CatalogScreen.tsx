@@ -199,14 +199,14 @@ export function CatalogScreen() {
     <div className="flex flex-col">
       {/* ── header ── */}
       <div className="mb-4 flex items-center gap-2.5">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-accent/[.18] bg-accent/[.09] text-accent">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] border border-accent/[.14] bg-accent/[.07] text-accent">
           <LayoutGrid size={20} strokeWidth={1.5} aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
-          <b className="block font-head text-[15.5px] font-semibold leading-tight tracking-tight text-text">
+          <b className="block font-head text-[18px] font-extrabold leading-tight tracking-tight text-text">
             {strings.catalog.title}
           </b>
-          <span className="text-xs text-text-3">{strings.app.tagline}</span>
+          <span className="text-[13px] text-text-2">{strings.app.tagline}</span>
         </div>
       </div>
 
@@ -310,15 +310,15 @@ export function CatalogScreen() {
 
       {/* ── reseller ── */}
       <SectionLabel className="mt-[18px]">{strings.catalog.resellerTitle}</SectionLabel>
-      <div className="flex items-center gap-3.5 rounded-lg border border-border bg-surface p-4 shadow-card">
-        <span className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded border border-accent/[.22] bg-accent/10 text-accent">
+      <div className="flex items-center gap-3.5 rounded-lg border border-border/60 bg-surface p-4 shadow-card">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] border border-accent/[.14] bg-accent/[.07] text-accent">
           <Briefcase size={20} strokeWidth={1.5} aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
-          <b className="block font-head text-[14px] font-semibold leading-snug tracking-tight text-text">
+          <b className="block font-head text-[16px] font-bold leading-snug tracking-tight text-text">
             {strings.catalog.resellerTitle}
           </b>
-          <small className="text-xs leading-snug text-text-3">{strings.catalog.resellerBody}</small>
+          <small className="text-[13px] leading-snug text-text-3">{strings.catalog.resellerBody}</small>
         </div>
         <Button variant="primary" size="sm" className="whitespace-nowrap" onClick={() => setResellerSheetOpen(true)}>
           {strings.catalog.resellerCta}
@@ -326,7 +326,7 @@ export function CatalogScreen() {
       </div>
 
       {/* ── referral nudge ── */}
-      <div className="mt-2.5 flex items-center gap-2.5 rounded border border-accent/[.22] bg-accent/[.08] px-3.5 py-2.5 text-xs text-text-2">
+      <div className="mt-2.5 flex items-center gap-2.5 rounded border border-accent/[.18] bg-accent/[.07] px-3.5 py-3 text-[13px] text-text-2">
         <Users size={15} className="shrink-0 text-accent" aria-hidden="true" />
         <span>
           Refer a client &amp; earn a <b className="text-accent">commission</b> on every payment,
@@ -346,7 +346,7 @@ export function CatalogScreen() {
               {catalogQuery.data.locations.map((loc) => (
                 <span
                   key={loc.id}
-                  className="rounded-md border border-border bg-surface-2 px-1.5 py-0.5 text-[11px] text-text-3"
+                  className="rounded-md border border-border bg-surface-2 px-2 py-1 text-[12px] text-text-3"
                 >
                   {formatCityState(loc.city, loc.state_code)}
                 </span>
@@ -365,12 +365,12 @@ export function CatalogScreen() {
           rel="noopener noreferrer"
           className="flex items-center gap-3 border-b border-border py-3 no-underline last:border-b-0"
         >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-border bg-surface-2 text-text-2">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] border border-accent/[.14] bg-accent/[.07] text-accent">
             <Send size={17} strokeWidth={1.5} aria-hidden="true" />
           </span>
           <span className="min-w-0 flex-1">
-            <b className="block text-[13.5px] font-medium text-text">{strings.catalog.supportLinkLabel}</b>
-            <small className="text-[11.5px] text-text-3">Free trial · all sales inquiries</small>
+            <b className="block text-[15px] font-semibold text-text">{strings.catalog.supportLinkLabel}</b>
+            <small className="text-[12.5px] text-text-3">Free trial · all sales inquiries</small>
           </span>
           <ChevronRight size={15} className="shrink-0 text-text-3" aria-hidden="true" />
         </a>
@@ -380,12 +380,12 @@ export function CatalogScreen() {
           rel="noopener noreferrer"
           className="flex items-center gap-3 border-b border-border py-3 no-underline last:border-b-0"
         >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-border bg-surface-2 text-text-2">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] border border-accent/[.14] bg-accent/[.07] text-accent">
             <MessageCircle size={17} strokeWidth={1.5} aria-hidden="true" />
           </span>
           <span className="min-w-0 flex-1">
-            <b className="block text-[13.5px] font-medium text-text">{strings.catalog.channelLinkLabel}</b>
-            <small className="text-[11.5px] text-text-3">BM USA PROXY CLUB · news &amp; updates</small>
+            <b className="block text-[15px] font-semibold text-text">{strings.catalog.channelLinkLabel}</b>
+            <small className="text-[12.5px] text-text-3">BM USA PROXY CLUB · news &amp; updates</small>
           </span>
           <ChevronRight size={15} className="shrink-0 text-text-3" aria-hidden="true" />
         </a>
@@ -401,7 +401,7 @@ export function CatalogScreen() {
         title={strings.catalog.payWithSheetTitle}
       >
         {payingFor ? (
-          <p className="mb-3 text-[12.5px] leading-relaxed text-text-2">
+          <p className="mb-3 text-[13.5px] leading-relaxed text-text-2">
             {payingFor.name} — <Num className="font-semibold text-text">{formatUsd(payingFor.price_usd)}</Num>
             {". "}
             {needsPaymentChoice ? strings.catalog.payWithSheetHint : strings.catalog.buySheetHint}
@@ -414,14 +414,14 @@ export function CatalogScreen() {
             step that buying opens. Any means no constraint — the allocator's own default. */}
         <label
           htmlFor="buy-city"
-          className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-3"
+          className="mb-1 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-text-3"
         >
           <MapPin size={12} className="shrink-0" aria-hidden="true" />
           {strings.catalog.cityFilterLabel}
         </label>
         <select
           id="buy-city"
-          className="mb-3 w-full rounded border border-border bg-surface px-3 py-2.5 text-[13.5px] text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          className="mb-3 w-full rounded border border-border bg-surface px-3.5 py-3 text-[15px] text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           value={locationId === ANY ? "" : String(locationId)}
           onChange={(e) => setLocationId(e.target.value === "" ? ANY : Number(e.target.value))}
         >
@@ -443,14 +443,14 @@ export function CatalogScreen() {
 
         <label
           htmlFor="buy-carrier"
-          className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-3"
+          className="mb-1 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-text-3"
         >
           <Radio size={12} className="shrink-0" aria-hidden="true" />
           {strings.catalog.carrierFilterLabel}
         </label>
         <select
           id="buy-carrier"
-          className="mb-3 w-full rounded border border-border bg-surface px-3 py-2.5 text-[13.5px] text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          className="mb-3 w-full rounded border border-border bg-surface px-3.5 py-3 text-[15px] text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           value={carrier === ANY ? "" : carrier}
           onChange={(e) => setCarrier(e.target.value === "" ? ANY : (e.target.value as Carrier))}
         >
@@ -468,11 +468,11 @@ export function CatalogScreen() {
             four times over tells the buyer nothing about which one they would be sending. */}
         {needsPaymentChoice ? (
           <>
-        <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
+        <label className="mb-1 block text-[12px] font-semibold uppercase tracking-wide text-text-3">
           {strings.catalog.payNetworkLabel}
         </label>
         <select
-          className="mb-3 w-full rounded border border-border bg-surface px-3 py-2.5 text-[13.5px] text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          className="mb-3 w-full rounded border border-border bg-surface px-3.5 py-3 text-[15px] text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           value={payChain}
           onChange={(e) => {
             setPayChain(e.target.value);
@@ -485,11 +485,11 @@ export function CatalogScreen() {
           ))}
         </select>
 
-        <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
+        <label className="mb-1 block text-[12px] font-semibold uppercase tracking-wide text-text-3">
           {strings.catalog.payCoinLabel}
         </label>
         <select
-          className="mb-4 w-full rounded border border-border bg-surface px-3 py-2.5 text-[13.5px] text-text disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-text-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          className="mb-4 w-full rounded border border-border bg-surface px-3.5 py-3 text-[15px] text-text disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-text-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           value={payCoin}
           disabled={!payChain}
           onChange={(e) => setPayCoin(e.target.value)}
@@ -540,12 +540,12 @@ export function CatalogScreen() {
           </Button>
         }
       >
-        <label className="mb-1.5 block text-xs font-medium text-text-2" htmlFor="reseller-message">
+        <label className="mb-1.5 block text-[13px] font-medium text-text-2" htmlFor="reseller-message">
           {strings.catalog.resellerFormBody}
         </label>
         <textarea
           id="reseller-message"
-          className="min-h-[110px] w-full rounded border border-border bg-surface-2 p-3 font-body text-sm text-text focus-visible:border-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+          className="min-h-[110px] w-full rounded border border-border bg-surface-2 p-3 font-body text-[15px] text-text focus-visible:border-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
           value={resellerMessage}
           onChange={(e) => setResellerMessage(e.target.value)}
         />

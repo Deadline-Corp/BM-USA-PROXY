@@ -1,7 +1,7 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import clsx from "clsx";
 
-type Variant = "default" | "primary" | "ghost";
+type Variant = "default" | "primary" | "cta" | "ghost";
 type Size = "md" | "sm";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -15,12 +15,14 @@ const variantClasses: Record<Variant, string> = {
   default: "border-border bg-surface-2 text-text hover:bg-surface hover:border-border-2",
   primary:
     "border-accent bg-accent text-on-accent font-semibold hover:bg-accent-2 hover:border-accent-2",
+  // Brand-red purchase CTA (site button red, subtle top-lit gradient).
+  cta: "border-transparent bg-gradient-to-b from-red to-red-2 text-on-accent font-semibold shadow-cta hover:brightness-105",
   ghost: "border-border bg-transparent text-text-2 hover:bg-surface-2 hover:text-text",
 };
 
 const sizeClasses: Record<Size, string> = {
-  md: "min-h-[42px] px-[15px] text-[13.5px]",
-  sm: "min-h-9 px-3 text-[12.5px]",
+  md: "min-h-[48px] px-4 text-[15px]",
+  sm: "min-h-10 px-3.5 text-[13.5px]",
 };
 
 /** Port of the demo's .m-btn / .m-btn-primary / .m-btn-ghost. */

@@ -11,7 +11,7 @@ interface ChipProps {
 
 const toneClasses: Record<ChipTone, string> = {
   default: "bg-surface-2 border-border text-text-2",
-  accent: "bg-accent/10 border-accent/[.22] text-accent",
+  accent: "bg-accent/[.09] border-transparent text-accent",
   success: "bg-surface-2 border-success/30 text-success",
   warn: "bg-surface-2 border-warning/30 text-warning",
   danger: "bg-surface-2 border-danger/30 text-danger",
@@ -22,7 +22,7 @@ export function Chip({ children, tone = "default", className }: ChipProps) {
   return (
     <span
       className={clsx(
-        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-[5px] text-[11.5px] font-medium",
+        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-[12.5px] font-semibold",
         toneClasses[tone],
         className,
       )}

@@ -87,8 +87,8 @@ function PayAmountRow({ amount, currency }: { amount: string | null; currency: s
   const shown = formatCryptoAmount(amount);
   return (
     <span className="flex items-baseline gap-1.5">
-      <Num className="text-[20px] font-bold leading-none text-text">{shown}</Num>
-      <span className="text-[13px] font-medium text-text-3">{currency ?? ""}</span>
+      <Num className="text-[22px] font-bold leading-none text-text">{shown}</Num>
+      <span className="text-[14px] font-medium text-text-3">{currency ?? ""}</span>
       {amount ? (
         <button
           type="button"
@@ -107,12 +107,12 @@ function PayAddressRow({ address }: { address: string }) {
   const { copied, copy } = useCopyToClipboard();
   return (
     <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
-      <span className="w-9 shrink-0 text-[11px] font-semibold text-text-3">
+      <span className="w-9 shrink-0 text-[12px] font-semibold text-text-3">
         {strings.checkout.payAddressLabel}
       </span>
       <Num
         as="span"
-        className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[11.5px] text-text-2"
+        className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[12.5px] text-text-2"
       >
         {truncateMiddle(address)}
       </Num>
@@ -240,14 +240,14 @@ export function CheckoutScreen() {
     <div className="flex flex-col">
       {/* ── header ── */}
       <div className="mb-4 flex items-center gap-2.5">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-accent/[.18] bg-accent/[.09] text-accent">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] border border-accent/[.14] bg-accent/[.07] text-accent">
           <ShieldCheck size={20} strokeWidth={1.5} aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
-          <b className="block font-head text-[15.5px] font-semibold leading-tight tracking-tight text-text">
+          <b className="block font-head text-[18px] font-extrabold leading-tight tracking-tight text-text">
             {strings.checkout.title}
           </b>
-          <span className="text-xs text-text-3">{strings.checkout.subtitle}</span>
+          <span className="text-[13px] text-text-2">{strings.checkout.subtitle}</span>
         </div>
       </div>
 
@@ -280,11 +280,11 @@ export function CheckoutScreen() {
           <StatusIcon size={18} className={meta.icon === Loader2 ? "animate-spin" : undefined} />
         </span>
         <div className="min-w-0 flex-1">
-          <b className="block font-head text-[14.5px] font-semibold leading-tight tracking-tight text-text">
+          <b className="block font-head text-[16px] font-bold leading-tight tracking-tight text-text">
             {meta.title}
           </b>
           {meta.body ? (
-            <p className="mt-0.5 text-[12px] leading-snug text-text-2">{meta.body}</p>
+            <p className="mt-0.5 text-[13px] leading-snug text-text-2">{meta.body}</p>
           ) : null}
         </div>
         {showCountdown && invoice ? (
@@ -297,13 +297,13 @@ export function CheckoutScreen() {
       {/* ── invoice details (only while awaiting payment, and only if we have a cached invoice) ── */}
       {orderQuery.data.status === "awaiting_payment" && invoice ? (
         <>
-          <div className="mt-4 overflow-hidden rounded-lg border border-border bg-surface shadow-highlight">
+          <div className="mt-4 overflow-hidden rounded-lg border border-border/60 bg-surface shadow-highlight">
             <div className="flex items-start justify-between gap-3 border-b border-border p-4">
               <div className="flex flex-col gap-1">
                 {/* Rendered verbatim from the API string — never reformatted. The watcher
                     matches this amount to the last digit. */}
                 <PayAmountRow amount={invoice.crypto_amount} currency={invoice.crypto_currency} />
-                <span className="text-xs text-text-3">
+                <span className="text-[12.5px] text-text-3">
                   {strings.checkout.amountApprox} <Num>{formatUsd(invoice.amount_usd)}</Num> USD
                   {invoice.crypto_network ? ` · ${invoice.crypto_network}` : ""}
                 </span>

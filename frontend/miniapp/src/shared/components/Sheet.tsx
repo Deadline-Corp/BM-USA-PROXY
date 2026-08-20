@@ -38,7 +38,7 @@ export function Sheet({ open, onClose, title, children, footer }: SheetProps) {
         )}
       >
         <div className="flex items-center justify-between border-b border-border px-4 py-3.5">
-          <h2 className="font-head text-[15px] font-semibold tracking-tight text-text">{title}</h2>
+          <h2 className="font-head text-[17px] font-bold tracking-tight text-text">{title}</h2>
           <button
             type="button"
             className="flex h-8 w-8 items-center justify-center rounded-lg text-text-3 transition-colors hover:bg-surface-2 hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"

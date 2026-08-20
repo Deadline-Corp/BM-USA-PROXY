@@ -16,13 +16,13 @@ export function BannedScreen() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-app px-6 text-center">
-      <span className="flex h-14 w-14 items-center justify-center rounded-xl border border-danger/[.22] bg-danger/10 text-danger">
-        <ShieldX size={26} strokeWidth={1.5} aria-hidden="true" />
+      <span className="flex h-16 w-16 items-center justify-center rounded-xl border border-danger/[.22] bg-danger/10 text-danger">
+        <ShieldX size={30} strokeWidth={1.5} aria-hidden="true" />
       </span>
-      <h1 className="font-head text-[18px] font-semibold tracking-tight text-text">
+      <h1 className="font-head text-[20px] font-bold tracking-tight text-text">
         {strings.banned.title}
       </h1>
-      <p className="max-w-[300px] text-[13.5px] leading-relaxed text-text-2">{strings.banned.body}</p>
+      <p className="max-w-[300px] text-[14.5px] leading-relaxed text-text-2">{strings.banned.body}</p>
       <a
         href={supportUrl}
         target="_blank"

@@ -51,15 +51,15 @@ function AccessRow({ access }: { access: AccessSummary }) {
       to={`/access/${access.public_id}`}
       className="flex items-center gap-3 border-b border-border py-3 text-text no-underline last:border-b-0"
     >
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-2 text-text-2">
-        <MapPin size={16} strokeWidth={1.5} aria-hidden="true" />
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] border border-accent/[.14] bg-accent/[.07] text-accent">
+        <MapPin size={17} strokeWidth={1.5} aria-hidden="true" />
       </span>
       <div className="min-w-0 flex-1">
-        <b className="block truncate text-[13.5px] font-medium text-text">
+        <b className="block truncate text-[15px] font-semibold text-text">
           {access.city ?? "—"}
           {access.state_code ? `, ${access.state_code}` : ""}
         </b>
-        <small className="text-[11.5px] text-text-3">{access.carrier ?? "—"}</small>
+        <small className="text-[12.5px] text-text-3">{access.carrier ?? "—"}</small>
       </div>
       <div className="shrink-0 text-right">
         {/* An ended access keeps its expires_at, so the countdown has to be gated on the
@@ -69,7 +69,7 @@ function AccessRow({ access }: { access: AccessSummary }) {
           <CountdownBadge
             expiresAt={access.expires_at}
             variant="remaining"
-            valueClassName="text-[13px] font-medium"
+            valueClassName="text-[14px] font-medium"
           />
         ) : (
           <Chip tone={STATUS_TONE[access.status] ?? "default"}>{statusLabel(access.status)}</Chip>
@@ -87,14 +87,14 @@ export function AccessScreen() {
     <div className="flex flex-col">
       {/* ── header ── */}
       <div className="mb-4 flex items-center gap-2.5">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-accent/[.18] bg-accent/[.09] text-accent">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] border border-accent/[.14] bg-accent/[.07] text-accent">
           <ShieldCheck size={20} strokeWidth={1.5} aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
-          <b className="block font-head text-[15.5px] font-semibold leading-tight tracking-tight text-text">
+          <b className="block font-head text-[18px] font-extrabold leading-tight tracking-tight text-text">
             {strings.access.title}
           </b>
-          <span className="text-xs text-text-3">{strings.app.tagline}</span>
+          <span className="text-[13px] text-text-2">{strings.app.tagline}</span>
         </div>
       </div>
 
@@ -109,27 +109,27 @@ export function AccessScreen() {
         <>
           <SectionLabel>{strings.access.activeLabel}</SectionLabel>
           {accessesQuery.data && accessesQuery.data.active.length > 0 ? (
-            <div className="flex flex-col rounded-lg border border-border bg-surface px-4">
+            <div className="flex flex-col rounded-lg border border-border/60 bg-surface px-4 shadow-soft">
               {accessesQuery.data.active.map((access) => (
                 <AccessRow key={access.public_id} access={access} />
               ))}
             </div>
           ) : (
             <EmptyState
-              icon={<Zap size={22} strokeWidth={1.5} />}
+              icon={<Zap size={28} strokeWidth={1.5} />}
               title={strings.access.noAccessTitle}
               body={strings.access.noAccessBody}
               action={
                 <>
                   <Link to="/catalog?tariff=trial">
-                    <Button variant="primary" size="sm">
-                      <Zap size={14} aria-hidden="true" />
+                    <Button variant="cta">
+                      <Zap size={16} aria-hidden="true" />
                       {strings.access.getFreeTrial}
                     </Button>
                   </Link>
                   <Link to="/catalog">
-                    <Button variant="default" size="sm">
-                      <List size={14} aria-hidden="true" />
+                    <Button variant="default">
+                      <List size={16} aria-hidden="true" />
                       {strings.access.viewTariffs}
                     </Button>
                   </Link>
@@ -141,7 +141,7 @@ export function AccessScreen() {
           {accessesQuery.data && accessesQuery.data.history.length > 0 ? (
             <>
               <SectionLabel className="mt-[18px]">{strings.access.historyLabel}</SectionLabel>
-              <div className="flex flex-col rounded-lg border border-border bg-surface px-4">
+              <div className="flex flex-col rounded-lg border border-border/60 bg-surface px-4 shadow-soft">
                 {accessesQuery.data.history.map((access) => (
                   <AccessRow key={access.public_id} access={access} />
                 ))}

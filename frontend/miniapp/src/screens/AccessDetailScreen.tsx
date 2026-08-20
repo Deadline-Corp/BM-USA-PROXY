@@ -200,14 +200,14 @@ export function AccessDetailScreen() {
     <div className="flex flex-col">
       {/* ── header ── */}
       <div className="mb-4 flex items-center gap-2.5">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-accent/[.18] bg-accent/[.09] text-accent">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] border border-accent/[.14] bg-accent/[.07] text-accent">
           <ShieldCheck size={20} strokeWidth={1.5} aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
-          <b className="block font-head text-[15.5px] font-semibold leading-tight tracking-tight text-text">
+          <b className="block font-head text-[18px] font-extrabold leading-tight tracking-tight text-text">
             {access.city ?? strings.access.title}
           </b>
-          <span className="text-xs text-text-3">{[access.state_code, access.carrier].filter(Boolean).join(" · ")}</span>
+          <span className="text-[13px] text-text-2">{[access.state_code, access.carrier].filter(Boolean).join(" · ")}</span>
         </div>
         <Chip tone={access.status === "active" ? "success" : "default"}>
           <Dot tone={access.status === "active" ? "online" : "idle"} />
@@ -217,17 +217,17 @@ export function AccessDetailScreen() {
 
       {/* ── hero ── */}
       <SectionLabel>{isEnded ? strings.access.endedLabel : strings.access.activeLabel}</SectionLabel>
-      <div className="rounded-xl border border-border bg-gradient-to-b from-accent/[.06] to-transparent to-70% bg-surface p-[17px] shadow">
+      <div className="rounded-xl border border-border/60 bg-gradient-to-b from-accent/[.06] to-transparent to-70% bg-surface p-5 shadow">
         <div className="flex items-start justify-between gap-2.5">
           <div className="flex min-w-0 items-center gap-2.5">
-            <span className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg border border-accent/[.18] bg-accent/[.09] text-accent">
-              <MapPin size={19} strokeWidth={1.5} aria-hidden="true" />
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] border border-accent/[.14] bg-accent/[.07] text-accent">
+              <MapPin size={21} strokeWidth={1.5} aria-hidden="true" />
             </span>
             <div className="min-w-0">
-              <b className="block truncate font-head text-[16px] font-semibold leading-tight tracking-tight text-text">
+              <b className="block truncate font-head text-[18px] font-bold leading-tight tracking-tight text-text">
                 {access.city ?? "—"}
               </b>
-              <span className="text-xs text-text-3">
+              <span className="text-[13px] text-text-3">
                 {[access.state_code, access.carrier].filter(Boolean).join(" · ")}
               </span>
             </div>
@@ -237,9 +237,9 @@ export function AccessDetailScreen() {
         {/* current exit IP — lets the user verify Rotate IP actually changed it */}
         <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-border-2 bg-surface-2 px-3 py-2">
           <div className="min-w-0">
-            <div className="text-[10px] uppercase tracking-wide text-text-3">{strings.access.ipLabel}</div>
+            <div className="text-[11px] uppercase tracking-wide text-text-3">{strings.access.ipLabel}</div>
             <div className="flex items-center gap-1.5">
-              <Num className="text-[14px] font-semibold text-text">{access.current_ip ?? "—"}</Num>
+              <Num className="text-[15px] font-semibold text-text">{access.current_ip ?? "—"}</Num>
               {rotating ? <RefreshCw size={12} className="animate-spin text-accent" aria-hidden="true" /> : null}
             </div>
           </div>
@@ -256,10 +256,10 @@ export function AccessDetailScreen() {
 
         {isEnded ? (
           <div className="mt-3.5 rounded-lg border border-border-2 bg-surface-2 px-3 py-2.5">
-            <div className="text-[10px] uppercase tracking-wide text-text-3">
+            <div className="text-[11px] uppercase tracking-wide text-text-3">
               {strings.access.endedOnLabel}
             </div>
-            <div className="text-[13px] font-medium text-text-2">
+            <div className="text-[14px] font-medium text-text-2">
               {access.status === "revoked"
                 ? strings.access.endedRevoked
                 : access.status === "failed"
@@ -269,12 +269,12 @@ export function AccessDetailScreen() {
           </div>
         ) : (
           <div className="mt-3.5">
-            <div className="mb-1.5 flex items-baseline justify-between text-xs text-text-3">
+            <div className="mb-1.5 flex items-baseline justify-between text-[13px] text-text-3">
               <span>{strings.common.expiresIn}</span>
               <CountdownBadge
                 expiresAt={access.expires_at}
                 variant="remaining"
-                valueClassName="text-[13px]"
+                valueClassName="text-[14px]"
               />
             </div>
             <div className="h-[3px] overflow-hidden rounded-full bg-surface-2">
@@ -334,7 +334,7 @@ export function AccessDetailScreen() {
           </>
         )}
 
-        <p className={`mt-1.5 text-center text-[11px] leading-relaxed ${rotating ? "text-accent" : "text-text-3"}`}>
+        <p className={`mt-1.5 text-center text-[12px] leading-relaxed ${rotating ? "text-accent" : "text-text-3"}`}>
           {rotating ? strings.access.rotatingHint : strings.access.rotateNote}
         </p>
       </div>
@@ -376,14 +376,14 @@ export function AccessDetailScreen() {
       {/* ── combined copy ── */}
       <div className="mt-3 flex items-start gap-2.5 rounded border border-border-2 bg-surface p-3">
         <div className="min-w-0 flex-1">
-          <div className="mb-1 text-[10px] uppercase tracking-wide text-text-3">{strings.access.combinedLabel}</div>
-          <Num className="block overflow-hidden whitespace-pre-line break-all text-[11px] leading-[1.6] text-text-2">
+          <div className="mb-1 text-[11px] uppercase tracking-wide text-text-3">{strings.access.combinedLabel}</div>
+          <Num className="block overflow-hidden whitespace-pre-line break-all text-[12px] leading-[1.6] text-text-2">
             {combined || "—"}
           </Num>
         </div>
         <button
           type="button"
-          className="flex h-[38px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[8px] border border-border-2 bg-transparent px-3.5 text-xs font-medium text-accent transition-colors hover:bg-accent/[.08] hover:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40"
+          className="flex h-10 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[10px] border border-border-2 bg-transparent px-3.5 text-[13px] font-medium text-accent transition-colors hover:bg-accent/[.08] hover:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40"
           disabled={!combined}
           onClick={() => copyAll(combined)}
         >
@@ -421,7 +421,7 @@ export function AccessDetailScreen() {
       {/* ── how to connect ── */}
       <button
         type="button"
-        className="mt-3.5 flex items-center justify-between gap-2 rounded-[8px] px-2 py-2.5 text-[13px] font-medium text-accent transition-colors hover:bg-surface-2"
+        className="mt-3.5 flex items-center justify-between gap-2 rounded-[10px] px-2 py-2.5 text-[14px] font-semibold text-accent transition-colors hover:bg-surface-2"
         onClick={() => setHowToOpen((v) => !v)}
         aria-expanded={howToOpen}
       >
@@ -448,14 +448,14 @@ export function AccessDetailScreen() {
           </Button>
         }
       >
-        <p className="text-[13px] leading-relaxed text-text-2">{strings.access.rotateConfirmBody}</p>
+        <p className="text-[14px] leading-relaxed text-text-2">{strings.access.rotateConfirmBody}</p>
       </Sheet>
 
       {/* ── swap sheet ── */}
       <Sheet open={swapSheetOpen} onClose={() => setSwapSheetOpen(false)} title={strings.access.swapSheetTitle}>
         <div className="flex flex-col gap-4">
           <div>
-            <p className="mb-1.5 text-xs font-medium text-text-2">{strings.catalog.citySelectorLabel}</p>
+            <p className="mb-1.5 text-[13px] font-medium text-text-2">{strings.catalog.citySelectorLabel}</p>
             <div className="flex flex-col gap-1">
               <PickerRow
                 label={strings.common.any}
@@ -473,7 +473,7 @@ export function AccessDetailScreen() {
             </div>
           </div>
           <div>
-            <p className="mb-1.5 text-xs font-medium text-text-2">{strings.catalog.carrierSelectorLabel}</p>
+            <p className="mb-1.5 text-[13px] font-medium text-text-2">{strings.catalog.carrierSelectorLabel}</p>
             <div className="flex flex-col gap-1">
               <PickerRow label={strings.common.any} selected={swapCarrier === ANY} onSelect={() => setSwapCarrier(ANY)} />
               {catalogQuery.data?.carriers.map((c) => (
@@ -505,7 +505,7 @@ export function AccessDetailScreen() {
           </Button>
         }
       >
-        <p className="text-[13px] leading-relaxed text-text-2">{strings.access.swapConfirmBody}</p>
+        <p className="text-[14px] leading-relaxed text-text-2">{strings.access.swapConfirmBody}</p>
       </Sheet>
 
       {/* ── extend sheet ── */}
@@ -526,10 +526,10 @@ export function AccessDetailScreen() {
                 disabled={extendAccess.isPending}
               >
                 <span>
-                  <b className="block text-[13.5px] font-medium text-text">{tariff.name}</b>
-                  <small className="text-[11.5px] text-text-3">{tariff.description}</small>
+                  <b className="block text-[15px] font-semibold text-text">{tariff.name}</b>
+                  <small className="text-[12.5px] text-text-3">{tariff.description}</small>
                 </span>
-                <Num className="text-[15px] font-semibold text-accent">${tariff.price_usd.toFixed(2)}</Num>
+                <Num className="text-[16px] font-semibold text-accent">${tariff.price_usd.toFixed(2)}</Num>
               </button>
             ))}
         </div>
@@ -570,11 +570,11 @@ function AutoRotatePanel({ publicId, current }: { publicId: string | undefined; 
   return (
     <>
       <SectionLabel className="mt-[18px]">{strings.access.autoRotateLabel}</SectionLabel>
-      <div className="rounded-xl border border-border bg-surface p-3.5">
+      <div className="rounded-xl border border-border/60 bg-surface p-4 shadow-soft">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-[13.5px] font-medium text-text">{strings.access.autoRotateLabel}</div>
-            <p className="mt-0.5 text-[11.5px] leading-relaxed text-text-3">
+            <div className="text-[15px] font-semibold text-text">{strings.access.autoRotateLabel}</div>
+            <p className="mt-0.5 text-[12.5px] leading-relaxed text-text-3">
               {strings.access.autoRotateHint}
             </p>
           </div>
@@ -599,7 +599,7 @@ function AutoRotatePanel({ publicId, current }: { publicId: string | undefined; 
 
         {enabled ? (
           <div className="mt-3 flex items-center gap-2">
-            <span className="text-[12.5px] text-text-2">{strings.access.autoRotateEvery}</span>
+            <span className="text-[13.5px] text-text-2">{strings.access.autoRotateEvery}</span>
             <input
               type="number"
               inputMode="numeric"
@@ -607,9 +607,9 @@ function AutoRotatePanel({ publicId, current }: { publicId: string | undefined; 
               max={1440}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              className="num h-9 w-20 rounded border border-border bg-surface-2 px-2.5 text-[13px] text-text outline-none focus-visible:border-accent"
+              className="num h-10 w-20 rounded border border-border bg-surface-2 px-2.5 text-[14px] text-text outline-none focus-visible:border-accent"
             />
-            <span className="text-[12.5px] text-text-2">{strings.access.autoRotateMinutesUnit}</span>
+            <span className="text-[13.5px] text-text-2">{strings.access.autoRotateMinutesUnit}</span>
             <Button
               variant="default"
               className="ml-auto"
@@ -621,7 +621,7 @@ function AutoRotatePanel({ publicId, current }: { publicId: string | undefined; 
           </div>
         ) : null}
         {enabled && !valid ? (
-          <p className="mt-1.5 text-[11px] text-warning">{strings.access.autoRotateRange}</p>
+          <p className="mt-1.5 text-[12px] text-warning">{strings.access.autoRotateRange}</p>
         ) : null}
       </div>
     </>
@@ -636,16 +636,16 @@ function SecretRow({ label, value }: { label: string; value: string | null }) {
   const { copied, copy } = useCopyToClipboard();
 
   return (
-    <div className="flex items-center gap-0 h-11 overflow-hidden rounded border border-border bg-surface">
-      <span className="flex h-full w-[58px] shrink-0 items-center border-r border-border bg-surface-2 px-2.5 font-mono text-[10px] uppercase tracking-wide text-text-3">
+    <div className="flex items-center gap-0 h-12 overflow-hidden rounded border border-border bg-surface">
+      <span className="flex h-full w-[62px] shrink-0 items-center border-r border-border bg-surface-2 px-2.5 font-mono text-[10.5px] uppercase tracking-wide text-text-3">
         {label}
       </span>
-      <span className="num flex-1 overflow-hidden text-ellipsis whitespace-nowrap px-2.5 text-[13px] text-text">
+      <span className="num flex-1 overflow-hidden text-ellipsis whitespace-nowrap px-2.5 text-[14px] text-text">
         {value ? (revealed ? value : maskSecret(value)) : "—"}
       </span>
       <button
         type="button"
-        className="flex h-full shrink-0 items-center justify-center border-l border-border px-2.5 text-[11px] font-medium text-text-2 transition-colors hover:text-accent disabled:opacity-40"
+        className="flex h-full shrink-0 items-center justify-center border-l border-border px-2.5 text-[12px] font-medium text-text-2 transition-colors hover:text-accent disabled:opacity-40"
         disabled={!value}
         onClick={() => setRevealed((v) => !v)}
       >
@@ -666,9 +666,9 @@ function SecretRow({ label, value }: { label: string; value: string | null }) {
 
 function HowToRow({ title, body }: { title: string; body: string }) {
   return (
-    <div className="rounded-[8px] bg-surface-2 px-2.5 py-2">
-      <b className="num block text-[11.5px] text-text">{title}</b>
-      <small className="text-[11px] leading-snug text-text-3">{body}</small>
+    <div className="rounded-[10px] bg-surface-2 px-3 py-2.5">
+      <b className="num block text-[12.5px] text-text">{title}</b>
+      <small className="text-[12px] leading-snug text-text-3">{body}</small>
     </div>
   );
 }
@@ -677,7 +677,7 @@ function PickerRow({ label, selected, onSelect }: { label: string; selected: boo
   return (
     <button
       type="button"
-      className={`rounded px-3 py-2.5 text-left text-[13.5px] transition-colors ${
+      className={`rounded px-3 py-3 text-left text-[15px] transition-colors ${
         selected ? "bg-accent/[.08] text-accent" : "text-text hover:bg-surface-2"
       }`}
       onClick={onSelect}

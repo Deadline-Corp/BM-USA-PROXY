@@ -40,19 +40,19 @@ export function TariffCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-col gap-0.5">
-          <b className="font-head text-[16px] font-semibold leading-tight tracking-tight text-text">{name}</b>
-          <small className="text-xs leading-snug text-text-3">{meta}</small>
+          <b className="font-head text-[17px] font-bold leading-tight tracking-tight text-text">{name}</b>
+          <small className="text-[13px] leading-snug text-text-3">{meta}</small>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-0.5">
           <span
             className={clsx(
-              "num text-[22px] font-bold leading-none",
+              "num text-[24px] font-bold leading-none",
               isFree ? "text-success" : highlight ? "text-accent" : "text-text",
             )}
           >
             {price}
           </span>
-          <span className="text-right text-[11px] text-text-3">{priceSub}</span>
+          <span className="text-right text-[12px] text-text-3">{priceSub}</span>
         </div>
       </div>
 
@@ -60,8 +60,8 @@ export function TariffCard({
 
       <div className="flex flex-col gap-1.5">
         {features.map((feature) => (
-          <span key={feature} className="flex items-center gap-1.5 text-[13px] leading-snug text-text-2">
-            <Check size={14} className="shrink-0 text-accent" />
+          <span key={feature} className="flex items-center gap-1.5 text-[14px] leading-snug text-text-2">
+            <Check size={15} className="shrink-0 text-accent" />
             {feature}
           </span>
         ))}

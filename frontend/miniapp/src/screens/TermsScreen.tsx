@@ -47,14 +47,14 @@ export function TermsScreen() {
     <div className="flex h-[var(--tg-vh)] flex-col bg-app">
       {/* ── header (no tab bar — full-screen gate) ── */}
       <div className="flex shrink-0 items-center gap-2.5 border-b border-border bg-surface px-4 py-3.5">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-accent/[.18] bg-accent/[.09] text-accent">
-          <ShieldCheck size={18} strokeWidth={1.5} aria-hidden="true" />
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] border border-accent/[.14] bg-accent/[.07] text-accent">
+          <ShieldCheck size={19} strokeWidth={1.5} aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
-          <b className="block font-head text-[15px] font-semibold leading-tight tracking-tight text-text">
+          <b className="block font-head text-[17px] font-bold leading-tight tracking-tight text-text">
             {strings.terms.title}
           </b>
-          <span className="text-[11.5px] text-text-3">{strings.terms.subtitle}</span>
+          <span className="text-[12.5px] text-text-3">{strings.terms.subtitle}</span>
         </div>
       </div>
 
@@ -84,7 +84,7 @@ export function TermsScreen() {
                     touched[q.id] && q.required && (value.trim().length === 0 || (q.type === "email" && !EMAIL_RE.test(value)));
                   return (
                     <div key={q.id}>
-                      <label className="mb-1.5 block text-xs font-medium text-text-2" htmlFor={`terms-q-${q.id}`}>
+                      <label className="mb-1.5 block text-[13px] font-medium text-text-2" htmlFor={`terms-q-${q.id}`}>
                         {q.label}
                         {q.required ? null : ` (${strings.common.optional})`}
                       </label>
@@ -92,7 +92,7 @@ export function TermsScreen() {
                         id={`terms-q-${q.id}`}
                         type={q.type === "email" ? "email" : "text"}
                         placeholder={q.type === "email" ? strings.terms.emailPlaceholder : undefined}
-                        className={`h-11 w-full rounded border bg-surface-2 px-3 text-sm text-text focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${
+                        className={`h-12 w-full rounded border bg-surface-2 px-3 text-[15px] text-text focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${
                           showError ? "border-danger" : "border-border focus-visible:border-accent"
                         }`}
                         value={value}
@@ -111,7 +111,7 @@ export function TermsScreen() {
                         onBlur={() => setTouched((prev) => ({ ...prev, [q.id]: true }))}
                       />
                       {showError ? (
-                        <p className="mt-1 text-[11.5px] text-danger">
+                        <p className="mt-1 text-[12.5px] text-danger">
                           {q.type === "email" ? strings.terms.emailInvalid : strings.common.required}
                         </p>
                       ) : null}

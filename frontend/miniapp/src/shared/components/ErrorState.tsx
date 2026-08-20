@@ -20,10 +20,10 @@ export function ErrorState({ message, onRetry, className, compact }: ErrorStateP
         className,
       )}
     >
-      <span className="flex h-10 w-10 items-center justify-center rounded-full bg-danger/10 text-danger">
-        <AlertTriangle size={18} />
+      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-danger/10 text-danger">
+        <AlertTriangle size={20} />
       </span>
-      <p className="max-w-[260px] text-[13px] leading-relaxed text-text-2">
+      <p className="max-w-[280px] text-[14px] leading-relaxed text-text-2">
         {message ?? strings.errors.generic}
       </p>
       {onRetry ? (

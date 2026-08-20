@@ -30,8 +30,8 @@ export function HeroCardSkeleton() {
       <SkeletonBlock className="mt-3 h-11 rounded" />
       <SkeletonBlock className="mt-3 h-11 rounded" />
       <div className="mt-3 flex gap-2">
-        <SkeletonBlock className="h-[42px] flex-1 rounded" />
-        <SkeletonBlock className="h-[42px] flex-1 rounded" />
+        <SkeletonBlock className="h-[48px] flex-1 rounded" />
+        <SkeletonBlock className="h-[48px] flex-1 rounded" />
       </div>
     </div>
   );
@@ -40,11 +40,11 @@ export function HeroCardSkeleton() {
 /** Skeleton for the quick-action tile grid on Home. */
 export function TileGridSkeleton() {
   return (
-    <div className="grid grid-cols-2 gap-[11px]">
-      <SkeletonBlock className="h-[92px] rounded-lg" />
-      <SkeletonBlock className="h-[92px] rounded-lg" />
-      <SkeletonBlock className="col-span-2 h-[68px] rounded-lg" />
-      <SkeletonBlock className="col-span-2 h-[68px] rounded-lg" />
+    <div className="grid grid-cols-2 gap-3">
+      <SkeletonBlock className="h-[116px] rounded-lg" />
+      <SkeletonBlock className="h-[116px] rounded-lg" />
+      <SkeletonBlock className="col-span-2 h-[72px] rounded-lg" />
+      <SkeletonBlock className="col-span-2 h-[72px] rounded-lg" />
     </div>
   );
 }
@@ -64,7 +64,7 @@ export function TariffListSkeleton({ count = 3 }: { count?: number }) {
           </div>
           <SkeletonBlock className="h-3 w-full" />
           <SkeletonBlock className="h-3 w-4/5" />
-          <SkeletonBlock className="h-[42px] rounded" />
+          <SkeletonBlock className="h-[48px] rounded" />
         </div>
       ))}
     </div>
@@ -105,7 +105,7 @@ export function AccordionSkeleton({ count = 4 }: { count?: number }) {
   return (
     <div className="flex flex-col gap-1.5">
       {Array.from({ length: count }).map((_, i) => (
-        <SkeletonBlock key={i} className="h-[52px] rounded" />
+        <SkeletonBlock key={i} className="h-[56px] rounded" />
       ))}
     </div>
   );

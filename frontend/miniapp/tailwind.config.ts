@@ -27,22 +27,29 @@ export default {
         success: "#1E9E6A",
         warning: "#D99021",
         danger: "#C2413C",
+        // Brand red from bmusproxy.com buttons (#CD3833) — used for the main
+        // purchase CTA only; `danger` stays reserved for error semantics.
+        red: {
+          DEFAULT: "#CD3833",
+          2: "#B9312C",
+        },
       },
       borderRadius: {
-        sm: "8px",
-        DEFAULT: "12px",
-        lg: "16px",
-        xl: "22px",
+        sm: "10px",
+        DEFAULT: "14px",
+        lg: "20px",
+        xl: "26px",
       },
       boxShadow: {
-        DEFAULT: "0 8px 24px -12px rgba(20,50,74,.18)",
-        soft: "0 4px 16px -8px rgba(20,50,74,.12)",
-        card: "0 4px 16px -8px rgba(20,50,74,.14)",
+        DEFAULT: "0 10px 28px -14px rgba(20,50,74,.18)",
+        soft: "0 6px 20px -10px rgba(20,50,74,.12)",
+        card: "0 6px 20px -10px rgba(20,50,74,.12)",
         highlight: "0 16px 40px -22px rgba(20,50,74,.14)",
+        cta: "0 12px 26px -12px rgba(205,56,51,.5)",
       },
       fontFamily: {
         head: [
-          "Jost",
+          "Manrope",
           "ui-sans-serif",
           "system-ui",
           "-apple-system",
@@ -50,7 +57,7 @@ export default {
           "sans-serif",
         ],
         body: [
-          "Roboto",
+          "Manrope",
           "ui-sans-serif",
           "system-ui",
           "-apple-system",

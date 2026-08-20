@@ -43,7 +43,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <div
             key={toast.id}
             className={clsx(
-              "pointer-events-auto flex max-w-[340px] items-center gap-2 rounded-lg border px-3.5 py-2.5 text-[12.5px] font-medium shadow animate-[m-fade_.2s_cubic-bezier(.16,1,.3,1)]",
+              "pointer-events-auto flex max-w-[340px] items-center gap-2 rounded-lg border px-4 py-3 text-[13.5px] font-medium shadow animate-[m-fade_.2s_cubic-bezier(.16,1,.3,1)]",
               toast.tone === "success"
                 ? "border-success/30 bg-surface text-text"
                 : "border-danger/30 bg-surface text-text",

@@ -27,8 +27,8 @@ export function BottomNav() {
           role="tab"
           className={({ isActive }) =>
             clsx(
-              "flex min-h-12 flex-1 flex-col items-center justify-center gap-1 rounded font-body text-[10.5px] font-medium text-text-3 transition-colors duration-150 ease-out hover:text-text-2 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent",
-              isActive && "text-accent",
+              "flex min-h-[54px] flex-1 flex-col items-center justify-center gap-1 rounded font-body text-[11.5px] font-medium text-text-3 transition-colors duration-150 ease-out hover:text-text-2 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent",
+              isActive && "font-semibold text-accent",
             )
           }
         >
@@ -36,11 +36,11 @@ export function BottomNav() {
             <>
               <span
                 className={clsx(
-                  "flex h-[26px] w-[46px] items-center justify-center rounded-full transition-colors duration-150 ease-out",
+                  "flex h-[30px] w-[52px] items-center justify-center rounded-full transition-colors duration-150 ease-out",
                   isActive && "bg-accent/10",
                 )}
               >
-                <Icon size={20} strokeWidth={1.5} aria-hidden="true" />
+                <Icon size={22} strokeWidth={1.5} aria-hidden="true" />
               </span>
               {label}
             </>

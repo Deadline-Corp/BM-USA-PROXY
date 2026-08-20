@@ -18,14 +18,14 @@ function FaqAccordionItem({ item, open, onToggle }: { item: FaqItem; open: boole
     <div className={`overflow-hidden rounded border transition-colors duration-[180ms] ease-out ${open ? "border-border-2" : "border-border"} bg-surface`}>
       <button
         type="button"
-        className="flex min-h-[52px] w-full items-center gap-3 px-3.5 py-3.5 text-left text-text transition-colors [@media(hover:hover)]:hover:bg-surface-2"
+        className="flex min-h-[56px] w-full items-center gap-3 px-3.5 py-3.5 text-left text-text transition-colors [@media(hover:hover)]:hover:bg-surface-2"
         onClick={onToggle}
         aria-expanded={open}
       >
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] bg-accent/10 text-accent">
-          <HelpCircle size={16} strokeWidth={1.5} aria-hidden="true" />
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-accent/[.08] text-accent">
+          <HelpCircle size={17} strokeWidth={1.5} aria-hidden="true" />
         </span>
-        <span className="flex-1 text-[13.5px] font-semibold leading-snug text-text">{item.question}</span>
+        <span className="flex-1 text-[15px] font-semibold leading-snug text-text">{item.question}</span>
         <ChevronDown
           size={16}
           className={`shrink-0 text-text-3 transition-transform duration-200 ease-out ${open ? "rotate-180 text-accent" : ""}`}
@@ -34,7 +34,7 @@ function FaqAccordionItem({ item, open, onToggle }: { item: FaqItem; open: boole
       </button>
       {open ? (
         <div className="px-3.5 pb-3.5 pl-[58px]">
-          <p className="whitespace-pre-line text-[13px] leading-relaxed text-text-2">{item.answer}</p>
+          <p className="whitespace-pre-line text-[14px] leading-relaxed text-text-2">{item.answer}</p>
         </div>
       ) : null}
     </div>
@@ -77,14 +77,14 @@ export function FaqScreen() {
     <div className="flex flex-col">
       {/* ── header ── */}
       <div className="mb-4 flex items-center gap-2.5">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-accent/[.18] bg-accent/[.09] text-accent">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] border border-accent/[.14] bg-accent/[.07] text-accent">
           <HelpCircle size={20} strokeWidth={1.5} aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
-          <b className="block font-head text-[15.5px] font-semibold leading-tight tracking-tight text-text">
+          <b className="block font-head text-[18px] font-extrabold leading-tight tracking-tight text-text">
             {strings.faq.title}
           </b>
-          <span className="text-xs text-text-3">{strings.app.tagline}</span>
+          <span className="text-[13px] text-text-2">{strings.app.tagline}</span>
         </div>
       </div>
 
@@ -100,7 +100,7 @@ export function FaqScreen() {
         <div className="flex flex-col gap-4">
           {grouped.map(([category, items]) => (
             <div key={category} className="flex flex-col gap-1.5">
-              <span className="px-0.5 text-[11px] font-medium uppercase tracking-[.08em] text-text-3">
+              <span className="px-0.5 text-[12px] font-semibold uppercase tracking-[.08em] text-text-3">
                 {category}
               </span>
               {items.map((item, i) => {
@@ -121,15 +121,15 @@ export function FaqScreen() {
 
       {/* ── contact support ── */}
       <SectionLabel className="mt-5">{strings.faq.contactSupport}</SectionLabel>
-      <div className="flex items-center gap-3.5 rounded-lg border border-border bg-surface p-4">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded border border-accent/[.22] bg-accent/[.12] text-accent">
+      <div className="flex items-center gap-3.5 rounded-lg border border-border/60 bg-surface p-4 shadow-soft">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] border border-accent/[.14] bg-accent/[.07] text-accent">
           <Send size={20} strokeWidth={1.5} aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
-          <b className="block font-head text-[13.5px] font-semibold tracking-tight text-text">
+          <b className="block font-head text-[16px] font-bold tracking-tight text-text">
             Still have questions?
           </b>
-          <small className="text-xs text-text-3">{strings.faq.contactSupportBody}</small>
+          <small className="text-[13px] text-text-3">{strings.faq.contactSupportBody}</small>
         </div>
         <a
           href={supportUrl}
@@ -166,12 +166,12 @@ export function FaqScreen() {
       >
         <div className="flex flex-col gap-3">
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-text-2" htmlFor="request-type">
+            <label className="mb-1.5 block text-[13px] font-medium text-text-2" htmlFor="request-type">
               {strings.faq.typeLabel}
             </label>
             <select
               id="request-type"
-              className="h-11 w-full rounded border border-border bg-surface-2 px-3 text-sm text-text focus-visible:border-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+              className="h-12 w-full rounded border border-border bg-surface-2 px-3 text-[15px] text-text focus-visible:border-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
               value={requestType}
               onChange={(e) => setRequestType(e.target.value as RequestType)}
             >
@@ -181,23 +181,23 @@ export function FaqScreen() {
             </select>
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-text-2" htmlFor="request-subject">
+            <label className="mb-1.5 block text-[13px] font-medium text-text-2" htmlFor="request-subject">
               {strings.faq.subjectLabel}
             </label>
             <input
               id="request-subject"
-              className="h-11 w-full rounded border border-border bg-surface-2 px-3 text-sm text-text focus-visible:border-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+              className="h-12 w-full rounded border border-border bg-surface-2 px-3 text-[15px] text-text focus-visible:border-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-text-2" htmlFor="request-body">
+            <label className="mb-1.5 block text-[13px] font-medium text-text-2" htmlFor="request-body">
               {strings.faq.bodyLabel}
             </label>
             <textarea
               id="request-body"
-              className="min-h-[110px] w-full rounded border border-border bg-surface-2 p-3 text-sm text-text focus-visible:border-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+              className="min-h-[110px] w-full rounded border border-border bg-surface-2 p-3 text-[15px] text-text focus-visible:border-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
               value={body}
               onChange={(e) => setBody(e.target.value)}
             />

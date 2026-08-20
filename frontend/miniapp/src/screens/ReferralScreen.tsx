@@ -84,11 +84,11 @@ export function ReferralScreen() {
     return (
       <div className="flex flex-col">
         <div className="mb-4 flex items-center gap-2.5">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-accent/[.18] bg-accent/[.09] text-accent">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] border border-accent/[.14] bg-accent/[.07] text-accent">
             <Users size={20} strokeWidth={1.5} aria-hidden="true" />
           </span>
           <div className="min-w-0 flex-1">
-            <b className="block font-head text-[15.5px] font-semibold leading-tight tracking-tight text-text">
+            <b className="block font-head text-[18px] font-extrabold leading-tight tracking-tight text-text">
               {strings.referral.title}
             </b>
           </div>
@@ -108,11 +108,11 @@ export function ReferralScreen() {
     <div className="flex flex-col">
       {/* ── header ── */}
       <div className="mb-4 flex items-center gap-2.5">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-accent/[.18] bg-accent/[.09] text-accent">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] border border-accent/[.14] bg-accent/[.07] text-accent">
           <Users size={20} strokeWidth={1.5} aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
-          <b className="block font-head text-[15.5px] font-semibold leading-tight tracking-tight text-text">
+          <b className="block font-head text-[18px] font-extrabold leading-tight tracking-tight text-text">
             {strings.referral.title}
           </b>
         </div>
@@ -125,16 +125,16 @@ export function ReferralScreen() {
       </div>
 
       {/* ── program hero ── */}
-      <div className="flex flex-col gap-3.5 rounded-xl border border-border bg-surface p-[18px] pb-4 shadow-highlight">
+      <div className="flex flex-col gap-3.5 rounded-xl border border-border/60 bg-surface p-[18px] pb-4 shadow-highlight">
         <div className="flex items-start gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded border border-accent/[.22] bg-accent/[.13] text-accent">
-            <Users size={18} strokeWidth={1.5} aria-hidden="true" />
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] border border-accent/[.14] bg-accent/[.07] text-accent">
+            <Users size={20} strokeWidth={1.5} aria-hidden="true" />
           </span>
           <div className="flex flex-col gap-0.5">
-            <b className="font-head text-[15px] font-semibold tracking-tight text-text">
+            <b className="font-head text-[16.5px] font-bold tracking-tight text-text">
               {withPct(strings.referral.programTitle, r.pct)}
             </b>
-            <small className="text-xs leading-relaxed text-text-2">
+            <small className="text-[13px] leading-relaxed text-text-2">
               {withPct(strings.referral.programBody, r.pct)}
             </small>
           </div>
@@ -147,16 +147,16 @@ export function ReferralScreen() {
             stays invisible to us, so the label says "Opened" and does not promise more. */}
         <div className="grid grid-cols-3 gap-2">
           <div className="flex flex-col items-center gap-0.5 rounded border border-border bg-surface-2 px-2 pb-2 pt-2.5">
-            <Num className="text-[17px] leading-none text-text">{r.link_opens}</Num>
-            <span className="text-[10px] uppercase tracking-wide text-text-3">{strings.referral.opensLabel}</span>
+            <Num className="text-[19px] leading-none text-text">{r.link_opens}</Num>
+            <span className="text-[11px] uppercase tracking-wide text-text-3">{strings.referral.opensLabel}</span>
           </div>
           <div className="flex flex-col items-center gap-0.5 rounded border border-border bg-surface-2 px-2 pb-2 pt-2.5">
-            <Num className="text-[17px] leading-none text-text">{r.signups}</Num>
-            <span className="text-[10px] uppercase tracking-wide text-text-3">{strings.referral.signupsLabel}</span>
+            <Num className="text-[19px] leading-none text-text">{r.signups}</Num>
+            <span className="text-[11px] uppercase tracking-wide text-text-3">{strings.referral.signupsLabel}</span>
           </div>
           <div className="flex flex-col items-center gap-0.5 rounded border border-border bg-surface-2 px-2 pb-2 pt-2.5">
-            <Num className="text-[17px] leading-none text-accent">{formatUsd(r.balances.available + r.balances.hold)}</Num>
-            <span className="text-[10px] uppercase tracking-wide text-text-3">{strings.referral.earnedLabel}</span>
+            <Num className="text-[19px] leading-none text-accent">{formatUsd(r.balances.available + r.balances.hold)}</Num>
+            <span className="text-[11px] uppercase tracking-wide text-text-3">{strings.referral.earnedLabel}</span>
           </div>
         </div>
       </div>
@@ -164,13 +164,13 @@ export function ReferralScreen() {
       {/* ── referral link ── */}
       <SectionLabel className="mt-[18px]">{strings.referral.yourLink}</SectionLabel>
       <div className="flex items-center gap-2">
-        <div className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded border border-border-2 bg-surface-2 px-2.5">
-          <Link2 size={13} className="shrink-0 text-text-3" aria-hidden="true" />
-          <Num className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[11.5px] text-text-2">
+        <div className="flex h-12 min-w-0 flex-1 items-center gap-2 rounded border border-border-2 bg-surface-2 px-3">
+          <Link2 size={14} className="shrink-0 text-text-3" aria-hidden="true" />
+          <Num className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[12.5px] text-text-2">
             {link.replace("https://", "")}
           </Num>
         </div>
-        <Button className="h-11 shrink-0 px-3.5" onClick={() => copy(link)}>
+        <Button className="h-12 shrink-0 px-3.5" onClick={() => copy(link)}>
           {copied ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
           {strings.common.copy}
         </Button>
@@ -184,23 +184,23 @@ export function ReferralScreen() {
       {/* ── balances ── */}
       <SectionLabel className="mt-5">{strings.referral.balanceLabel}</SectionLabel>
       <div className="grid grid-cols-2 gap-2">
-        <div className="flex flex-col gap-1 rounded-lg border border-border bg-surface p-3.5 pb-3">
-          <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-text-3">
+        <div className="flex flex-col gap-1 rounded-lg border border-border/60 bg-surface p-3.5 pb-3 shadow-soft">
+          <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-text-3">
             <Clock size={11} aria-hidden="true" />
             {strings.referral.holdLabel}
           </span>
-          <Num className="mt-0.5 text-[24px] leading-tight tracking-tight text-text">{formatUsd(r.balances.hold)}</Num>
-          <span className="text-[11px] leading-snug text-text-3">{strings.referral.holdNote}</span>
+          <Num className="mt-0.5 text-[26px] leading-tight tracking-tight text-text">{formatUsd(r.balances.hold)}</Num>
+          <span className="text-[12px] leading-snug text-text-3">{strings.referral.holdNote}</span>
         </div>
         <div className="flex flex-col gap-1 rounded-lg border border-accent/[.36] bg-accent/[.07] p-3.5 pb-3">
-          <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-text-2">
+          <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-text-2">
             <CheckCircle2 size={11} className="text-accent" aria-hidden="true" />
             {strings.referral.availableLabel}
           </span>
-          <Num className="mt-0.5 text-[24px] leading-tight tracking-tight text-accent">
+          <Num className="mt-0.5 text-[26px] leading-tight tracking-tight text-accent">
             {formatUsd(r.balances.available)}
           </Num>
-          <span className="text-[11px] leading-snug text-text-3">{strings.referral.availableNote}</span>
+          <span className="text-[12px] leading-snug text-text-3">{strings.referral.availableNote}</span>
         </div>
       </div>
 
@@ -214,7 +214,7 @@ export function ReferralScreen() {
         {strings.referral.requestPayout} — <Num>{formatUsd(r.balances.available)}</Num>
       </Button>
       {belowMin ? (
-        <p className="mt-1.5 text-center text-[11.5px] text-text-3">
+        <p className="mt-1.5 text-center text-[12.5px] text-text-3">
           {strings.referral.payoutBelowMin} <Num>{formatUsd(r.min_payout_usd)}</Num>
         </p>
       ) : null}
@@ -264,23 +264,23 @@ function PayoutSheet({ onClose, walletAddress, setWalletAddress, network, setNet
     >
       <div className="flex flex-col gap-3">
         <div>
-          <label className="mb-1.5 block text-xs font-medium text-text-2" htmlFor="wallet-address">
+          <label className="mb-1.5 block text-[13px] font-medium text-text-2" htmlFor="wallet-address">
             {strings.referral.walletAddress}
           </label>
           <input
             id="wallet-address"
-            className="h-11 w-full rounded border border-border bg-surface-2 px-3 font-mono text-[13px] text-text focus-visible:border-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+            className="h-12 w-full rounded border border-border bg-surface-2 px-3 font-mono text-[14px] text-text focus-visible:border-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
             value={walletAddress}
             onChange={(e) => setWalletAddress(e.target.value)}
           />
         </div>
         <div>
-          <label className="mb-1.5 block text-xs font-medium text-text-2" htmlFor="wallet-network">
+          <label className="mb-1.5 block text-[13px] font-medium text-text-2" htmlFor="wallet-network">
             {strings.referral.network}
           </label>
           <select
             id="wallet-network"
-            className="h-11 w-full rounded border border-border bg-surface-2 px-3 text-sm text-text focus-visible:border-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+            className="h-12 w-full rounded border border-border bg-surface-2 px-3 text-[15px] text-text focus-visible:border-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
             value={network}
             onChange={(e) => setNetwork(e.target.value)}
           >
@@ -297,7 +297,7 @@ function PayoutSheet({ onClose, walletAddress, setWalletAddress, network, setNet
             it is not theirs to pick. Comes from the selected rail, never hard-coded, so
             adding a non-USDT rail cannot make this line lie. */}
         <div>
-          <label className="mb-1.5 block text-xs font-medium text-text-2" htmlFor="wallet-coin">
+          <label className="mb-1.5 block text-[13px] font-medium text-text-2" htmlFor="wallet-coin">
             {strings.referral.coin}
           </label>
           <input
@@ -305,7 +305,7 @@ function PayoutSheet({ onClose, walletAddress, setWalletAddress, network, setNet
             readOnly
             disabled
             value={selectedRail?.asset ?? ""}
-            className="h-11 w-full cursor-not-allowed rounded border border-border bg-surface px-3 text-sm text-text-2"
+            className="h-12 w-full cursor-not-allowed rounded border border-border bg-surface px-3 text-[15px] text-text-2"
           />
         </div>
       </div>
