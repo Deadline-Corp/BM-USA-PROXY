@@ -1650,6 +1650,10 @@ def _order_view(o: Order, *, user_display: str, provider: str | None) -> dict[st
         "status": o.status,
         "provider": provider,
         "amount_usd": float(o.amount_usd),
+        # Which plan, and how many of it — an order for $85 and one for $255 are the same
+        # plan bought differently, and the amount alone does not say which.
+        "tariff_code": o.tariff_code,
+        "quantity": int(o.quantity or 1),
         "created_at": o.created_at.isoformat(),
     }
 
@@ -1689,17 +1693,56 @@ async def list_orders(
     session: DbSession,
     status: str | None = None,
     provider: str | None = None,
+    tariff: str | None = None,
     user_id: int | None = None,
+    q: str | None = None,
+    since: str | None = None,
+    before: str | None = None,
+    sort: str = "created_at",
+    order: str = "desc",
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> dict[str, Any]:
+    """Orders, filtered and sorted server-side.
+
+    This list had no search and no filters at all, so "find the order this customer is
+    asking about" meant paging through everything or opening clients one at a time. The
+    filters mirror the payments screen deliberately — an operator moving between the two
+    should not have to learn a second set of controls.
+    """
     stmt = select(Order)
     count_stmt = select(func.count()).select_from(Order)
     if status:
         stmt = stmt.where(Order.status == status)
         count_stmt = count_stmt.where(Order.status == status)
+    if tariff:
+        stmt = stmt.where(Order.tariff_code == tariff)
+        count_stmt = count_stmt.where(Order.tariff_code == tariff)
+    if since:
+        stmt = stmt.where(Order.created_at >= _parse_day(since))
+        count_stmt = count_stmt.where(Order.created_at >= _parse_day(since))
+    if before:
+        # inclusive end-of-day, same as everywhere else: "to 5 Aug" means through the 5th
+        end = _parse_day(before) + timedelta(days=1)
+        stmt = stmt.where(Order.created_at < end)
+        count_stmt = count_stmt.where(Order.created_at < end)
+    if q and q.strip():
+        needle_raw = q.strip()
+        if needle_raw.lstrip("#").isdigit():
+            # The order number in this table's own first column — what a buyer quotes.
+            cond: ColumnElement[bool] = Order.id == int(needle_raw.lstrip("#"))
+        else:
+            # A handle off a Telegram message, or a plan code. Both are things an operator
+            # is holding when they arrive here; neither had anywhere to be typed.
+            needle = f"%{needle_raw.lstrip('@')}%"
+            cond = or_(
+                Order.user_id.in_(select(User.id).where(User.tg_username.ilike(needle))),
+                Order.tariff_code.ilike(needle),
+            )
+        stmt = stmt.where(cond)
+        count_stmt = count_stmt.where(cond)
     if user_id:
         stmt = stmt.where(Order.user_id == user_id)
         count_stmt = count_stmt.where(Order.user_id == user_id)
@@ -1713,7 +1756,17 @@ async def list_orders(
         inv_order_ids = select(Invoice.order_id).where(Invoice.provider == provider)
         stmt = stmt.where(Order.id.in_(inv_order_ids))
         count_stmt = count_stmt.where(Order.id.in_(inv_order_ids))
-    stmt = stmt.order_by(Order.created_at.desc())
+
+    sort_col = {
+        "created_at": Order.created_at,
+        "amount_usd": Order.amount_usd,
+        "status": Order.status,
+        "number": Order.id,
+    }.get(sort, Order.created_at)
+    direction = sort_col.asc() if order == "asc" else sort_col.desc()
+    # id as the tiebreaker: orders written in the same second share created_at, and without
+    # it their order shifts between pages so rows get skipped or repeated.
+    stmt = stmt.order_by(direction, Order.id.desc())
 
     limit, offset = _page(limit, offset)
     total = int(await session.scalar(count_stmt) or 0)

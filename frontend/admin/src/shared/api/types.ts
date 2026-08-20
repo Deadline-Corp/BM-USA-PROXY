@@ -334,6 +334,9 @@ export interface Order {
   status: string;
   provider: string;
   amount_usd: number;
+  /** Which plan, and how many of it — the amount alone does not say. */
+  tariff_code: string;
+  quantity: number;
   created_at: string;
   invoice?: OrderInvoice;
   events?: OrderEvent[];

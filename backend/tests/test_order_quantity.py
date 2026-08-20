@@ -10,7 +10,7 @@ money actually arrives, minutes later on a chain. Neither may take the sale away
 from __future__ import annotations
 
 from app.core.errors import ValidationError
-from app.models import Access, Connection, Location, NotificationOutbox, Order, Tariff, User
+from app.models import Access, Connection, Location, NotificationOutbox, Tariff, User
 from app.services import orders as orders_svc
 from app.services.users import accept_terms
 from scripts.seed import seed_settings

@@ -461,3 +461,105 @@ async def test_cyrillic_names_are_searchable(engine, client: AsyncClient) -> Non
 
     # …and a Cyrillic word that is in nobody's name still finds nobody.
     assert (await client.get("/api/admin/clients", params={"q": "Пётр"})).json()["total"] == 0
+
+
+# ── orders: the same box and pills as every other screen ─────────────────
+async def test_orders_search_filter_and_sort(engine, client: AsyncClient) -> None:
+    """The orders list had no search and no filters, so answering "where is my order"
+    meant paging through everything or opening clients one at a time.
+
+    Four separate things have to hold, and each one has been wrong on some screen at some
+    point: a number finds exactly that order and not every order containing the digit; a
+    query nobody matches returns nothing rather than the whole table; the plan pill filters
+    on the plan and not on the amount that happens to go with it; and sorting is done by
+    the database, so it orders the whole result set rather than the current page.
+    """
+    from app.models import Order, Tariff
+
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with maker() as s:
+        user_id = await s.scalar(select(User.id).where(User.tg_username == "dev_user"))
+        tariff = await s.scalar(select(Tariff).where(Tariff.code == "daily"))
+        assert tariff is not None
+        now = datetime.now(UTC)
+        made = []
+        for code, amount, status, age_days in (
+            ("daily", Decimal("10.00"), "paid", 0),
+            ("daily", Decimal("20.00"), "expired", 1),
+            ("monthly", Decimal("85.00"), "completed", 40),
+        ):
+            o = Order(
+                user_id=user_id, tariff_id=tariff.id, tariff_code=code,
+                duration_minutes=1440, amount_usd=amount, status=status,
+                created_at=now - timedelta(days=age_days),
+            )
+            s.add(o)
+            made.append(o)
+        await s.commit()
+        numbers = [o.id for o in made]
+
+    async def listed(**params: object) -> dict:
+        r = await client.get("/api/admin/orders", params=params)
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    # The number a buyer quotes finds one row — not every order whose digits contain it.
+    one = await listed(q=str(numbers[0]))
+    assert [i["number"] for i in one["items"]] == [numbers[0]]
+    assert one["total"] == 1
+    # …and with the # they copied off the message.
+    assert (await listed(q=f"#{numbers[0]}"))["total"] == 1
+
+    # A handle reaches the orders of that client.
+    assert (await listed(q="dev_user"))["total"] >= 3
+
+    # Nothing matching must show nothing. Getting the table back reads as "everything
+    # matches" when it means the query fell through.
+    assert (await listed(q="no-such-buyer-anywhere"))["total"] == 0
+
+    # The plan pill filters on the plan.
+    monthly = await listed(tariff="monthly")
+    assert monthly["total"] >= 1
+    assert {i["tariff_code"] for i in monthly["items"]} == {"monthly"}
+
+    # Sorting happens in the database, over everything — not over the page just fetched.
+    asc = [i["amount_usd"] for i in (await listed(sort="amount_usd", order="asc"))["items"]]
+    assert asc == sorted(asc)
+    desc = [i["amount_usd"] for i in (await listed(sort="amount_usd", order="desc"))["items"]]
+    assert desc == sorted(desc, reverse=True)
+
+    # The date range is inclusive at both ends: "to today" has to include today.
+    today = datetime.now(UTC).date().isoformat()
+    assert (await listed(since=today))["total"] >= 1
+    assert (await listed(before=today))["total"] >= 1
+    old = await listed(before=(datetime.now(UTC) - timedelta(days=30)).date().isoformat())
+    assert numbers[2] in [i["number"] for i in old["items"]]
+    assert numbers[0] not in [i["number"] for i in old["items"]]
+
+
+async def test_orders_carry_their_plan_and_quantity(engine, client: AsyncClient) -> None:
+    """An order for $85 and one for $255 can be the same plan bought differently.
+
+    The list showed only the amount, so a multi-proxy purchase was indistinguishable from
+    a single one at a bigger tier — and the operator reading the row has no other place to
+    learn which it was.
+    """
+    from app.models import Order, Tariff
+
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with maker() as s:
+        user_id = await s.scalar(select(User.id).where(User.tg_username == "dev_user"))
+        tariff = await s.scalar(select(Tariff).where(Tariff.code == "daily"))
+        assert tariff is not None
+        o = Order(
+            user_id=user_id, tariff_id=tariff.id, tariff_code="daily",
+            duration_minutes=1440, amount_usd=Decimal("30.00"), status="paid", quantity=3,
+        )
+        s.add(o)
+        await s.commit()
+        number = o.id
+
+    rows = (await client.get("/api/admin/orders", params={"q": str(number)})).json()["items"]
+    assert len(rows) == 1
+    assert rows[0]["tariff_code"] == "daily"
+    assert rows[0]["quantity"] == 3
