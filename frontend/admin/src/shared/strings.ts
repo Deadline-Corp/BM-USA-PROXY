@@ -189,6 +189,10 @@ export const strings = {
     unavailable: "Unavailable",
     busyByAdmin: "Held in iproxy",
     busyByAdminHint: "An access for this phone was created in the iproxy console, not here.",
+    reserved: "Reserved for order",
+    reservedShort: "Reserved",
+    reservedHint:
+      "Held for an order that has not been paid yet. It goes back in the pool by itself if that invoice expires.",
     editConnection: "Edit connection",
   },
   cities: {

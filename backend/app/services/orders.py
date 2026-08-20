@@ -27,7 +27,7 @@ from app.services.payments.base import InvoiceDTO
 from app.services.payments.onchain.config import get_onchain_config
 from app.services.payments.onchain.rails import refresh_rails
 from app.services.payments.registry import get_payment_provider
-from app.services.provisioning.allocator import count_available
+from app.services.provisioning.allocator import release_reservations, reserve
 from app.services.provisioning.lifecycle import extend_access, provision_access, swap_access
 from app.services.ratelimit_helpers import order_guard
 from app.services.users import is_tos_accepted
@@ -130,6 +130,13 @@ async def guard_order_attempt(session: AsyncSession, *, user_id: int, tariff_cod
 # able to quote somebody five figures. Larger orders are a conversation with an operator.
 MAX_QUANTITY = 50
 
+# How long a reservation outlives the invoice it was raised for. A deposit that confirms in
+# the last seconds of the window still has to be watched, matched and provisioned, and none
+# of that is instant on a busy chain — a hold that expired on the same tick as the invoice
+# would give the phones away in the gap. Long enough to cover the tail, short enough that an
+# abandoned checkout is not sitting on stock for an extra hour.
+_RESERVATION_GRACE = timedelta(minutes=15)
+
 
 async def create_order(
     session: AsyncSession,
@@ -142,12 +149,18 @@ async def create_order(
     network: str | None = None,
     quantity: int = 1,
 ) -> tuple[Order, Invoice | None]:
-    """Create an order for `quantity` proxies, trimmed to what is actually on the shelf.
+    """Create an order for `quantity` proxies, trimmed to what is actually on the shelf —
+    and take those proxies off the shelf while the invoice is unpaid.
 
     Asking for ten where seven are free is not an error — it is a customer who wants ten.
     They are sold the seven and told so; the app asks them to confirm that before this is
     called, and the remaining three are a second purchase once stock returns. Trimming
     here rather than rejecting is what keeps a sale on the table.
+
+    The seven are then held for them. A quote is a promise about specific phones, and
+    without a hold that promise was only true until the next buyer clicked: both were
+    quoted the same stock, both could pay, and the second order landed in manual review
+    short of what it paid for.
     """
     if not await is_tos_accepted(session, user):
         raise TermsNotAccepted("accept the Terms of Use first")
@@ -190,20 +203,15 @@ async def create_order(
     if tariff.max_per_user is not None and quantity > 1:
         raise ValidationError("this plan is limited to one per customer")
 
-    free_now = await count_available(session, location_id=location_id, carrier=carrier)
-    if free_now == 0:
-        raise Conflict("sold out for the requested city/carrier")
-    granted = min(quantity, free_now)
+    ttl = int(await settings_svc.get(session, "invoice_ttl_minutes", 60))
 
     order = Order(
         user_id=user.id,
         tariff_id=tariff.id,
         tariff_code=tariff.code,
         duration_minutes=tariff.duration_minutes,
-        quantity=granted,
-        # The total, not the unit price: one invoice, one deposit, one amount for the
-        # watcher to match.
-        amount_usd=Decimal(str(tariff.price_usd)) * granted,
+        quantity=quantity,
+        amount_usd=Decimal(str(tariff.price_usd)) * quantity,
         location_id=location_id,
         carrier=carrier,
         referrer_user_id=user.referrer_user_id,
@@ -212,6 +220,35 @@ async def create_order(
     )
     session.add(order)
     await session.flush()
+
+    # Take the phones off the shelf now, not when the money lands. Counting first and
+    # allocating later left a window the length of a crypto confirmation in which the
+    # stock behind the quote could be sold to somebody else — the buyer paid for ten and
+    # got seven, and a human had to settle a shortfall nobody caused. Reserving *is* the
+    # count: one statement decides what is available and claims it, so there is no gap
+    # between the two for another checkout to slip through.
+    #
+    # The hold outlives the invoice by a margin. A deposit that confirms in the last
+    # seconds of the window still has to be provisioned, and a reservation that lapsed
+    # first would hand those phones away between payment and issue.
+    granted = await reserve(
+        session,
+        order_id=order.id,
+        until=_utcnow() + timedelta(minutes=ttl) + _RESERVATION_GRACE,
+        want=quantity,
+        location_id=location_id,
+        carrier=carrier,
+    )
+    if granted == 0:
+        raise Conflict("sold out for the requested city/carrier")
+    # Asking for ten where seven are free is not an error — it is a customer who wants ten.
+    # They are sold the seven and told so; the app asks them to confirm that before this is
+    # called, and the remaining three are a second purchase once stock returns.
+    order.quantity = granted
+    # The total, not the unit price: one invoice, one deposit, one amount for the watcher
+    # to match. Decimal on a column mypy sees as float — the column is Numeric and hands
+    # back Decimal at runtime, which is what money has to be.
+    order.amount_usd = Decimal(str(tariff.price_usd)) * granted  # type: ignore[assignment]
 
     if float(tariff.price_usd) == 0:  # trial: no invoice, issue immediately
         order.status = "paid"
@@ -223,7 +260,6 @@ async def create_order(
     # otherwise this process keeps handing out the address an operator already replaced.
     await refresh_rails(session)
     provider = get_payment_provider()
-    ttl = int(await settings_svc.get(session, "invoice_ttl_minutes", 60))
     dto = await provider.create_invoice(
         order_public_id=str(order.public_id),
         amount_usd=Decimal(str(order.amount_usd)),
@@ -396,7 +432,13 @@ async def _provision_or_review(session: AsyncSession, order: Order) -> None:
             payload={"count": issued},
         )
 
-    if issued < wanted:
+    if issued == wanted:
+        # Everything this order held is now a live access, so nothing should still be
+        # marked reserved for it. `allocate` clears each phone as it takes it; this is the
+        # backstop for a hold whose phone went offline and was never allocated — leaving it
+        # set would keep a recovered phone off the shelf until its deadline passed.
+        await release_reservations(session, order_id=order.id)
+    else:
         log.warning(
             "order.partially_provisioned",
             order_id=order.id,

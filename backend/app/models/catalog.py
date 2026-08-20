@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     ForeignKey,
@@ -13,6 +14,7 @@ from sqlalchemy import (
     Numeric,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import DateTime
@@ -100,6 +102,14 @@ class Connection(Base):
     # because sync never looked at per-connection accesses.
     external_access_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     external_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Held for an order whose invoice is still unpaid, so the phone quoted at checkout is
+    # the phone handed over when the deposit lands. `reserved_until` is the safety valve:
+    # every release path can be missed, and a hold with no clock removes a phone from the
+    # pool forever. See services.provisioning.allocator.
+    reserved_order_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("orders.id", ondelete="SET NULL")
+    )
+    reserved_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = created_at_col()
     updated_at: Mapped[datetime] = updated_at_col()
@@ -112,5 +122,14 @@ class Connection(Base):
         CheckConstraint(
             "online_status IN ('online','offline','unknown')", name="online_status_valid"
         ),
+        CheckConstraint(
+            "reserved_order_id IS NULL OR reserved_until IS NOT NULL", name="reservation_dated"
+        ),
         Index("ix_connections_pool", "is_sellable", "online_status", "location_id"),
+        Index(
+            "ix_connections_reserved",
+            "reserved_order_id",
+            "reserved_until",
+            postgresql_where=text("reserved_order_id IS NOT NULL"),
+        ),
     )

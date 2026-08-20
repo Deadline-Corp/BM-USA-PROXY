@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import log
 from app.models import Invoice, Order, PaymentEvent
 from app.services.payments.base import PaymentEventDTO
+from app.services.provisioning.allocator import release_reservations
 
 # forward-only ordering of invoice statuses (higher = later; never regress)
 _RANK = {
@@ -120,6 +121,9 @@ async def process_payment_event(session: AsyncSession, event_id: int) -> str:
         order = await session.get(Order, invoice.order_id)
         if order is not None and order.status == "awaiting_payment":
             order.status = "expired" if new_status == "expired" else "cancelled"
+        # This invoice will never be paid, so the stock it was holding goes back now
+        # instead of idling until the hold's own deadline.
+        await release_reservations(session, order_id=invoice.order_id)
     else:
         invoice.status = new_status
 

@@ -6,17 +6,39 @@ requested city/carrier; the partial unique index on accesses is the backstop.
 "Free" also means nobody is holding it outside our tables: a proxy-access created straight
 in the iproxy console occupies the phone without any row here to say so, and selling that
 phone hands two customers the same device. See sync.sync_external_holds.
+
+It also means nobody is holding it *for* an unpaid invoice. A quote is a promise about
+specific stock, and between raising the invoice and the deposit confirming there is a
+window — minutes on a good day — in which the phones behind that promise could be sold to
+somebody else. `reserve` takes them off the shelf for the life of the invoice.
 """
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+# A reservation an order made for itself is not an obstacle to that same order: the whole
+# point of holding stock is to hand it over when the money lands. Everyone else sees the
+# phone as taken. A lapsed hold is nobody's — see `reserve` on why the clock exists.
+#
+# Keyed on the owner, not the clock. Deleting an order nulls `reserved_order_id` through
+# the FK and leaves the timestamp behind; reading the timestamp alone would keep the phone
+# out of the pool on behalf of an order that no longer exists.
+_UNRESERVED = """
+        (c.reserved_order_id IS NULL OR c.reserved_until < now())
+"""
+_MINE_OR_UNRESERVED = """
+        (c.reserved_order_id IS NULL
+         OR c.reserved_until < now()
+         OR c.reserved_order_id = CAST(:for_order_id AS bigint))
+"""
+
 _ALLOC_SQL = text(
-    """
+    f"""
     SELECT c.id, c.iproxy_connection_id
     FROM connections c
     WHERE c.is_sellable AND c.online_status = 'online'
@@ -29,10 +51,15 @@ _ALLOC_SQL = text(
         WHERE a.connection_id = c.id
           AND a.status IN ('provisioning','active','expiring')
       )
-    ORDER BY (c.tier = 'stable') DESC, c.last_online_at DESC NULLS LAST
+      AND {_MINE_OR_UNRESERVED}
+    -- Take back what this order already holds before touching the open pool: the buyer
+    -- paid for these, and spending a free phone here while their own sits reserved would
+    -- shrink the shelf for no one's benefit.
+    ORDER BY coalesce(c.reserved_order_id = CAST(:for_order_id AS bigint), false) DESC,
+             (c.tier = 'stable') DESC, c.last_online_at DESC NULLS LAST
     FOR UPDATE OF c SKIP LOCKED
     LIMIT 1
-    """
+    """  # noqa: S608
 )
 
 
@@ -42,8 +69,14 @@ async def allocate(
     location_id: int | None = None,
     carrier: str | None = None,
     exclude_id: int | None = None,
+    for_order_id: int | None = None,
 ) -> tuple[int, str] | None:
-    """Return (connection_id, iproxy_connection_id) locked for this txn, or None."""
+    """Return (connection_id, iproxy_connection_id) locked for this txn, or None.
+
+    ``for_order_id`` unlocks that order's own reservations and prefers them. Callers with
+    no order behind them — an operator issuing by hand — pass nothing and see reserved
+    phones as taken, which is the entire purpose of a reservation.
+    """
     row = (
         await session.execute(
             _ALLOC_SQL,
@@ -51,16 +84,31 @@ async def allocate(
                 "location_id": location_id,
                 "carrier": carrier,
                 "exclude_id": exclude_id,
+                "for_order_id": for_order_id,
             },
         )
     ).first()
-    return (row[0], row[1]) if row else None
+    if row is None:
+        return None
+    # The hold has served its purpose the moment a live access takes the phone. Clearing it
+    # here rather than in the caller keeps the two from drifting: every allocation path
+    # goes through this function, and a stale hold on a rented phone would make the pool
+    # screen lie about why it is unavailable.
+    await session.execute(
+        text(
+            "UPDATE connections SET reserved_order_id = NULL, reserved_until = NULL "
+            "WHERE id = :id"
+        ),
+        {"id": row[0]},
+    )
+    return (row[0], row[1])
 
 
-# What "free" means, in one place: online, not held by the iproxy console, and not already
-# rented. Kept as a fragment so the city list and the unplaced count cannot drift apart,
-# and so both keep matching `allocate`'s own WHERE clause.
-_FREE_PREDICATE = """
+# What "free" means, in one place: online, not held by the iproxy console, not already
+# rented, and not reserved for somebody's open invoice. Kept as a fragment so the city
+# list, the unplaced count and the availability count cannot drift apart, and so all of
+# them keep matching `allocate`'s own WHERE clause.
+_FREE_PREDICATE = f"""
         c.online_status = 'online'
         AND c.external_access_count = 0
         AND NOT EXISTS (
@@ -68,7 +116,8 @@ _FREE_PREDICATE = """
           WHERE a.connection_id = c.id
             AND a.status IN ('provisioning','active','expiring')
         )
-"""
+        AND {_UNRESERVED}
+"""  # noqa: S608 — the only interpolation is _UNRESERVED, a constant defined above
 
 # Rows are every sellable phone in an ACTIVE city, counted twice: how many exist there at
 # all, and how many are free this second. Two counts rather than one because "sold out" and
@@ -102,6 +151,39 @@ _UNPLACED_SQL = text(
     WHERE c.is_sellable AND c.location_id IS NULL
       AND {_FREE_PREDICATE}
     GROUP BY c.carrier
+    """  # noqa: S608
+)
+
+_COUNT_SQL = text(
+    f"""
+    SELECT count(*) FROM connections c
+    WHERE c.is_sellable
+      AND (CAST(:location_id AS bigint) IS NULL OR c.location_id = CAST(:location_id AS bigint))
+      AND (CAST(:carrier AS text) IS NULL OR c.carrier = CAST(:carrier AS text))
+      AND {_FREE_PREDICATE}
+    """  # noqa: S608
+)
+
+# Pick the phones, lock them, stamp them — one statement, so two buyers checking out in the
+# same instant cannot be handed the same phone. SKIP LOCKED means the second one takes the
+# next phones down the list instead of waiting behind the first.
+_RESERVE_SQL = text(
+    f"""
+    WITH picked AS (
+        SELECT c.id
+        FROM connections c
+        WHERE c.is_sellable
+          AND (CAST(:location_id AS bigint) IS NULL
+               OR c.location_id = CAST(:location_id AS bigint))
+          AND (CAST(:carrier AS text) IS NULL OR c.carrier = CAST(:carrier AS text))
+          AND {_FREE_PREDICATE}
+        ORDER BY (c.tier = 'stable') DESC, c.last_online_at DESC NULLS LAST
+        FOR UPDATE SKIP LOCKED
+        LIMIT :want
+    )
+    UPDATE connections SET reserved_order_id = :order_id, reserved_until = :until
+    WHERE id IN (SELECT id FROM picked)
+    RETURNING id
     """  # noqa: S608
 )
 
@@ -169,19 +251,82 @@ async def count_available(
     session: AsyncSession, *, location_id: int | None = None, carrier: str | None = None
 ) -> int:
     row = await session.execute(
-        text(
-            """
-            SELECT count(*) FROM connections c
-            WHERE c.is_sellable AND c.online_status = 'online'
-              AND c.external_access_count = 0
-              AND (CAST(:location_id AS bigint) IS NULL OR c.location_id = CAST(:location_id AS bigint))
-              AND (CAST(:carrier AS text) IS NULL OR c.carrier = CAST(:carrier AS text))
-              AND NOT EXISTS (
-                SELECT 1 FROM accesses a
-                WHERE a.connection_id = c.id
-                  AND a.status IN ('provisioning','active','expiring'))
-            """
-        ),
-        {"location_id": location_id, "carrier": carrier},
+        _COUNT_SQL, {"location_id": location_id, "carrier": carrier}
     )
     return int(row.scalar_one())
+
+
+async def reserve(
+    session: AsyncSession,
+    *,
+    order_id: int,
+    until: datetime,
+    want: int,
+    location_id: int | None = None,
+    carrier: str | None = None,
+) -> int:
+    """Hold up to ``want`` matching phones for this order. Returns how many were taken.
+
+    Fewer than asked is a normal answer, not a failure: somebody wanting ten where seven
+    are free is a customer who wants ten, and the caller sells them the seven. Zero means
+    sold out.
+
+    ``until`` is the deadline the hold dies on by itself. It exists because every explicit
+    release — invoice expiry, cancellation, the order completing — is code that can be
+    skipped by a crash or a branch nobody thought about, and a hold that outlives its
+    order removes a phone from the shelf with no way to notice. The clock turns the worst
+    case from lost inventory into a phone that idles until the invoice would have expired.
+    """
+    if want < 1:
+        return 0
+    rows = (
+        await session.execute(
+            _RESERVE_SQL,
+            {
+                "order_id": order_id,
+                "until": until,
+                "want": want,
+                "location_id": location_id,
+                "carrier": carrier,
+            },
+        )
+    ).all()
+    return len(rows)
+
+
+async def release_reservations(session: AsyncSession, *, order_id: int) -> int:
+    """Put back everything this order was holding. Returns how many phones were freed."""
+    rows = (
+        await session.execute(
+            text(
+                "UPDATE connections SET reserved_order_id = NULL, reserved_until = NULL "
+                "WHERE reserved_order_id = :order_id RETURNING id"
+            ),
+            {"order_id": order_id},
+        )
+    ).all()
+    return len(rows)
+
+
+async def release_stale_reservations(session: AsyncSession) -> int:
+    """Clear holds whose deadline has passed.
+
+    Nothing depends on this for correctness — every query that asks what is free already
+    ignores a lapsed hold. It runs so the pool screen does not show an operator a phone
+    marked "reserved" by an order that died last week, which reads as a system that has
+    lost track of its own stock.
+
+    Also clears the deadline left behind when an order is deleted: the FK nulls the owner
+    and cannot touch the timestamp, so the row keeps a date nobody is waiting for.
+    """
+    rows = (
+        await session.execute(
+            text(
+                "UPDATE connections SET reserved_order_id = NULL, reserved_until = NULL "
+                "WHERE reserved_until IS NOT NULL "
+                "  AND (reserved_order_id IS NULL OR reserved_until < now()) "
+                "RETURNING id"
+            )
+        )
+    ).all()
+    return len(rows)

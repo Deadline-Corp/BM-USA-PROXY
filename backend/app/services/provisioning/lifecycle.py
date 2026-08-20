@@ -36,7 +36,14 @@ async def provision_access(
     would otherwise send the buyer ten identical "your proxy is ready" messages. The
     caller doing the batch turns it off and sends one message naming the count.
     """
-    alloc = await allocate(session, location_id=order.location_id, carrier=order.carrier)
+    # for_order_id hands back the phones this order reserved when its invoice was raised.
+    # Without it a paid order would queue behind its own hold and be told the pool is empty.
+    alloc = await allocate(
+        session,
+        location_id=order.location_id,
+        carrier=order.carrier,
+        for_order_id=order.id,
+    )
     if alloc is None:
         raise ProvisioningError("no free connection")
     conn_id, iproxy_conn_id = alloc

@@ -113,7 +113,9 @@ async def check_pool_watermark(session: AsyncSession) -> dict[str, Any]:
 
     "Free" is the allocator's own definition, so the number in the alert is the number of
     proxies that can actually be sold this second — not a count of phones that happen to
-    be online.
+    be online. Stock reserved for unpaid invoices is therefore excluded, which means a
+    burst of checkouts can trip this and it recovers when those invoices are paid or
+    expire. That is the honest reading: during the burst there really is nothing to sell.
 
     State is kept so the alert fires on the way down rather than every pass, repeats only
     every few hours while stock stays low, and says so once when it recovers. A threshold
@@ -276,4 +278,9 @@ async def expire_invoices(session: AsyncSession) -> int:
         order = await session.get(Order, inv.order_id)
         if order is not None and order.status == "awaiting_payment":
             order.status = "expired"
+        # Whatever this order was holding goes back on the shelf now rather than when its
+        # deadline lapses. The clock on the reservation is the safety net, not the plan:
+        # waiting for it would keep phones out of the pool for the grace period after
+        # every abandoned checkout.
+        await allocator.release_reservations(session, order_id=inv.order_id)
     return len(invoices)

@@ -64,6 +64,7 @@ export function PoolsScreen() {
   const usedSlots = summary?.slots_used ?? 0;
   const freeSlots = summary?.slots_free ?? 0;
   const heldSlots = summary?.slots_held ?? 0;
+  const reservedSlots = summary?.slots_reserved ?? 0;
   const unavailableSlots = summary?.slots_unavailable ?? 0;
   const usedPct = totalSlots > 0 ? Math.round((usedSlots / totalSlots) * 100) : 0;
   /** Share of the pool, for a bar segment. Unrounded so the three always fill the track. */
@@ -117,6 +118,11 @@ export function PoolsScreen() {
               it is different from every other state — somebody opens the iproxy console
               and releases the phone. Until then it earns nothing while looking like stock. */}
           <SummaryCell label={strings.pools.busyByAdmin} value={heldSlots} tone="warning" />
+          {/* Also its own bucket, and for the same reason as Held: nothing is wrong with
+              these phones, they are simply promised to somebody who has not paid yet. Folded
+              into Free they would make this screen answer "can we sell?" with a number the
+              allocator will not honour; folded into Unavailable they would look broken. */}
+          <SummaryCell label={strings.pools.reservedShort} value={reservedSlots} />
           <SummaryCell label={strings.pools.unavailable} value={unavailableSlots} />
           <div className="flex-1 min-w-[220px] px-6 py-3.5 border-l border-border flex flex-col gap-1.5 justify-center">
             <div className="flex justify-between items-baseline">
@@ -143,6 +149,10 @@ export function PoolsScreen() {
                 style={{ width: `${pct(heldSlots)}%` }}
               />
               <div
+                className="h-full bg-accent/40 transition-[width] duration-300 ease-brand"
+                style={{ width: `${pct(reservedSlots)}%` }}
+              />
+              <div
                 className="h-full bg-text-3 transition-[width] duration-300 ease-brand"
                 style={{ width: `${pct(unavailableSlots)}%` }}
               />
@@ -159,6 +169,10 @@ export function PoolsScreen() {
               <span className="flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-warning/50" />
                 {strings.pools.busyByAdmin} {heldSlots}
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-accent/40" />
+                {strings.pools.reservedShort} {reservedSlots}
               </span>
               <span className="flex items-center gap-1">
                 {/* Not "Offline": this bucket also holds phones reporting 'unknown' and

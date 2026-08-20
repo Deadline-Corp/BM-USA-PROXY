@@ -1021,6 +1021,18 @@ def _connection_view(
         "external_checked_at": (
             c.external_checked_at.isoformat() if c.external_checked_at else None
         ),
+        # Held for an order that is still waiting to be paid — same reasoning as
+        # external_holds above. Without it this phone reads as free and unrented while the
+        # allocator refuses to hand it out, and the operator has nothing to look at. The
+        # number is the one the buyer quotes. A lapsed hold is reported as no hold,
+        # because that is what every other query already treats it as.
+        "reserved_for_order": (
+            c.reserved_order_id
+            if c.reserved_order_id is not None
+            and c.reserved_until is not None
+            and c.reserved_until > _utcnow()
+            else None
+        ),
         "last_rotated_at": c.last_rotated_at.isoformat() if c.last_rotated_at else None,
     }
 
@@ -1202,6 +1214,10 @@ async def pool_summary(admin: CurrentAdmin, session: DbSession) -> dict[str, Any
                     than sold by us. Its own bucket because the answer to it is different
                     from every other: somebody has to go into iproxy and release it, and
                     until they do it earns nothing while looking like stock.
+      reserved    — spoken for by an order whose invoice has not been paid. Also its own
+                    bucket, and for the same reason: nothing is wrong with the phone, it
+                    is not earning, and the answer is neither "release it in iproxy" nor
+                    "wait for a rental to end" — it is somebody at a checkout screen.
       free        — sellable, online, and nothing on it either way. What the allocator can
                     hand out this second, and the only number that answers "can we sell?".
       unavailable — everything else: offline, silent, or withheld by an operator.
@@ -1224,6 +1240,7 @@ async def pool_summary(admin: CurrentAdmin, session: DbSession) -> dict[str, Any
                         SELECT 1 FROM accesses a
                         WHERE a.connection_id = c.id
                           AND a.status IN ('provisioning','active','expiring'))
+                      AND (c.reserved_order_id IS NULL OR c.reserved_until < now())
                 ) AS free,
                 count(*) FILTER (
                     WHERE EXISTS (
@@ -1237,7 +1254,16 @@ async def pool_summary(admin: CurrentAdmin, session: DbSession) -> dict[str, Any
                         SELECT 1 FROM accesses a
                         WHERE a.connection_id = c.id
                           AND a.status IN ('provisioning','active','expiring'))
-                ) AS held
+                ) AS held,
+                count(*) FILTER (
+                    WHERE c.is_sellable AND c.online_status = 'online'
+                      AND c.external_access_count = 0
+                      AND NOT EXISTS (
+                        SELECT 1 FROM accesses a
+                        WHERE a.connection_id = c.id
+                          AND a.status IN ('provisioning','active','expiring'))
+                      AND c.reserved_order_id IS NOT NULL AND c.reserved_until >= now()
+                ) AS reserved
             FROM connections c
             LEFT JOIN locations l ON l.id = c.location_id
             GROUP BY l.city, l.state_code, c.carrier
@@ -1247,16 +1273,20 @@ async def pool_summary(admin: CurrentAdmin, session: DbSession) -> dict[str, Any
     )
     cities: list[dict[str, Any]] = []
     slots_total = slots_used = slots_free = slots_held = slots_unavailable = 0
-    for city, state, carrier, total, free, busy, held in rows:
+    slots_reserved = 0
+    for city, state, carrier, total, free, busy, held, reserved in rows:
         total, free, busy, held = int(total), int(free), int(busy), int(held)
-        # Derived, never counted separately: whatever is neither sold, held in iproxy nor
-        # sellable is unavailable by definition, so the four can never fail to cover the
-        # pool. free already excludes held (see the query), so there is no double count.
-        unavailable = total - busy - free - held
+        reserved = int(reserved)
+        # Derived, never counted separately: whatever is neither sold, held in iproxy,
+        # spoken for, nor sellable is unavailable by definition, so the five can never fail
+        # to cover the pool. free excludes both held and reserved (see the query), so there
+        # is no double count.
+        unavailable = total - busy - free - held - reserved
         slots_total += total
         slots_used += busy
         slots_free += free
         slots_held += held
+        slots_reserved += reserved
         slots_unavailable += unavailable
         cities.append(
             {
@@ -1271,6 +1301,7 @@ async def pool_summary(admin: CurrentAdmin, session: DbSession) -> dict[str, Any
                 "nodes_free": free,
                 "nodes_busy": busy,
                 "nodes_held": held,
+                "nodes_reserved": reserved,
                 "nodes_unavailable": unavailable,
             }
         )
@@ -1279,6 +1310,7 @@ async def pool_summary(admin: CurrentAdmin, session: DbSession) -> dict[str, Any
         "slots_used": slots_used,
         "slots_free": slots_free,
         "slots_held": slots_held,
+        "slots_reserved": slots_reserved,
         "slots_unavailable": slots_unavailable,
         "cities": cities,
     }
@@ -2362,6 +2394,10 @@ async def resolve_order(
         order.status = "refunded"
     else:
         raise ValidationError("action must be 'approve', 'fail', or 'refund'")
+    # Settled either way, so anything this order was still holding goes back on the shelf.
+    # An order sits in manual_review precisely because something went wrong with issuing
+    # it, which is the case where a reservation is most likely to be left over.
+    await allocator.release_reservations(session, order_id=order.id)
     await audit.write(session, admin_id=admin.id, action="order.resolve", entity="order",
                        entity_id=order.id, after={"action": body.action})
     user_display, provider = await _order_extras(session, order)

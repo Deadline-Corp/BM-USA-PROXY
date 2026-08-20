@@ -4,6 +4,7 @@ import type { Connection, ConnectionUpdate } from "@/shared/api/types";
 import { Switch } from "@/shared/components/Switch";
 import { Num } from "@/shared/components/Num";
 import { IconKebab } from "@/shared/components/icons";
+import { OrderNumber } from "@/shared/components/OrderNumber";
 import { useUpdateConnection } from "@/shared/hooks/usePool";
 import { useToast } from "@/shared/components/Toast";
 import { apiErrorMessage } from "@/shared/api/client";
@@ -73,6 +74,20 @@ export function DeviceCard({ connection: c, onEdit }: DeviceCardProps) {
         >
           <span className="w-[5px] h-[5px] rounded-full bg-current flex-none" />
           {strings.pools.busyByAdmin}
+        </div>
+      ) : null}
+
+      {/* Same reasoning as the row above: the allocator will not hand this phone out, and
+          nothing else on the card says why. Slots read 0/1 and the chip says Online, so
+          without this it looks like the pool is broken rather than spoken for. */}
+      {c.reserved_for_order !== null ? (
+        <div
+          className="flex items-center gap-1.5 rounded border border-border-2 bg-surface-2 px-2 py-1 text-[.72rem] text-text-2"
+          title={strings.pools.reservedHint}
+        >
+          <span className="w-[5px] h-[5px] rounded-full bg-current flex-none" />
+          {strings.pools.reserved}
+          <OrderNumber value={c.reserved_for_order} />
         </div>
       ) : null}
 

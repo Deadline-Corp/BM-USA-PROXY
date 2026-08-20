@@ -240,6 +240,8 @@ export interface Connection {
   /** Proxy-accesses on this phone in iproxy that we did not issue — created by hand in
    *  the iproxy console. Non-zero means occupied even when slots_used is 0. */
   external_holds: number;
+  /** Order number this phone is held for while its invoice is unpaid, or null. */
+  reserved_for_order: number | null;
   external_checked_at: string | null;
   last_rotated_at: string | null;
 }
@@ -265,6 +267,7 @@ export interface PoolCitySummary {
   nodes_busy: number;
   /** Held by an access made in the iproxy console. */
   nodes_held: number;
+  nodes_reserved: number;
   /** Offline, silent, or withheld by an operator. */
   nodes_unavailable: number;
 }
@@ -276,6 +279,7 @@ export interface PoolSummary {
   /** Occupied by a proxy-access created inside the iproxy console rather than sold by us.
    *  Its own bucket: releasing it means going into iproxy, not anything in this console. */
   slots_held: number;
+  slots_reserved: number;
   slots_unavailable: number;
   cities: PoolCitySummary[];
 }

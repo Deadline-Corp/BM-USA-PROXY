@@ -23,6 +23,7 @@ from app.services.maintenance import (
     sweep_access_expiries,
     sweep_auto_rotations,
 )
+from app.services.provisioning import allocator
 
 
 async def _beat(ctx: dict, name: str) -> None:
@@ -78,6 +79,12 @@ async def auto_rotate_sweeper(ctx: dict) -> dict[str, int]:
 async def invoice_expirer(ctx: dict) -> int:
     async with SessionFactory() as s:
         n = await expire_invoices(s)
+        # Holds whose deadline passed without any of the explicit release paths running —
+        # a crashed worker, an invoice deleted out from under one, a branch nobody thought
+        # about. Nothing reads a lapsed hold as occupied, so this is not load-bearing for
+        # correctness; it runs so the pool screen never shows an operator a phone reserved
+        # by an order that died last week.
+        await allocator.release_stale_reservations(s)
         await s.commit()
     await _beat(ctx, "invoice_expirer")
     return n
