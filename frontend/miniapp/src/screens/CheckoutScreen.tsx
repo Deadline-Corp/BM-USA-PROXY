@@ -316,20 +316,18 @@ export function CheckoutScreen() {
                   </span>
                 ) : null}
               </div>
-              {/* The address alone, not the payment URI. A QR is only ever scanned from a
-                  second device — on this one the "Open in wallet" button below is the
-                  shorter path and still prefills everything. The other device is usually an
-                  exchange app, and Bybit and Binance read a withdrawal QR as an address:
-                  handed an ethereum: URI they answer "invalid QR code", which is where the
-                  client's operator gave up and typed it by hand. Wallets accept a bare
-                  address too — they just ask for the amount, which is printed beside this
-                  with its own copy button. A QR some apps refuse outright is worse than one
-                  that always scans and asks for one more field. */}
+              {/* The server decides what goes in here, because the answer differs by rail
+                  and one of the differences is a way to lose money rather than a matter of
+                  convenience — see invoice_qr_code. The caption follows it: on a rail whose
+                  code carries the amount there is nothing to type, and on one that cannot
+                  the buyer has to be told before they scan, not after. */}
               <div className="flex shrink-0 flex-col items-center gap-1">
-                <PaymentQr payload={invoice.pay_address} />
-                {invoice.pay_address ? (
+                <PaymentQr payload={invoice.qr_payload} />
+                {invoice.qr_payload ? (
                   <span className="max-w-[86px] text-center text-[10px] leading-tight text-text-3">
-                    {strings.checkout.qrHint}
+                    {invoice.qr_payload === invoice.pay_address
+                      ? strings.checkout.qrHintAddressOnly
+                      : strings.checkout.qrHint}
                   </span>
                 ) : null}
               </div>

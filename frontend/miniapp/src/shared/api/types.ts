@@ -78,6 +78,10 @@ export interface Invoice {
   pay_address: string | null;
   /** Wallet deep link for the QR (EIP-681 / BIP-21 / Solana Pay), or the bare address. */
   pay_uri: string | null;
+  /** What the QR encodes. Carries the amount where a code can be scanned by an exchange as
+   *  well as a wallet; falls back to the bare address where it cannot. See invoice_qr_code
+   *  on the server for why the two differ on ERC-20/BEP-20. */
+  qr_payload: string | null;
   /**
    * An https URL that redirects into `pay_uri`. Null where the chain has no deep link at
    * all. Inside Telegram this is the only usable target: the WebView cannot navigate to a

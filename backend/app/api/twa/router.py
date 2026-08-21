@@ -22,7 +22,11 @@ from app.services import payouts as payouts_svc
 from app.services import settings as settings_svc
 from app.services import users as users_svc
 from app.services.notifications import enqueue
-from app.services.payments.invoice_links import invoice_pay_uri, invoice_qr_payload
+from app.services.payments.invoice_links import (
+    invoice_pay_uri,
+    invoice_qr_code,
+    invoice_qr_payload,
+)
 from app.services.provisioning.lifecycle import rotate_ip, swap_access
 
 router = APIRouter(prefix="/api/twa", tags=["twa"])
@@ -169,6 +173,10 @@ def _invoice_view(inv: Invoice | None, order_public_id: str | None = None) -> di
         "crypto_amount": str(inv.crypto_amount) if inv.crypto_amount is not None else None,
         "pay_address": inv.pay_address,
         "pay_uri": invoice_qr_payload(inv),
+        # What the QR itself carries. Not the same as pay_uri: the deep link above opens a
+        # wallet on this device and may be a contract call, while this has to survive being
+        # photographed by an exchange app. See invoice_qr_code.
+        "qr_payload": invoice_qr_code(inv),
         # An https URL that redirects into the wallet scheme. Inside Telegram the mini app
         # cannot navigate to `ethereum:` itself — it opens this through the client instead,
         # in a real browser, which is where the OS wallet chooser comes from.

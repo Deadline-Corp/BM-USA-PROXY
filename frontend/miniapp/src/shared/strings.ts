@@ -171,7 +171,8 @@ export const strings = {
     manualReviewBody: "Your payment needs manual review. Support has been notified — hang tight.",
     cancelledTitle: "Order cancelled",
     cancelledBody: "This order was cancelled.",
-    qrHint: "Address QR — enter the amount yourself",
+    qrHint: "Scan — amount included",
+    qrHintAddressOnly: "Address only — enter the amount yourself",
     proxiesInThisOrder: "proxies in this order",
     // The single most common way a payment goes wrong: the buyer sends the invoiced
     // amount, their exchange takes its fee out of it, and less arrives than we asked for

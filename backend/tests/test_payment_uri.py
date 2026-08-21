@@ -118,3 +118,71 @@ def test_non_solana_rails_ignore_the_reference() -> None:
     )
     assert evm is not None and "reference" not in evm
     assert btc is not None and "reference" not in btc
+
+
+# ── what may go in a QR, which is scanned by things that are not wallets ──
+def _invoice(asset: str, network: str, address: str, amount: str):
+    """Enough of an Invoice for the link helpers — they read five fields."""
+    from app.models import Invoice
+
+    return Invoice(
+        provider="onchain",
+        provider_invoice_id=f"t-{asset}-{network}",
+        status="pending",
+        amount_usd=10,
+        crypto_currency=asset,
+        crypto_network=network,
+        crypto_amount=Decimal(amount),
+        pay_address=address,
+    )
+
+
+def test_a_token_qr_never_leads_with_the_contract_address() -> None:
+    """The one case where this is about losing money, not convenience.
+
+    An EIP-681 token payment is a contract call, so the address after `ethereum:` is the
+    TOKEN, not the payee. An exchange scanner reads the leading address and stops: Bybit
+    refusing the code — which is what the client's operator hit — is the safe outcome, and
+    an app that parsed it naively would withdraw the customer's USDT to the USDT contract,
+    where it cannot be recovered. So the QR carries the address alone.
+    """
+    from app.services.payments.invoice_links import invoice_qr_code, invoice_pay_uri
+
+    for asset, network in (("USDT", "erc20"), ("USDC", "erc20"), ("USDT", "bep20")):
+        inv = _invoice(asset, network, ADDR_EVM, "4.003")
+        uri = invoice_pay_uri(inv)
+        assert uri is not None and uri.split(":")[1].split("@")[0].lower() != ADDR_EVM.lower(), (
+            "this test is pointless unless the URI really does lead with the contract"
+        )
+        assert invoice_qr_code(inv) == ADDR_EVM
+
+
+def test_a_qr_carries_the_amount_wherever_the_payee_comes_first() -> None:
+    """Bitcoin, Litecoin and Solana put the recipient straight after the scheme, so an app
+    that understands only addresses still reads the right destination and the amount simply
+    rides along. One code then serves a wallet and an exchange both."""
+    from app.services.payments.invoice_links import invoice_qr_code
+
+    btc = invoice_qr_code(_invoice("BTC", "native", ADDR_BTC, "0.00042"))
+    assert btc == f"bitcoin:{ADDR_BTC}?amount=0.00042"
+
+    sol = invoice_qr_code(_invoice("SOL", "native", ADDR_SOL, "1.5"))
+    assert sol is not None and sol.startswith(f"solana:{ADDR_SOL}?amount=1.5")
+
+
+def test_a_rail_with_no_uri_standard_still_gets_a_scannable_qr() -> None:
+    """Tron has no scheme the wallets honour, and the address alone is what everything
+    reads — which is also the rail we point small payments at."""
+    from app.services.payments.invoice_links import invoice_qr_code
+
+    assert invoice_qr_code(_invoice("USDT", "trc20", ADDR_TRON, "4.003")) == ADDR_TRON
+
+
+def test_the_wallet_deep_link_is_left_alone() -> None:
+    """The button beside the code opens a wallet on this device, where the contract call is
+    exactly right. Narrowing the QR must not narrow that too."""
+    from app.services.payments.invoice_links import invoice_pay_uri
+
+    uri = invoice_pay_uri(_invoice("USDT", "erc20", ADDR_EVM, "4.003"))
+    assert uri is not None
+    assert "/transfer?address=" in uri and "uint256=4003000" in uri
