@@ -285,3 +285,85 @@ async def test_evm_client_drives_activation_through_watcher(session) -> None:
     assert invoice.status == "paid"
     assert invoice.matched_txid == "0xevmdep"
     assert await _access_count(session, order.id) == 1
+
+
+# ── a provider that refuses a range must not kill the chain ──────────────
+class _CappedRpc:
+    """Serves getLogs only up to `cap` blocks and refuses anything wider the way Alchemy's
+    free tier does: HTTP 400, with the JSON-RPC error in the body."""
+
+    def __init__(self, cap: int, head: int, hit: dict) -> None:
+        self.cap = cap
+        self.head = head
+        self.hit = hit
+        self.refused = 0
+        self.served = 0
+
+    async def post(self, url: str, *, json: Any | None = None, headers: dict | None = None) -> Any:
+        method = json["method"]
+        if method == "eth_blockNumber":
+            return {"jsonrpc": "2.0", "id": 1, "result": hex(self.head)}
+        if method != "eth_getLogs":
+            return {"jsonrpc": "2.0", "id": 1, "result": None}
+        p = json["params"][0]
+        lo, hi = int(p["fromBlock"], 16), int(p["toBlock"], 16)
+        if hi - lo >= self.cap:
+            self.refused += 1
+            # The shape that broke production. HttpxJson hands a JSON-RPC error body back
+            # whatever status carried it, so the client can raise EvmRpcError and retry.
+            return {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {"code": -32600, "message": "up to a 10 block range"},
+            }
+        self.served += 1
+        block = int(self.hit["blockNumber"], 16)
+        return {"jsonrpc": "2.0", "id": 1, "result": [self.hit] if lo <= block <= hi else []}
+
+    async def get(self, url: str, *, params: dict | None = None, headers: dict | None = None) -> Any:
+        return {}
+
+    async def aclose(self) -> None:
+        return None
+
+
+async def test_a_refused_block_range_is_narrowed_not_fatal() -> None:
+    """Alchemy's free tier serves ten blocks and answers HTTP 400 for anything wider.
+
+    That 400 was raised as a transport error before the body was read, so the halve-the-
+    range retry — written for exactly this refusal — never saw it. The tick died, the
+    cursor stopped, and Ethereum went unscanned for nine hours while a customer's payment
+    landed on our address. Nothing anywhere said so.
+    """
+    rpc = _CappedRpc(cap=10, head=1000, hit=_log("0xfee", 4003000, block_number=880))
+    client = EvmClient(chain="ethereum", endpoint="https://rpc", http=rpc)
+
+    res = await client.scan(
+        from_block=800,
+        to_block=900,
+        methods=_evm_config("ethereum", "USDC", "erc20").methods_for_chain("ethereum"),
+    )
+
+    assert rpc.refused > 0, "the test must actually exercise the refusal"
+    assert rpc.served > 0, "and then succeed on a narrower range"
+    assert [t.amount for t in res] == [Decimal("4.003")]
+
+
+async def test_the_refused_span_is_learned_once_not_rediscovered() -> None:
+    """A permanent cap should cost one refusal per process, not one per call.
+
+    The plan is metered: rediscovering the limit on every scan spends the quota that pays
+    for the scans themselves.
+    """
+    rpc = _CappedRpc(cap=10, head=1000, hit=_log("0xfee", 1000000, block_number=890))
+    client = EvmClient(chain="ethereum", endpoint="https://rpc", http=rpc)
+    methods = _evm_config("ethereum", "USDC", "erc20").methods_for_chain("ethereum")
+
+    await client.scan(from_block=800, to_block=900, methods=methods)
+    first_round = rpc.refused
+    rpc.refused = 0
+
+    await client.scan(from_block=900, to_block=1000, methods=methods)
+
+    assert first_round > 0
+    assert rpc.refused == 0, "the cap was already known — nothing should be refused again"

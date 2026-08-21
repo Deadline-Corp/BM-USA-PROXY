@@ -19,6 +19,7 @@ from app.models import Broadcast, Invoice
 from app.services import referral
 from app.services.maintenance import (
     check_pool_watermark,
+    check_watcher_liveness,
     expire_invoices,
     sweep_access_expiries,
     sweep_auto_rotations,
@@ -57,6 +58,15 @@ async def refresh_client_handles(ctx: dict) -> dict[str, int] | dict[str, str]:
         # connector per pass, and this one runs forever.
         await bot.session.close()
     await _beat(ctx, "refresh_client_handles")
+    return result
+
+
+async def watcher_liveness(ctx: dict) -> dict[str, Any]:
+    """Page the operators when a chain stops being scanned — see check_watcher_liveness."""
+    async with SessionFactory() as s:
+        result = await check_watcher_liveness(s)
+        await s.commit()
+    await _beat(ctx, "watcher_liveness")
     return result
 
 

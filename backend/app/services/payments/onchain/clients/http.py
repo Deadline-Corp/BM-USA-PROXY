@@ -40,6 +40,20 @@ class HttpxJson:
         self, url: str, *, json: Any | None = None, headers: dict | None = None
     ) -> Any:
         resp = await self._client.post(url, json=json, headers=headers)
+        # A JSON-RPC error is an answer, not a transport failure, whatever status code the
+        # provider chose to wrap it in. Alchemy returns its "you asked for too many blocks"
+        # refusal as HTTP 400 with the error in the body; raising on the status threw that
+        # body away, so the caller's halve-the-range retry — written for exactly this
+        # refusal — never saw it, and the Ethereum watcher sat dead for nine hours while a
+        # customer's payment landed unnoticed. Hand the body back and let the RPC layer
+        # raise its own typed error; a status with no JSON-RPC error in it still raises.
+        if resp.is_error:
+            try:
+                body = resp.json()
+            except Exception:  # noqa: BLE001 — not JSON, so it really is a transport error
+                body = None
+            if isinstance(body, dict) and body.get("error"):
+                return body
         resp.raise_for_status()
         return resp.json()
 

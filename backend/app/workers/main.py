@@ -70,6 +70,10 @@ class WorkerSettings:
         # the cadence is `pool_check_interval_minutes` in the console, and a schedule fixed
         # here would mean a redeploy every time somebody wanted to change it.
         cron(jobs.pool_watermark, second=55),
+        # Once a minute is enough for a fifteen-minute stall threshold, and it costs one
+        # timestamp read — the point is that it keeps working when the thing it watches
+        # does not.
+        cron(jobs.watcher_liveness, second=35),
         # Handles drift silently: Telegram does not announce a rename, and the data it
         # attaches to a visit is cached by the client. Hourly, oldest check first, so the
         # cost per pass is fixed whatever the size of the client list.

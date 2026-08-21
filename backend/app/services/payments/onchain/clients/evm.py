@@ -60,6 +60,11 @@ class EvmClient:
         self.chain = chain
         self._endpoint = endpoint
         self._http = http or HttpxJson()
+        # The widest getLogs span this endpoint has been seen to refuse. Providers publish
+        # wildly different caps — Alchemy's free tier allows ten blocks — and the only
+        # reliable way to learn one is to be told. Remembering it turns a permanent limit
+        # from a failure on every single call into a failure once per process.
+        self._log_span_cap: int | None = None
 
     async def _rpc(self, method: str, params: list) -> Any:
         payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
@@ -99,6 +104,8 @@ class EvmClient:
         tick and the cursor never advances — the chain silently stops being watched. So on
         failure we halve the range and retry, down to a single block.
         """
+        span = to_block - from_block
+        too_wide = self._log_span_cap is not None and span >= self._log_span_cap
         params = [
             {
                 "fromBlock": hex(from_block),
@@ -108,10 +115,18 @@ class EvmClient:
             }
         ]
         try:
+            if too_wide:
+                # Already known to be refused. Asking anyway would spend a request to be
+                # told something this client was told before.
+                raise EvmRpcError(f"span {span} at or above the learned cap")
             return list(await self._rpc("eth_getLogs", params) or [])
         except EvmRpcError:
             if from_block >= to_block or depth >= _MAX_SPLIT_DEPTH:
                 raise
+            if not too_wide:
+                # Narrower than anything that failed before, and it still failed: this is
+                # the new ceiling.
+                self._log_span_cap = min(self._log_span_cap or span, span)
             mid = from_block + (to_block - from_block) // 2
             left = await self._get_logs(
                 from_block=from_block, to_block=mid, address=address,

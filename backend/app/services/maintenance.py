@@ -9,8 +9,9 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.logging import log
-from app.models import Access, AccessEvent, Connection, Invoice, Order, Tariff
+from app.models import Access, AccessEvent, ChainCursor, Connection, Invoice, Order, Tariff
 from app.services import ops_alerts
 from app.services import settings as settings_svc
 from app.services.accesses import next_rotation_at
@@ -284,3 +285,73 @@ async def expire_invoices(session: AsyncSession) -> int:
         # every abandoned checkout.
         await allocator.release_reservations(session, order_id=inv.order_id)
     return len(invoices)
+
+
+_WATCHER_ALERT_STATE = "onchain_watcher_alert_state"
+# A chain whose cursor has not moved in this long is not slow, it is broken. Ticks run
+# every fifteen seconds, so this is sixty missed passes — long enough that a provider
+# hiccup or a redeploy never pages anybody.
+WATCHER_STALL = timedelta(minutes=15)
+
+
+async def check_watcher_liveness(session: AsyncSession) -> dict[str, Any]:
+    """Tell the operators when a chain has stopped being scanned.
+
+    Money arriving on a chain nobody is watching is the worst thing this system can do, and
+    it is invisible from every screen: the customer sees "waiting for payment", the ledger
+    stays empty, and the invoice quietly expires. It happened — Alchemy began refusing the
+    Ethereum log scan, every tick errored, and the chain sat dead for nine hours while a
+    customer's 6 USDT landed on our address unnoticed. Nothing anywhere said so.
+
+    The cursor's own timestamp is the signal, because it is what every scan writes and what
+    a failing scan therefore stops writing. Reading it needs no cooperation from the code
+    that broke.
+
+    Alerts once per chain per stall, and once more when it recovers, so a chain that stays
+    broken does not turn into a message people learn to scroll past.
+    """
+    if settings.payment_provider != "onchain":
+        return {"skipped": "provider not onchain"}
+
+    from app.services.payments.onchain.config import get_onchain_config
+
+    watched = set(get_onchain_config().chains_in_use())
+    if not watched:
+        return {"skipped": "no chains configured"}
+
+    now = _utcnow()
+    state = await settings_svc.get(session, _WATCHER_ALERT_STATE, {}) or {}
+    rows = (await session.execute(select(ChainCursor))).scalars().all()
+    seen = {c.chain: c.updated_at for c in rows}
+
+    stalled: list[str] = []
+    recovered: list[str] = []
+    new_state = dict(state)
+    for chain in sorted(watched):
+        last = seen.get(chain)
+        # No cursor at all is not a stall: the chain has simply never been scanned, which
+        # is what a freshly configured rail looks like until its first tick.
+        silent_for = now - last if last is not None else None
+        is_stalled = silent_for is not None and silent_for > WATCHER_STALL
+        was_stalled = bool(state.get(chain))
+        if is_stalled and not was_stalled and silent_for is not None:
+            stalled.append(f"{chain} (last scan {int(silent_for.total_seconds() // 60)} min ago)")
+        elif was_stalled and not is_stalled:
+            recovered.append(chain)
+        new_state[chain] = is_stalled
+
+    if stalled:
+        with contextlib.suppress(Exception):
+            await ops_alerts.notify_ops(
+                session,
+                "🚨 Payment watcher stopped: " + "; ".join(stalled) + ".\n"
+                "Payments sent on these chains are NOT being credited. Check the worker log.",
+            )
+    if recovered:
+        with contextlib.suppress(Exception):
+            await ops_alerts.notify_ops(
+                session, "✅ Payment watcher is scanning again: " + ", ".join(recovered) + "."
+            )
+
+    await settings_svc.set_value(session, _WATCHER_ALERT_STATE, new_state)
+    return {"stalled": stalled, "recovered": recovered, "watched": len(watched)}
