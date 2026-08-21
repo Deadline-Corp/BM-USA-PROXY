@@ -103,8 +103,8 @@ export function PoolsScreen() {
           <ErrorState onRetry={() => summaryQuery.refetch()} />
         </div>
       ) : (
-        <>
-        <div className="flex items-stretch bg-surface border border-border rounded-lg mb-3 overflow-hidden flex-wrap">
+        <div className="bg-surface border border-border rounded-lg mb-5 overflow-hidden">
+        <div className="flex items-stretch flex-wrap">
           {/* Free before Busy, matching the legend to the right. It is also the number an
               operator looks for first — "can we sell right now" comes before "how much is
               out". */}
@@ -127,11 +127,12 @@ export function PoolsScreen() {
           <SummaryCell label={strings.pools.unavailable} value={unavailableSlots} />
         </div>
 
-        {/* Capacity on its own full-width row. It shared the summary row until a fifth
-            bucket arrived, and the leftover column was too narrow for five legend entries:
-            "Held in iproxy" broke across three lines and the labels stopped reading as one
-            list. The bar wants width more than the counts beside it do. */}
-        <div className="bg-surface border border-border rounded-lg mb-5 px-6 py-3.5 flex flex-col gap-2">
+        {/* Capacity on its own full-width band under the counts, divided from them by a
+            rule rather than a gap — it reads as the same panel, which it is. It used to sit
+            beside the counts as a sixth column, and a fifth bucket left that column too
+            narrow for the legend: "Held in iproxy" broke across three lines and the five
+            entries stopped reading as one list. The bar wants width more than they do. */}
+        <div className="px-6 py-3.5 flex flex-col gap-2 border-t border-border">
             <div className="flex justify-between items-baseline">
               <span className="text-[.69rem] uppercase tracking-[.08em] text-text-3">Capacity</span>
               <span className="font-mono tabular-nums text-[.78rem] text-text-2">{usedPct}%</span>
@@ -190,7 +191,7 @@ export function PoolsScreen() {
               </span>
             </div>
         </div>
-        </>
+        </div>
       )}
 
       {/* Filters — same shape as every other list in the console. No date range here:
