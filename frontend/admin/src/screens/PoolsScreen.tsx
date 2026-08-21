@@ -103,7 +103,8 @@ export function PoolsScreen() {
           <ErrorState onRetry={() => summaryQuery.refetch()} />
         </div>
       ) : (
-        <div className="flex items-stretch bg-surface border border-border rounded-lg mb-5 overflow-hidden flex-wrap">
+        <>
+        <div className="flex items-stretch bg-surface border border-border rounded-lg mb-3 overflow-hidden flex-wrap">
           {/* Free before Busy, matching the legend to the right. It is also the number an
               operator looks for first — "can we sell right now" comes before "how much is
               out". */}
@@ -124,7 +125,13 @@ export function PoolsScreen() {
               allocator will not honour; folded into Unavailable they would look broken. */}
           <SummaryCell label={strings.pools.reservedShort} value={reservedSlots} />
           <SummaryCell label={strings.pools.unavailable} value={unavailableSlots} />
-          <div className="flex-1 min-w-[220px] px-6 py-3.5 border-l border-border flex flex-col gap-1.5 justify-center">
+        </div>
+
+        {/* Capacity on its own full-width row. It shared the summary row until a fifth
+            bucket arrived, and the leftover column was too narrow for five legend entries:
+            "Held in iproxy" broke across three lines and the labels stopped reading as one
+            list. The bar wants width more than the counts beside it do. */}
+        <div className="bg-surface border border-border rounded-lg mb-5 px-6 py-3.5 flex flex-col gap-2">
             <div className="flex justify-between items-baseline">
               <span className="text-[.69rem] uppercase tracking-[.08em] text-text-3">Capacity</span>
               <span className="font-mono tabular-nums text-[.78rem] text-text-2">{usedPct}%</span>
@@ -157,24 +164,24 @@ export function PoolsScreen() {
                 style={{ width: `${pct(unavailableSlots)}%` }}
               />
             </div>
-            <div className="flex gap-3.5 text-[.7rem] text-text-3">
+            <div className="flex flex-wrap gap-x-6 gap-y-1.5 text-[.7rem] text-text-3">
               {/* Free / Used echo the summary cells to the left, so the same number is not
                   called two different things a few centimetres apart. */}
-              <span className="flex items-center gap-1">
+              <span className="flex items-center gap-1 whitespace-nowrap">
                 <span className="w-1.5 h-1.5 rounded-full bg-success" />Free {freeSlots}
               </span>
-              <span className="flex items-center gap-1">
+              <span className="flex items-center gap-1 whitespace-nowrap">
                 <span className="w-1.5 h-1.5 rounded-full bg-warning" />Busy {usedSlots}
               </span>
-              <span className="flex items-center gap-1">
+              <span className="flex items-center gap-1 whitespace-nowrap">
                 <span className="w-1.5 h-1.5 rounded-full bg-warning/50" />
                 {strings.pools.busyByAdmin} {heldSlots}
               </span>
-              <span className="flex items-center gap-1">
+              <span className="flex items-center gap-1 whitespace-nowrap">
                 <span className="w-1.5 h-1.5 rounded-full bg-accent/40" />
                 {strings.pools.reservedShort} {reservedSlots}
               </span>
-              <span className="flex items-center gap-1">
+              <span className="flex items-center gap-1 whitespace-nowrap">
                 {/* Not "Offline": this bucket also holds phones reporting 'unknown' and
                     ones an operator withheld from sale while they are still online. What
                     they share is that none of them can be sold. */}
@@ -182,8 +189,8 @@ export function PoolsScreen() {
                 {unavailableSlots}
               </span>
             </div>
-          </div>
         </div>
+        </>
       )}
 
       {/* Filters — same shape as every other list in the console. No date range here:
@@ -289,7 +296,7 @@ function SummaryCell({
     // count crosses into double figures. The width is set by the longest label — "Held in
     // iproxy" — because a label that wraps to a second line pushes its number below the
     // others, and five numbers meant to be compared have to sit on one line.
-    <div className="flex w-[156px] shrink-0 flex-col gap-0.5 px-5 py-3.5 border-l border-border first:border-l-0">
+    <div className="flex flex-1 min-w-[156px] flex-col gap-0.5 px-5 py-3.5 border-l border-border first:border-l-0">
       <span className="whitespace-nowrap text-[.69rem] uppercase tracking-[.08em] text-text-3">
         {label}
       </span>
