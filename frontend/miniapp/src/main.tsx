@@ -58,6 +58,33 @@ document.documentElement.style.setProperty("--tg-vh", "100dvh");
   window.visualViewport?.addEventListener("resize", apply);
   window.visualViewport?.addEventListener("scroll", apply);
   apply();
+
+  // Shrinking the shell is only half the job. The area left over is shorter, so a field
+  // that sat near the bottom is now below it — still on the page, simply out of view, with
+  // nothing to scroll it back. On Android the webview does this itself, which is why it
+  // was only ever reported from iPhones: the Terms email field first, then the
+  // auto-rotation interval, and each time the person is typing into something they cannot
+  // see. Every scroller in this app is an inner one, so the browser's own "scroll the
+  // focused thing into view" never fires.
+  const showFocused = () => {
+    const el = document.activeElement;
+    if (!(el instanceof HTMLElement)) return;
+    if (!el.matches("input, textarea, select, [contenteditable]")) return;
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+  };
+  // Twice, at two delays, because the keyboard animates: iOS reports the new viewport
+  // partway through, so a single early scroll lands on a height that is about to change.
+  const showFocusedSoon = () => {
+    window.setTimeout(showFocused, 120);
+    window.setTimeout(showFocused, 400);
+  };
+  // focusin, not focus: it bubbles, so one listener covers every field in the app rather
+  // than each screen having to remember.
+  document.addEventListener("focusin", showFocusedSoon);
+  // …and again when the keyboard itself resizes the viewport, which on iOS can happen
+  // well after the field was focused — switching between a text and a number pad, or the
+  // predictive-text bar appearing.
+  window.visualViewport?.addEventListener("resize", showFocused);
 })();
 
 const rootElement = document.getElementById("root");
