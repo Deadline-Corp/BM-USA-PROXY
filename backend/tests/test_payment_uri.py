@@ -146,7 +146,7 @@ def test_a_token_qr_never_leads_with_the_contract_address() -> None:
     an app that parsed it naively would withdraw the customer's USDT to the USDT contract,
     where it cannot be recovered. So the QR carries the address alone.
     """
-    from app.services.payments.invoice_links import invoice_qr_code, invoice_pay_uri
+    from app.services.payments.invoice_links import invoice_pay_uri, invoice_qr_code
 
     for asset, network in (("USDT", "erc20"), ("USDC", "erc20"), ("USDT", "bep20")):
         inv = _invoice(asset, network, ADDR_EVM, "4.003")

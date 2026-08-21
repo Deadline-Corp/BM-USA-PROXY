@@ -79,6 +79,28 @@ def _isolate_onchain_config():
     reset_config_cache()
 
 
+@pytest_asyncio.fixture(autouse=True)
+async def _isolate_onchain_webhooks():
+    """Forget the webhook doorbell between tests.
+
+    Whether a chain gets scanned now depends on Redis keys that outlive a test by design —
+    "deliveries are arriving here" is meant to survive a quiet day in production. Left in
+    place between tests it silences the watcher for every later one, which is how six
+    unrelated pipeline tests started failing while each still passed on its own.
+    """
+    from app.core.redis import redis_client
+
+    async def clear() -> None:
+        for pattern in ("onchain:wake:*", "onchain:webhook_alive:*", "onchain:last_scan:*"):
+            keys = await redis_client.keys(pattern)
+            if keys:
+                await redis_client.delete(*keys)
+
+    await clear()
+    yield
+    await clear()
+
+
 @pytest_asyncio.fixture
 async def engine():
     if not await _ensure_test_db():

@@ -252,20 +252,10 @@ async def test_nothing_open_anywhere_still_skips_the_scan_entirely(session) -> N
 
 
 # ── the doorbell: a webhook says "look now", it never says "you were paid" ─
-async def _clear_webhook_state() -> None:
-    from app.core.redis import redis_client
-
-    for pattern in ("onchain:wake:*", "onchain:webhook_alive:*", "onchain:last_scan:*"):
-        keys = await redis_client.keys(pattern)
-        if keys:
-            await redis_client.delete(*keys)
-
-
 async def test_without_webhooks_the_poll_is_unchanged(session) -> None:
     """Nothing may get quieter until there is something to be quiet in favour of."""
     from app.services.payments.onchain import webhooks
 
-    await _clear_webhook_state()
     await _seed(session)
     await _invoice(session, inv_id="hook-a", status="pending", expires_in=timedelta(hours=1))
     await session.commit()
@@ -281,7 +271,6 @@ async def test_a_live_webhook_quiets_the_poll_until_it_rings(session) -> None:
     """The saving: an open invoice used to buy a scan every fifteen seconds for an hour."""
     from app.services.payments.onchain import webhooks
 
-    await _clear_webhook_state()
     await _seed(session)
     await _invoice(session, inv_id="hook-b", status="pending", expires_in=timedelta(hours=1))
     await session.commit()
@@ -313,7 +302,6 @@ async def test_waiting_on_a_webhook_never_advances_the_cursor(session) -> None:
     from app.models.onchain import ChainCursor
     from app.services.payments.onchain import webhooks
 
-    await _clear_webhook_state()
     await _seed(session)
     await _invoice(session, inv_id="hook-c", status="pending", expires_in=timedelta(hours=1))
     await session.commit()
