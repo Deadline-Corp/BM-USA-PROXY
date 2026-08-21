@@ -249,3 +249,124 @@ async def test_nothing_open_anywhere_still_skips_the_scan_entirely(session) -> N
 
     assert client.scans == 0
     assert client.rails == []
+
+
+# ── the doorbell: a webhook says "look now", it never says "you were paid" ─
+async def _clear_webhook_state() -> None:
+    from app.core.redis import redis_client
+
+    for pattern in ("onchain:wake:*", "onchain:webhook_alive:*", "onchain:last_scan:*"):
+        keys = await redis_client.keys(pattern)
+        if keys:
+            await redis_client.delete(*keys)
+
+
+async def test_without_webhooks_the_poll_is_unchanged(session) -> None:
+    """Nothing may get quieter until there is something to be quiet in favour of."""
+    from app.services.payments.onchain import webhooks
+
+    await _clear_webhook_state()
+    await _seed(session)
+    await _invoice(session, inv_id="hook-a", status="pending", expires_in=timedelta(hours=1))
+    await session.commit()
+
+    client = CountingClient(head=1000)
+    await run_chain_tick(session, client, config=_config(), max_blocks=100)
+    assert client.scans == 1
+
+    assert await webhooks.scan_is_due("tron") is True
+
+
+async def test_a_live_webhook_quiets_the_poll_until_it_rings(session) -> None:
+    """The saving: an open invoice used to buy a scan every fifteen seconds for an hour."""
+    from app.services.payments.onchain import webhooks
+
+    await _clear_webhook_state()
+    await _seed(session)
+    await _invoice(session, inv_id="hook-b", status="pending", expires_in=timedelta(hours=1))
+    await session.commit()
+
+    await webhooks.ring("tron")  # a delivery arrived: webhooks are alive on this chain
+    client = CountingClient(head=1000)
+
+    await run_chain_tick(session, client, config=_config(), max_blocks=100)
+    assert client.scans == 1, "the ring must be honoured"
+
+    await run_chain_tick(session, client, config=_config(), max_blocks=100)
+    await run_chain_tick(session, client, config=_config(), max_blocks=100)
+    assert client.scans == 1, "and nothing more until it rings again or the heartbeat is due"
+
+    await webhooks.ring("tron")
+    await run_chain_tick(session, client, config=_config(), max_blocks=100)
+    assert client.scans == 2
+
+
+async def test_waiting_on_a_webhook_never_advances_the_cursor(session) -> None:
+    """The bug this nearly shipped as.
+
+    Skipping because a webhook is quiet is not the same as skipping because nothing is
+    owed. The idle path carries the cursor to the head, which is right when no invoice
+    exists — nothing in those blocks could belong to anybody. With an invoice open the
+    blocks going by are exactly the ones the payment may be in, so advancing over them
+    would step past the money and never look again.
+    """
+    from app.models.onchain import ChainCursor
+    from app.services.payments.onchain import webhooks
+
+    await _clear_webhook_state()
+    await _seed(session)
+    await _invoice(session, inv_id="hook-c", status="pending", expires_in=timedelta(hours=1))
+    await session.commit()
+
+    await webhooks.ring("tron")
+    first = CountingClient(head=1000)
+    await run_chain_tick(session, first, config=_config(), max_blocks=100)
+    await session.flush()
+    after_scan = await session.get(ChainCursor, "tron")
+    assert after_scan is not None
+    settled = after_scan.last_scanned_block
+
+    # chain moves on, webhook stays quiet
+    later = CountingClient(head=50_000)
+    await run_chain_tick(session, later, config=_config(), max_blocks=100)
+    await session.flush()
+    waited = await session.get(ChainCursor, "tron")
+
+    assert later.scans == 0, "quiet webhook — no scan"
+    assert waited is not None
+    assert waited.last_scanned_block == settled, "the unscanned blocks must still be pending"
+
+
+async def test_a_delivery_is_only_believed_if_it_is_signed() -> None:
+    """The payload is a doorbell, and an unsigned one is somebody rattling the gate."""
+    import json as _json
+
+    from app.core.config import settings
+    from app.services.payments.onchain import webhooks
+
+    body = _json.dumps({"event": {"network": "ETH_MAINNET"}}).encode()
+    original = settings.alchemy_webhook_keys
+    try:
+        settings.alchemy_webhook_keys = _json.dumps({"ETH_MAINNET": "whsec_test"})
+        import hashlib
+        import hmac as _hmac
+
+        good = _hmac.new(b"whsec_test", body, hashlib.sha256).hexdigest()
+
+        assert webhooks.verify(body, good) is True
+        assert webhooks.verify(body, "deadbeef") is False
+        assert webhooks.verify(body, None) is False
+        assert webhooks.verify(body + b" ", good) is False, "signed over the raw bytes"
+    finally:
+        settings.alchemy_webhook_keys = original
+
+
+def test_only_networks_we_run_on_are_acted_on() -> None:
+    """A delivery for a chain we do not watch is dropped rather than guessed at."""
+    from app.services.payments.onchain import webhooks
+
+    assert webhooks.chain_of({"event": {"network": "ETH_MAINNET"}}) == "ethereum"
+    assert webhooks.chain_of({"event": {"network": "BNB_MAINNET"}}) == "bsc"
+    assert webhooks.chain_of({"event": {"network": "MATIC_MAINNET"}}) is None
+    assert webhooks.chain_of({"nonsense": True}) is None
+    assert webhooks.chain_of("not a dict") is None

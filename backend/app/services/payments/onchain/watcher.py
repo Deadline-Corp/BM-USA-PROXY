@@ -28,6 +28,7 @@ from app.models import Invoice, Order
 from app.models.onchain import ChainCursor, OnchainDepositLedger
 from app.services.payments import processing
 from app.services.payments.base import PaymentEventDTO
+from app.services.payments.onchain import webhooks as onchain_webhooks
 from app.services.payments.onchain.amounts import classify
 from app.services.payments.onchain.chain_client import ChainClient, IncomingTransfer
 from app.services.payments.onchain.clients import chain_rescan_overlap
@@ -462,6 +463,27 @@ async def run_chain_tick(
     # a backlog forming for the next real payment to crawl through.
     expected = await _expected_rails(session, client.chain)
     methods = [m for m in all_methods if (m.spec.asset, m.spec.network) in expected]
+
+    # A chain whose webhooks are arriving does not need asking every fifteen seconds. It is
+    # asked when one rings, and otherwise on a slow heartbeat that bounds what a missed
+    # delivery can cost. Anything uncertain — no webhook, one ringing, the heartbeat due —
+    # scans, because a payment nobody noticed costs incomparably more than a scan.
+    #
+    # Waiting is NOT the idle path below and must not fall into it. That one carries the
+    # cursor to the head, which is right when no invoice exists — nothing in those blocks
+    # could belong to anybody. Here an invoice does exist, so the blocks going by are
+    # exactly the ones the payment may be in: skipping them forward would step over the
+    # money and never look again.
+    if methods and not await onchain_webhooks.scan_is_due(client.chain):
+        return TickReport(
+            chain=client.chain,
+            from_block=from_block,
+            to_block=cursor.last_scanned_block,
+            head=head,
+            transfers=0,
+            finalized=0,
+        )
+
     if all_methods and head >= from_block and not methods:
         cursor.last_scanned_block = head
         cursor.updated_at = datetime.now(UTC)
@@ -469,6 +491,9 @@ async def run_chain_tick(
     elif methods and head >= from_block:  # only the rails somebody is actually paying on
         to_block = min(head, from_block + max_blocks - 1)
         transfers = await client.scan(from_block=from_block, to_block=to_block, methods=methods)
+        # Recorded only after the scan came back: clearing the bell before reading the
+        # chain would drop a delivery that arrived while we were failing.
+        await onchain_webhooks.note_scan(client.chain)
         for transfer in transfers:
             # SAVEPOINT per transfer: one poisoned deposit (e.g. an IntegrityError
             # deep in activation) must not roll back the cursor + every other transfer

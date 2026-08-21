@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     # own conventional names, they are already set globally on machines with Anthropic
     # tooling installed, and a real environment variable outranks the .env file. Measured
     # here — a stray ANTHROPIC_BASE_URL silently sent every request to the wrong host.
+    # Signing keys for Alchemy address-activity webhooks, as {"ETH_MAINNET": "whsec_..."}.
+    # A delivery is a doorbell, never a receipt — see services.payments.onchain.webhooks.
+    alchemy_webhook_keys: str | None = None
+
     ai_support_api_key: str | None = None
     ai_support_base_url: str | None = None
     ai_support_model: str = "claude-haiku-4-5"
