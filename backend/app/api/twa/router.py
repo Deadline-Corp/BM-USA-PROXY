@@ -269,9 +269,7 @@ async def order_status(public_id: str, user: CurrentUser, session: DbSession) ->
 @router.post("/orders/{public_id}/cancel")
 async def cancel_order(public_id: str, user: CurrentUser, session: DbSession) -> dict[str, str]:
     order = await orders_svc.get_by_public_id(session, public_id, user_id=user.id)
-    if order.status != "awaiting_payment":
-        raise Conflict("order can no longer be cancelled")
-    order.status = "cancelled"
+    await orders_svc.cancel_order(session, order=order)
     return {"status": order.status}
 
 

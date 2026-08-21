@@ -94,10 +94,27 @@ async def seed_settings(session: AsyncSession) -> None:
         await session.execute(stmt)
 
 
+# Passwords that live in this repository's own .env.example and local setup. A deploy that
+# creates the owner account with one of these puts a publicly known credential on the first
+# factor of the console.
+_DEV_PASSWORDS = frozenset({"dev-owner-pw", "change-me", "admin", "password", "changeme"})
+
+
 async def seed_admin(session: AsyncSession) -> None:
     pwd = settings.seed_admin_password
     if pwd is None:
         log.warning("seed.admin_skipped", reason="SEED_ADMIN_PASSWORD not set")
+        return
+    # Found on production 2026-08-21: the owner account authenticated with the local
+    # development password out of this repo's .env. Telegram OTP was the only thing between
+    # that and the console. Refusing to create the account is the right failure — a
+    # bootstrap admin nobody can sign in as is recoverable; one anybody can is not.
+    if settings.env != "local" and pwd.get_secret_value().strip().lower() in _DEV_PASSWORDS:
+        log.warning(
+            "seed.admin_refused",
+            reason="SEED_ADMIN_PASSWORD is a known development password",
+            env=settings.env,
+        )
         return
     existing = await session.scalar(
         select(AdminUser).where(AdminUser.email == settings.seed_admin_email)

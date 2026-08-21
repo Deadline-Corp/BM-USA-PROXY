@@ -461,11 +461,51 @@ async def _provision_or_review(session: AsyncSession, order: Order) -> None:
             )
 
 
-async def get_by_public_id(session: AsyncSession, public_id: str, *, user_id: int | None = None) -> Order:
-    stmt = select(Order).where(Order.public_id == public_id)
-    if user_id is not None:
-        stmt = stmt.where(Order.user_id == user_id)
-    order = await session.scalar(stmt)
+async def cancel_order(session: AsyncSession, *, order: Order) -> None:
+    """Close an order the buyer walked away from — and everything it was holding.
+
+    Setting the status alone left two things live, and the second one costs a customer
+    money. The reserved phones stayed off the shelf until their deadline lapsed, and the
+    invoice stayed open: a transfer already broadcast when the buyer pressed cancel still
+    matched it, was marked paid, and then `mark_paid` returned on its first line because
+    the order was no longer awaiting payment. Money in, nothing issued, nobody told.
+
+    Closing the invoice is what removes that path. A deposit arriving afterwards finds no
+    open invoice and is parked as unmatched, which is a row an operator can see and settle
+    — the difference between a payment that is late and a payment that is gone.
+    """
+    if order.status != "awaiting_payment":
+        raise Conflict("order can no longer be cancelled")
+    order.status = "cancelled"
+    await release_reservations(session, order_id=order.id)
+    invoices = await session.scalars(
+        select(Invoice).where(
+            Invoice.order_id == order.id,
+            Invoice.status.in_(("created", "pending", "confirming")),
+        )
+    )
+    for invoice in invoices:
+        # `expired`, not a status of its own. The invoice state machine ranks statuses to
+        # keep transitions forward-only, and a value missing from that table ranks -1 —
+        # which every other status beats, so a `paid` webhook arriving afterwards would
+        # walk straight over it and reopen the order. Which side closed it is recorded on
+        # the order, where it belongs; what matters here is that it is no longer
+        # collectable.
+        invoice.status = "expired"
+
+
+async def get_by_public_id(session: AsyncSession, public_id: str, *, user_id: int) -> Order:
+    """An order, scoped to the customer asking for it.
+
+    ``user_id`` is required rather than optional. It was a keyword defaulting to None, so
+    the whole ownership check came down to every caller remembering to pass it — and the
+    one that forgot would hand any customer anybody else's order by public id, with nothing
+    in the signature to say so. All three callers did pass it; a check you can silently opt
+    out of is a check that eventually is.
+    """
+    order = await session.scalar(
+        select(Order).where(Order.public_id == public_id, Order.user_id == user_id)
+    )
     if order is None:
         raise NotFound("order not found")
     return order

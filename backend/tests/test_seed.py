@@ -135,3 +135,52 @@ async def test_seeding_again_never_rewrites_an_answer_the_operator_changed(sessi
         )
         == 1
     )
+
+
+async def test_a_development_password_never_creates_an_admin_off_local(session, monkeypatch) -> None:
+    """Found on production: the owner account authenticated with this repo's local password.
+
+    Telegram OTP was the only thing between a publicly known credential and the console.
+    Refusing to create the account is the right failure — a bootstrap admin nobody can sign
+    in as is recoverable, one anybody can is not.
+    """
+    from pydantic import SecretStr
+
+    from app.core.config import settings as app_settings
+    from app.models import AdminUser
+    from scripts.seed import seed_admin
+
+    monkeypatch.setattr(app_settings, "env", "staging", raising=False)
+    monkeypatch.setattr(app_settings, "seed_admin_password", SecretStr("dev-owner-pw"), raising=False)
+    monkeypatch.setattr(app_settings, "seed_admin_email", "guard@bmusproxy.local", raising=False)
+
+    await seed_admin(session)
+    await session.flush()
+
+    created = await session.scalar(
+        select(AdminUser).where(AdminUser.email == "guard@bmusproxy.local")
+    )
+    assert created is None, "a known dev password must not become a production credential"
+
+
+async def test_a_real_password_still_seeds_the_owner(session, monkeypatch) -> None:
+    """The guard must refuse the known-weak list, not the feature."""
+    from pydantic import SecretStr
+
+    from app.core.config import settings as app_settings
+    from app.models import AdminUser
+    from scripts.seed import seed_admin
+
+    monkeypatch.setattr(app_settings, "env", "staging", raising=False)
+    monkeypatch.setattr(
+        app_settings, "seed_admin_password", SecretStr("Xw7!qP2mZr9$Lk4vB1"), raising=False
+    )
+    monkeypatch.setattr(app_settings, "seed_admin_email", "real@bmusproxy.local", raising=False)
+
+    await seed_admin(session)
+    await session.flush()
+
+    created = await session.scalar(
+        select(AdminUser).where(AdminUser.email == "real@bmusproxy.local")
+    )
+    assert created is not None and created.role == "owner"

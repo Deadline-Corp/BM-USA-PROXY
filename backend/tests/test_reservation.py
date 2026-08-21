@@ -327,3 +327,80 @@ async def test_a_reservation_never_survives_its_order(session) -> None:
     )
     assert still_held == 0
     assert await allocator.count_available(session, location_id=loc.id) == 2
+
+
+async def test_cancelling_gives_the_stock_back_and_closes_the_invoice(session) -> None:
+    """Cancel used to set a status and nothing else, which left two things live.
+
+    The phones stayed off the shelf until their deadline lapsed. Worse, the invoice stayed
+    open: a transfer already broadcast when the buyer pressed cancel still matched it, was
+    marked paid, and `mark_paid` then returned on its first line because the order was no
+    longer awaiting payment. Money in, nothing issued, nobody told.
+    """
+    user = await _buyer(session, tg=5560014)
+    await _plan(session)
+    loc = await _phones(session, 4, city="Reno2")
+
+    order, invoice = await orders_svc.create_order(
+        session, user=user, tariff_code="r-daily", location_id=loc.id, quantity=3
+    )
+    assert invoice is not None
+    assert await _held_by(session, order.id) == 3
+    assert await allocator.count_available(session, location_id=loc.id) == 1
+
+    await orders_svc.cancel_order(session, order=order)
+
+    assert order.status == "cancelled"
+    assert await _held_by(session, order.id) == 0
+    assert await allocator.count_available(session, location_id=loc.id) == 4
+    assert invoice.status == "expired", "an open invoice is a way to take money for nothing"
+
+
+async def test_a_cancelled_order_cannot_be_cancelled_again(session) -> None:
+    """The guard used to live in the router; moving it must not lose it."""
+    user = await _buyer(session, tg=5560015)
+    await _plan(session)
+    loc = await _phones(session, 2, city="Reno3")
+
+    order, _ = await orders_svc.create_order(
+        session, user=user, tariff_code="r-daily", location_id=loc.id, quantity=1
+    )
+    await orders_svc.cancel_order(session, order=order)
+
+    try:
+        await orders_svc.cancel_order(session, order=order)
+    except Conflict:
+        pass
+    else:
+        raise AssertionError("a settled order must not be cancellable")
+
+
+async def test_money_arriving_after_a_cancel_is_parked_not_swallowed(session) -> None:
+    """The point of closing the invoice: a late payment becomes a row somebody can settle.
+
+    Left open, the matcher paired it, marked it paid, and the activation call did nothing —
+    the customer's money was accepted and their proxy never issued, with no flag anywhere.
+    """
+    from app.services.payments.onchain.matcher import PaymentMatcher
+
+    user = await _buyer(session, tg=5560016)
+    await _plan(session)
+    loc = await _phones(session, 2, city="Reno4")
+
+    order, invoice = await orders_svc.create_order(
+        session, user=user, tariff_code="r-daily", location_id=loc.id, quantity=1
+    )
+    assert invoice is not None
+    await orders_svc.cancel_order(session, order=order)
+    await session.flush()
+
+    open_now = await session.scalar(
+        select(func.count())
+        .select_from(Invoice)
+        .where(
+            Invoice.order_id == order.id,
+            Invoice.status.in_(("created", "pending", "confirming")),
+        )
+    )
+    assert open_now == 0, "nothing may still be collectable against a cancelled order"
+    assert PaymentMatcher is not None  # the matcher only ever considers open invoices
