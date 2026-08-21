@@ -48,7 +48,10 @@ export function AccessDetailScreen() {
   const navigate = useNavigate();
   const [rotating, setRotating] = useState(false);
   const [ipBeforeRotate, setIpBeforeRotate] = useState<string | null>(null);
-  const detailQuery = useAccessDetail(publicId, { refetchInterval: rotating ? 4000 : false });
+  // undefined, not false: it hands the interval back to the hook, which then waits for
+  // the next scheduled rotation. Passing false here is what would leave an auto-rotating
+  // access showing the address it had when the screen opened.
+  const detailQuery = useAccessDetail(publicId, { refetchInterval: rotating ? 4000 : undefined });
   const catalogQuery = useCatalog();
   const rotateIp = useRotateIp(publicId);
   const swapAccess = useSwapAccess(publicId);
@@ -341,7 +344,11 @@ export function AccessDetailScreen() {
 
       {/* ── auto-rotation (live access only — nothing to schedule on a dead one) ── */}
       {isEnded ? null : (
-        <AutoRotatePanel publicId={publicId} current={access.auto_rotate_minutes} />
+        <AutoRotatePanel
+          publicId={publicId}
+          current={access.auto_rotate_minutes}
+          nextAt={access.next_rotation_at}
+        />
       )}
 
       {/* ── credentials: http ── */}
@@ -542,7 +549,15 @@ const AUTO_ROTATE_DEFAULT_MINUTES = 30;
 
 /** Switch + interval for scheduled rotation. Its own component so the draft interval is
  *  local state that cannot desync from the saved one on the screen around it. */
-function AutoRotatePanel({ publicId, current }: { publicId: string | undefined; current: number | null }) {
+function AutoRotatePanel({
+  publicId,
+  current,
+  nextAt,
+}: {
+  publicId: string | undefined;
+  current: number | null;
+  nextAt: string | null;
+}) {
   const setAutoRotate = useSetAutoRotate(publicId);
   const { showToast } = useToast();
   const [draft, setDraft] = useState(String(current ?? AUTO_ROTATE_DEFAULT_MINUTES));
@@ -623,8 +638,33 @@ function AutoRotatePanel({ publicId, current }: { publicId: string | undefined; 
         {enabled && !valid ? (
           <p className="mt-1.5 text-[12px] text-warning">{strings.access.autoRotateRange}</p>
         ) : null}
+        {/* A schedule with nothing on screen counting down is indistinguishable from a
+            schedule that is not running — an operator watched the address for a minute,
+            saw it unchanged, and reported the feature as broken while it was working. */}
+        {enabled ? <NextRotationLine at={nextAt} /> : null}
       </div>
     </>
+  );
+}
+
+/** Counts down to the next scheduled change, and says so while one is happening. The
+ *  screen refetches on the same instant, so "changing now" is also the moment the address
+ *  above it is being re-read. */
+function NextRotationLine({ at }: { at: string | null }) {
+  const remainingMs = useCountdown(at);
+  if (!at) return null;
+  const due = remainingMs <= 0;
+  return (
+    <p className="mt-2 text-[12px] text-text-3">
+      {due ? (
+        strings.access.autoRotateChanging
+      ) : (
+        <>
+          {strings.access.autoRotateNextIn}{" "}
+          <Num className="text-text-2">{formatTimeLeft(Math.ceil(remainingMs / 1000))}</Num>
+        </>
+      )}
+    </p>
   );
 }
 

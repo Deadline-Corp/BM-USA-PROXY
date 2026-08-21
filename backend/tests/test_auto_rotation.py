@@ -86,3 +86,87 @@ async def test_the_sweep_ignores_an_access_with_rotation_off(session) -> None:
     result = await sweep_auto_rotations(session)
 
     assert result["rotated"] == 0
+
+
+# ── the screen has to wait for the moment the sweep acts on ──────────────
+async def test_the_app_is_told_when_the_next_change_is_due(session) -> None:
+    """Auto-rotation changed the address on the server and told the screen nothing.
+
+    A customer watching this page kept seeing the address they already had until they
+    reloaded by hand — which is how a working feature reached us as a bug report. The app
+    now waits for this timestamp, so it has to be there and it has to be right.
+    """
+    from app.services.accesses import next_rotation_at
+
+    access = await _access(session, minutes=30, last_rotated_ago=timedelta(minutes=10))
+
+    due = next_rotation_at(access)
+
+    assert due is not None
+    assert access.last_rotation_at is not None
+    assert due == access.last_rotation_at + timedelta(minutes=30)
+
+
+async def test_a_never_rotated_access_counts_from_when_it_was_issued(session) -> None:
+    """Otherwise the first automatic change is due the instant the proxy is handed over,
+    and the screen would ask for a new address before one exists."""
+    from app.services.accesses import next_rotation_at
+
+    access = await _access(session, minutes=15, last_rotated_ago=None)
+
+    due = next_rotation_at(access)
+
+    assert due is not None
+    assert access.starts_at is not None
+    assert due == access.starts_at + timedelta(minutes=15)
+
+
+async def test_rotation_off_means_the_screen_is_told_to_wait_for_nothing(session) -> None:
+    """A null here is what stops the app polling an access that never changes by itself."""
+    from app.services.accesses import next_rotation_at
+
+    access = await _access(session, minutes=None, last_rotated_ago=None)
+
+    assert next_rotation_at(access) is None
+
+
+async def test_while_the_app_is_still_waiting_the_sweep_does_nothing(session) -> None:
+    """One rule, two readers. Two copies would drift into a screen that refreshes just
+    before the change lands and shows the address the customer already had — the original
+    bug wearing a different hat.
+    """
+    from app.services.accesses import next_rotation_at
+
+    access = await _access(session, minutes=30, last_rotated_ago=timedelta(minutes=5))
+    due = next_rotation_at(access)
+
+    assert due is not None and due > datetime.now(UTC)  # the app is still waiting…
+    assert (await sweep_auto_rotations(session))["rotated"] == 0  # …and the sweep agrees
+
+
+async def test_when_the_app_expects_a_change_the_sweep_makes_one(session) -> None:
+    """The other half of the same agreement: the moment the screen refreshes for is the
+    moment an address actually changes, so the refresh has something new to show."""
+    from app.services.accesses import next_rotation_at
+
+    access = await _access(session, minutes=30, last_rotated_ago=timedelta(minutes=31))
+    due = next_rotation_at(access)
+
+    assert due is not None and due <= datetime.now(UTC)  # the app expects a change…
+    assert (await sweep_auto_rotations(session))["rotated"] == 1  # …and gets one
+
+
+async def test_the_access_payload_carries_the_due_time(session) -> None:
+    """It has to survive the trip to the app, not just exist in the service."""
+    from app.services.accesses import detail_for_user
+
+    access = await _access(session, minutes=20, last_rotated_ago=timedelta(minutes=1))
+    await session.commit()
+
+    payload = await detail_for_user(session, str(access.public_id), access.user_id)
+
+    assert payload["auto_rotate_minutes"] == 20
+    assert payload["next_rotation_at"] is not None
+    assert datetime.fromisoformat(payload["next_rotation_at"]) == (
+        access.last_rotation_at + timedelta(minutes=20)
+    )

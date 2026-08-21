@@ -183,6 +183,10 @@ export interface AccessSummary {
   rotations_count: number;
   /** Minutes between scheduled rotations; null means auto-rotation is off. */
   auto_rotate_minutes: number | null;
+  /** ISO timestamp the next scheduled rotation is due, or null when it is off. Decided
+   *  server-side by the same function the sweeper acts on, so the screen waits for the
+   *  instant the rotation actually happens. */
+  next_rotation_at: string | null;
 }
 
 export interface AutoRotateBody {

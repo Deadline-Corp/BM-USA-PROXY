@@ -35,6 +35,26 @@ def swap_available_at(access: Access) -> datetime | None:
     return ready if ready > datetime.now(UTC) else None
 
 
+def next_rotation_at(access: Access) -> datetime | None:
+    """When auto-rotation is next due for this access, or ``None`` when it is off.
+
+    The one place the schedule is decided. `sweep_auto_rotations` acts on it and the app
+    screen waits for it, and those two disagreeing is not a visible bug — it is a screen
+    that quietly refreshes at the wrong moment and shows the address the customer already
+    had, which is exactly the failure that made an operator report auto-rotation as broken
+    when it was working.
+
+    Never rotated yet: the clock starts at issue, so the first automatic change lands one
+    full interval after the customer got the proxy rather than immediately.
+    """
+    if not access.auto_rotate_minutes:
+        return None
+    since = access.last_rotation_at or access.starts_at
+    if since is None:
+        return None
+    return since + timedelta(minutes=access.auto_rotate_minutes)
+
+
 def _summary(access: Access, conn: Connection | None, loc: Location | None) -> dict[str, Any]:
     return {
         "public_id": str(access.public_id),
@@ -47,6 +67,13 @@ def _summary(access: Access, conn: Connection | None, loc: Location | None) -> d
         "rotations_count": access.rotations_count,
         # None = auto-rotation off. The interval doubles as the on/off state everywhere.
         "auto_rotate_minutes": access.auto_rotate_minutes,
+        # When the next automatic change is due. Sent rather than left for the app to work
+        # out from the interval: the "first one lands a full interval after issue" rule
+        # would then exist twice, and the copy that drifts is the one deciding when the
+        # screen refreshes.
+        "next_rotation_at": (
+            dt.isoformat() if (dt := next_rotation_at(access)) is not None else None
+        ),
     }
 
 

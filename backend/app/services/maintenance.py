@@ -13,6 +13,7 @@ from app.core.logging import log
 from app.models import Access, AccessEvent, Connection, Invoice, Order, Tariff
 from app.services import ops_alerts
 from app.services import settings as settings_svc
+from app.services.accesses import next_rotation_at
 from app.services.notifications import enqueue
 from app.services.provisioning import allocator
 from app.services.provisioning.lifecycle import rotate_ip
@@ -194,7 +195,8 @@ async def sweep_auto_rotations(session: AsyncSession) -> dict[str, int]:
 
     `last_rotation_at` is the clock, and lifecycle.rotate_ip stamps it however the rotation
     was triggered — so a buyer who rotates by hand resets their own interval instead of
-    getting a second rotation moments later.
+    getting a second rotation moments later. `accesses.next_rotation_at` owns the reading
+    of that clock, because the app screen has to wait for the same instant this acts on.
     """
     now = _utcnow()
     rows = (
@@ -207,13 +209,11 @@ async def sweep_auto_rotations(session: AsyncSession) -> dict[str, int]:
     ).scalars().all()
     rotated = failed = 0
     for access in rows:
-        interval = access.auto_rotate_minutes
-        if not interval:
-            continue
-        # Never rotated yet: start the clock from when the access began, so the first
-        # automatic rotation lands one full interval after issue rather than immediately.
-        since = access.last_rotation_at or access.starts_at
-        if since is not None and since + timedelta(minutes=interval) > now:
+        # Shared with the payload the app reads, so the moment this sweep acts on is the
+        # moment the screen is waiting for. Two copies of the rule would drift into a
+        # screen that refreshes just before the change and shows the old address.
+        due = next_rotation_at(access)
+        if due is None or due > now:
             continue
         try:
             await rotate_ip(session, access=access, actor="auto")
