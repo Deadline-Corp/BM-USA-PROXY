@@ -367,3 +367,145 @@ async def test_the_refused_span_is_learned_once_not_rediscovered() -> None:
 
     assert first_round > 0
     assert rpc.refused == 0, "the cap was already known — nothing should be refused again"
+
+
+# ── asking about the address instead of trawling block ranges ────────────
+ALCH_TX = "0xa0257e52db56493360e5124d793de1cfec3bb1d09c023bfea41553d8ebcde64a"
+
+
+class _TransfersRpc:
+    """An endpoint that serves alchemy_getAssetTransfers, optionally in pages."""
+
+    def __init__(self, head: int, pages: list[dict], *, supported: bool = True) -> None:
+        self.head = head
+        self.pages = pages
+        self.supported = supported
+        self.methods: list[str] = []
+
+    async def post(self, url: str, *, json: Any | None = None, headers: dict | None = None) -> Any:
+        method = json["method"]
+        self.methods.append(method)
+        if method == "eth_blockNumber":
+            return {"jsonrpc": "2.0", "id": 1, "result": hex(self.head)}
+        if method == "alchemy_getAssetTransfers":
+            if not self.supported:
+                return {
+                    "jsonrpc": "2.0", "id": 1,
+                    "error": {"code": -32601, "message": "Method not found"},
+                }
+            key = (json["params"][0] or {}).get("pageKey")
+            index = 0 if key is None else int(key)
+            return {"jsonrpc": "2.0", "id": 1, "result": self.pages[index]}
+        return {"jsonrpc": "2.0", "id": 1, "result": []}
+
+    async def get(self, url: str, *, params: dict | None = None, headers: dict | None = None) -> Any:
+        return {}
+
+    async def aclose(self) -> None:
+        return None
+
+
+def _row(**over: Any) -> dict:
+    row = {
+        "blockNum": hex(880),
+        "uniqueId": f"{ALCH_TX}:log:154",
+        "hash": ALCH_TX,
+        "from": "0xf89d7b9c864f589bbf53a82105107622b35eaa40",
+        "to": ADDR,
+        # Deliberately WRONG, and deliberately a float — the shape the API really sends.
+        "value": 6.000000000000001,
+        "asset": "USDC",
+        "category": "erc20",
+        "rawContract": {
+            "value": hex(6_000_000),  # 6 USDC at 6 decimals — the exact truth
+            "address": USDC_ERC20,
+            "decimal": "0x6",
+        },
+    }
+    row.update(over)
+    return row
+
+
+def _erc20_methods():
+    return _evm_config("ethereum", "USDC", "erc20").methods_for_chain("ethereum")
+
+
+async def test_the_amount_comes_from_base_units_not_the_float_beside_them() -> None:
+    """The response carries the amount twice: exactly, in hex base units, and again as a
+    JSON float. The watcher matches an invoice on the exact quoted amount, so reading the
+    float is how a payment stops matching the invoice it paid for."""
+    rpc = _TransfersRpc(1000, [{"transfers": [_row()]}])
+    client = EvmClient(chain="ethereum", endpoint="https://rpc", http=rpc)
+
+    res = await client.scan(from_block=800, to_block=900, methods=_erc20_methods())
+
+    assert [t.amount for t in res] == [Decimal("6")]
+    assert res[0].amount == Decimal("6"), "must be exact, not 6.000000000000001"
+    assert res[0].log_index == 154
+    assert res[0].txid == ALCH_TX
+
+
+async def test_one_call_covers_a_span_getlogs_would_refuse() -> None:
+    """The point of using it: the free tier serves ten blocks of logs and any span of this."""
+    rpc = _TransfersRpc(1_000_000, [{"transfers": [_row()]}])
+    client = EvmClient(chain="ethereum", endpoint="https://rpc", http=rpc)
+
+    await client.scan(from_block=1, to_block=900_000, methods=_erc20_methods())
+
+    assert rpc.methods.count("alchemy_getAssetTransfers") == 1
+    assert "eth_getLogs" not in rpc.methods
+
+
+async def test_rows_we_did_not_ask_for_are_dropped() -> None:
+    """A filter we send is a request, not a guarantee. An endpoint answering with somebody
+    else's transfer would otherwise credit an invoice that nobody paid."""
+    rpc = _TransfersRpc(
+        1000,
+        [
+            {
+                "transfers": [
+                    _row(to="0x9999999999999999999999999999999999999999"),  # not ours
+                    _row(rawContract={"value": hex(5_000_000), "address": "0xdeadbeef", "decimal": "0x6"}),
+                    _row(rawContract={"value": hex(0), "address": USDC_ERC20, "decimal": "0x6"}),
+                    _row(),  # the only real one
+                ]
+            }
+        ],
+    )
+    client = EvmClient(chain="ethereum", endpoint="https://rpc", http=rpc)
+
+    res = await client.scan(from_block=800, to_block=900, methods=_erc20_methods())
+
+    assert [t.amount for t in res] == [Decimal("6")]
+
+
+async def test_every_page_is_read() -> None:
+    """Pagination is a safety net rather than a normal case here, but a second page silently
+    dropped is a payment silently dropped."""
+    rpc = _TransfersRpc(
+        1000,
+        [
+            {"transfers": [_row()], "pageKey": "1"},
+            {"transfers": [_row(uniqueId=f"{ALCH_TX}:log:155")]},
+        ],
+    )
+    client = EvmClient(chain="ethereum", endpoint="https://rpc", http=rpc)
+
+    res = await client.scan(from_block=800, to_block=900, methods=_erc20_methods())
+
+    assert [t.log_index for t in res] == [154, 155]
+
+
+async def test_an_endpoint_without_the_method_falls_back_and_is_not_asked_twice() -> None:
+    """Most nodes do not implement it. They must say so once and get the standard path —
+    and a client that kept asking would spend a call per rail per tick learning it again."""
+    rpc = _TransfersRpc(1000, [], supported=False)
+    client = EvmClient(chain="ethereum", endpoint="https://rpc", http=rpc)
+
+    await client.scan(from_block=800, to_block=805, methods=_erc20_methods())
+    first = rpc.methods.count("alchemy_getAssetTransfers")
+    await client.scan(from_block=806, to_block=810, methods=_erc20_methods())
+
+    assert first == 1
+    assert rpc.methods.count("alchemy_getAssetTransfers") == 1
+    assert "eth_getLogs" in rpc.methods, "it has to actually fall back, not give up"
