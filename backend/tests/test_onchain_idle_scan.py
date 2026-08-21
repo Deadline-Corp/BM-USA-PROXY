@@ -194,3 +194,58 @@ async def test_a_cursor_past_the_head_starts_again_from_the_chain(session) -> No
     assert cursor is not None
     assert cursor.last_scanned_block <= 1_000, "the cursor must come back to the chain"
     assert cursor.last_scanned_block > 0
+
+
+class RailRecordingClient(CountingClient):
+    """Records which rails each scan was actually asked to look at."""
+
+    def __init__(self, *, head: int = 1000) -> None:
+        super().__init__(head=head)
+        self.rails: list[tuple[str, str]] = []
+
+    async def scan(self, *, from_block, to_block, methods):
+        self.scans += 1
+        self.rails += [(m.spec.asset, m.spec.network) for m in methods]
+        return []
+
+
+def _two_rail_config():
+    """One chain, two rails — the shape that made a USDT buyer pay for a USDC scan."""
+    return load_config(
+        json.dumps(
+            [
+                {"asset": "USDT", "network": "trc20", "address": ADDR},
+                {"asset": "TRX", "network": "native", "address": ADDR},
+            ]
+        ),
+        "{}",
+    )
+
+
+async def test_only_the_rail_being_paid_on_is_scanned(session) -> None:
+    """A buyer paying USDT used to make us walk the chain for every other coin too.
+
+    On Ethereum that meant scanning USDC and native ETH — the latter block by block —
+    for invoices that did not exist, so nothing found there could have belonged to anyone.
+    """
+    await _seed(session)
+    await _invoice(session, inv_id="rail-1", status="pending", expires_in=timedelta(hours=1))
+    await session.commit()
+
+    client = RailRecordingClient(head=1000)
+    await run_chain_tick(session, client, config=_two_rail_config(), max_blocks=100)
+
+    assert client.scans == 1
+    assert client.rails == [("USDT", "trc20")], "the untouched rail must not be scanned"
+
+
+async def test_nothing_open_anywhere_still_skips_the_scan_entirely(session) -> None:
+    """The saving that was already there has to survive the narrowing."""
+    await _seed(session)
+    await session.commit()
+
+    client = RailRecordingClient(head=1000)
+    await run_chain_tick(session, client, config=_two_rail_config(), max_blocks=100)
+
+    assert client.scans == 0
+    assert client.rails == []

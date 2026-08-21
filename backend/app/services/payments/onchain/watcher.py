@@ -384,16 +384,25 @@ async def revalidate_finalized(
 _LATE_PAYMENT_GRACE = timedelta(hours=24)
 
 
-async def _deposits_expected(session: AsyncSession, chain: str) -> bool:
-    """Is any deposit still worth looking for on this chain?
+async def _expected_rails(session: AsyncSession, chain: str) -> set[tuple[str, str]]:
+    """Which rails on this chain are still worth looking at, as ``(asset, network)``.
 
-    True while an invoice is open, and for a day after the last one lapsed. False the rest
-    of the time, which on a small shop is almost always — and every tick that answers
-    False costs one cheap block-height call instead of a log scan.
+    A rail earns a scan while one of its invoices is open, and for a day after the last one
+    lapsed — a customer who pays twenty minutes late is a customer who paid, and dropping
+    the watch the instant an invoice expires is how that money lands unseen.
+
+    Per rail, not per chain, because the two cost very different amounts. A buyer paying
+    USDT on Ethereum used to make us walk the chain for USDC as well, and for native ETH —
+    which is scanned block by block. Two thirds of that work could not have found anything:
+    no invoice was outstanding on either rail, so no transfer on them could have belonged
+    to anybody.
+
+    An empty set is the answer most of the time on a shop this size, and it costs one cheap
+    block-height call instead of a log scan.
     """
     cutoff = datetime.now(UTC) - _LATE_PAYMENT_GRACE
-    found = await session.scalar(
-        select(Invoice.id)
+    rows = await session.execute(
+        select(Invoice.crypto_currency, Invoice.crypto_network)
         .where(
             Invoice.chain == chain,
             or_(
@@ -401,9 +410,9 @@ async def _deposits_expected(session: AsyncSession, chain: str) -> bool:
                 Invoice.expires_at >= cutoff,
             ),
         )
-        .limit(1)
+        .distinct()
     )
-    return found is not None
+    return {(a, n) for a, n in rows if a and n}
 
 
 async def run_chain_tick(
@@ -417,7 +426,7 @@ async def run_chain_tick(
     config = config or get_onchain_config()
     ledger = LedgerWriter(session)
     matcher = PaymentMatcher(session)
-    methods = config.methods_for_chain(client.chain)
+    all_methods = config.methods_for_chain(client.chain)
 
     head = await client.get_block_height()
     cursor = await _get_cursor(session, client.chain, head)
@@ -446,17 +455,18 @@ async def run_chain_tick(
 
     transfers: list[IncomingTransfer] = []
     to_block = cursor.last_scanned_block
-    # Nothing is owed on this chain: skip the log scan, which is the expensive call by an
-    # order of magnitude, and carry the cursor forward to the head instead. A deposit
-    # cannot belong to an invoice that does not exist yet, so nothing is lost by not
-    # looking — and the cursor staying current is what stops a backlog forming for the
-    # next real payment to crawl through.
-    expecting = await _deposits_expected(session, client.chain)
-    if methods and head >= from_block and not expecting:
+    # Scan only the rails somebody is actually paying on. Nothing owed anywhere on this
+    # chain means no log scan at all — the expensive call by an order of magnitude — and
+    # the cursor is carried to the head instead. A deposit cannot belong to an invoice that
+    # does not exist, so nothing is lost by not looking, and a current cursor is what stops
+    # a backlog forming for the next real payment to crawl through.
+    expected = await _expected_rails(session, client.chain)
+    methods = [m for m in all_methods if (m.spec.asset, m.spec.network) in expected]
+    if all_methods and head >= from_block and not methods:
         cursor.last_scanned_block = head
         cursor.updated_at = datetime.now(UTC)
         to_block = head
-    elif methods and head >= from_block:
+    elif methods and head >= from_block:  # only the rails somebody is actually paying on
         to_block = min(head, from_block + max_blocks - 1)
         transfers = await client.scan(from_block=from_block, to_block=to_block, methods=methods)
         for transfer in transfers:
