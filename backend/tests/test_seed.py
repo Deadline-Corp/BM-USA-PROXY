@@ -70,3 +70,68 @@ async def test_tos_is_seeded_with_no_questions_to_answer(session) -> None:
     assert tos.value["version"] == 1
     assert "Terms of Service" in tos.value["text_md"]
     assert tos.value["questions"] == []
+
+
+async def test_the_carrier_answer_reaches_a_store_that_already_has_a_faq(session) -> None:
+    """The answer it fixes was given on a live system, so it has to land on a full table.
+
+    `seed_faq` only ever fills an empty one, which is right for the app's FAQ but would have
+    meant this correction never reached the store that needed it.
+    """
+    from app.models import FaqItem
+    from scripts.seed import seed_bot_answers, seed_faq
+
+    await seed_faq(session)
+    await session.commit()
+    before = int(
+        await session.scalar(select(func.count()).select_from(FaqItem)) or 0
+    )
+    assert before > 0
+
+    await seed_bot_answers(session)
+    await session.commit()
+
+    carrier = await session.scalar(
+        select(FaqItem).where(FaqItem.question.ilike("%carriers do you work with%"))
+    )
+    assert carrier is not None
+    assert "AT&T" in carrier.answer
+    assert carrier.use_in_bot is True
+
+
+async def test_seeding_again_never_rewrites_an_answer_the_operator_changed(session) -> None:
+    """Same rule as the plan prices: what the console says is what ships.
+
+    A deploy quietly restoring our wording over theirs is the bug that reset the client's
+    prices twice in one day, in a different table.
+    """
+    from app.models import FaqItem
+    from scripts.seed import seed_bot_answers
+
+    await seed_bot_answers(session)
+    await session.commit()
+    row = await session.scalar(
+        select(FaqItem).where(FaqItem.question.ilike("%carriers do you work with%"))
+    )
+    assert row is not None
+    row.answer = "Verizon only for now."
+    row.use_in_bot = False
+    await session.commit()
+
+    await seed_bot_answers(session)
+    await session.commit()
+
+    await session.refresh(row)
+    assert row.answer == "Verizon only for now."
+    assert row.use_in_bot is False
+    assert (
+        int(
+            await session.scalar(
+                select(func.count())
+                .select_from(FaqItem)
+                .where(FaqItem.question.ilike("%carriers do you work with%"))
+            )
+            or 0
+        )
+        == 1
+    )

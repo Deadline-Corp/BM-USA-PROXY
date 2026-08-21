@@ -66,6 +66,19 @@ FAQ: list[tuple[str, str, str, int]] = [
      60),
 ]
 
+# Answers the assistant cannot work out for itself and must never guess at. Kept apart from
+# FAQ above because these are added to a table that already has rows — see `seed_bot_answers`
+# — and because each one exists to close a specific way the assistant was wrong.
+#
+# Carriers: the assistant read "no AT&T phone in the pool today" as "we do not work with
+# AT&T" and told a customer so. Which carriers the business works with is not something any
+# table here knows; the three below are the closed set the connections table itself allows.
+BOT_ANSWERS: list[tuple[str, str, str, int]] = [
+    ("basics", "Which mobile carriers do you work with?",
+     "We work with AT&T, T-Mobile and Verizon. Which of them has a proxy free right now is "
+     "shown in the app catalog — it changes through the day.", 15),
+]
+
 
 def default_settings(tos_version: int = 1) -> dict[str, object]:
     return {

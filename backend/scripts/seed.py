@@ -22,7 +22,7 @@ from app.models import (
     User,
 )
 from app.models.base import Base  # noqa: F401  (ensure metadata import)
-from app.seed.data import FAQ, LOCATIONS, TARIFFS, default_settings
+from app.seed.data import BOT_ANSWERS, FAQ, LOCATIONS, TARIFFS, default_settings
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,6 +59,31 @@ async def seed_faq(session: AsyncSession) -> None:
     for category, question, answer, sort in FAQ:
         session.add(
             FaqItem(category=category, question=question, answer=answer, sort_order=sort)
+        )
+
+
+async def seed_bot_answers(session: AsyncSession) -> None:
+    """Add the answers the assistant must not be left to guess at, once, per store.
+
+    Separate from `seed_faq` because that one only ever fills an empty table, and these have
+    to reach a store that already has rows — the wrong answer they fix was given on a live
+    system. Insert-if-absent, matched on the question text and never an update: an operator
+    who rewrote one of these has said what they want it to say, and a deploy silently
+    restoring our wording would be the price-overwriting bug again in another table.
+    """
+    for category, question, answer, sort in BOT_ANSWERS:
+        exists = await session.scalar(select(FaqItem.id).where(FaqItem.question == question))
+        if exists is not None:
+            continue
+        session.add(
+            FaqItem(
+                category=category,
+                question=question,
+                answer=answer,
+                sort_order=sort,
+                is_active=True,
+                use_in_bot=True,
+            )
         )
 
 
@@ -130,6 +155,7 @@ async def main() -> None:
         await seed_tariffs(session)
         await seed_locations(session)
         await seed_faq(session)
+        await seed_bot_answers(session)
         await seed_admin(session)
         await session.flush()
         await seed_dev_fixtures(session)

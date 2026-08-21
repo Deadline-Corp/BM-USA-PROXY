@@ -48,7 +48,15 @@ export function FaqScreen() {
     if (!question.trim() || !answer.trim()) return;
     try {
       if (editingId === "new") {
-        await createMutation.mutateAsync({ question: question.trim(), answer: answer.trim(), is_published: true });
+        // Both channels on: somebody writing an answer here is answering a customer
+        // question, and either audience missing it is the situation this screen exists to
+        // end. Switching one off afterwards is one click.
+        await createMutation.mutateAsync({
+          question: question.trim(),
+          answer: answer.trim(),
+          is_published: true,
+          use_in_bot: true,
+        });
         toast.success("FAQ item created");
       } else if (editingId) {
         await updateMutation.mutateAsync({ id: editingId, body: { question: question.trim(), answer: answer.trim() } });
@@ -63,6 +71,14 @@ export function FaqScreen() {
   async function handleTogglePublished(item: FaqItem) {
     try {
       await updateMutation.mutateAsync({ id: item.id, body: { is_published: !item.is_published } });
+    } catch (err) {
+      toast.error(apiErrorMessage(err));
+    }
+  }
+
+  async function handleToggleBot(item: FaqItem) {
+    try {
+      await updateMutation.mutateAsync({ id: item.id, body: { use_in_bot: !item.use_in_bot } });
     } catch (err) {
       toast.error(apiErrorMessage(err));
     }
@@ -91,6 +107,12 @@ export function FaqScreen() {
           </Button>
         }
       />
+
+      {/* The point of the screen, said once at the top. Without it the Bot switch reads as
+          "also show this somewhere", when what it actually does is overrule the assistant. */}
+      <div className="mb-4 rounded-lg border border-border bg-surface-2 px-[18px] py-3 text-[.8rem] text-text-2 leading-relaxed">
+        {strings.faq.botNote}
+      </div>
 
       <Panel>
         {isLoading ? (
@@ -128,10 +150,24 @@ export function FaqScreen() {
                 <div key={item.id} className="flex items-start gap-3 px-[18px] py-3.5 border-b border-border last:border-b-0">
                   <div className="min-w-0 flex-1">
                     <div className="text-[.88rem] text-text font-medium">{item.question}</div>
-                    <div className="text-[.8rem] text-text-2 mt-1 leading-relaxed">{item.answer}</div>
+                    <div className="text-[.8rem] text-text-2 mt-1 leading-relaxed whitespace-pre-wrap">{item.answer}</div>
                   </div>
-                  <div className="flex items-center gap-2 flex-none">
-                    <Switch checked={item.is_published} onChange={() => handleTogglePublished(item)} />
+                  {/* Both switches carry a word. Two bare toggles side by side are a
+                      coin-flip about which channel you just turned off, and one of them
+                      changes what the bot tells every client who asks. */}
+                  <div className="flex items-center gap-3.5 flex-none">
+                    <ChannelSwitch
+                      label={strings.faq.inApp}
+                      title={strings.faq.inAppHint}
+                      checked={item.is_published}
+                      onChange={() => handleTogglePublished(item)}
+                    />
+                    <ChannelSwitch
+                      label={strings.faq.inBot}
+                      title={strings.faq.inBotHint}
+                      checked={item.use_in_bot}
+                      onChange={() => handleToggleBot(item)}
+                    />
                     <Button variant="quiet" size="sm" onClick={() => startEdit(item)} aria-label={strings.common.edit}>
                       <IconEdit />
                     </Button>
@@ -157,6 +193,25 @@ export function FaqScreen() {
         isSubmitting={deleteMutation.isPending}
       />
     </div>
+  );
+}
+
+function ChannelSwitch({
+  label,
+  title,
+  checked,
+  onChange,
+}: {
+  label: string;
+  title: string;
+  checked: boolean;
+  onChange: () => void;
+}) {
+  return (
+    <label className="flex items-center gap-1.5 cursor-pointer select-none" title={title}>
+      <span className="text-[.7rem] uppercase tracking-[.06em] text-text-3">{label}</span>
+      <Switch checked={checked} onChange={onChange} />
+    </label>
   );
 }
 

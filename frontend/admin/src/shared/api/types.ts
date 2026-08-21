@@ -640,7 +640,11 @@ export interface FaqItem {
   id: string;
   question: string;
   answer: string;
+  /** Shown as a card in the mini app's FAQ. */
   is_published: boolean;
+  /** Given to the support assistant, which treats it as authoritative. Independent of
+   *  is_published: an answer can go to one, the other, or both. */
+  use_in_bot: boolean;
 }
 
 // ---------- Notifications ----------

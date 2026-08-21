@@ -76,7 +76,7 @@ export const strings = {
     wallets: "Wallets",
     broadcasts: "Broadcasts",
     publications: "Publications",
-    faq: "FAQ content",
+    faq: "FAQ & bot answers",
     notifications: "Notifications",
     settings: "Settings",
   },
@@ -420,12 +420,20 @@ export const strings = {
     clicks: "Clicks",
   },
   faq: {
-    title: "FAQ content",
-    subtitle: "Questions shown to clients in the bot.",
+    title: "FAQ & bot answers",
+    subtitle:
+      "What we tell clients. Each answer can go to the mini app's FAQ, to the support bot, or to both.",
     add: "Add question",
     question: "Question",
     answer: "Answer",
     published: "Published",
+    inApp: "In app",
+    inAppHint: "Shown as a card in the mini app's FAQ.",
+    inBot: "Bot",
+    inBotHint:
+      "The support bot answers from this. It overrides what the bot would otherwise work out on its own, so this is where you correct a wrong answer.",
+    botNote:
+      "Anything switched on for Bot outranks everything the assistant infers by itself — write the answer here and that is what clients get. Ask it in your own words to check.",
   },
   notifications: {
     title: "Notifications",

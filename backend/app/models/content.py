@@ -117,7 +117,13 @@ class FaqItem(Base):
     question: Mapped[str] = mapped_column(Text, nullable=False)
     answer: Mapped[str] = mapped_column(Text, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="100")
+    # Two independent audiences for one answer. `is_active` publishes it in the mini app's
+    # FAQ; `use_in_bot` gives it to the support assistant, which treats it as authoritative
+    # over anything it would otherwise derive. Separate switches because the two do not
+    # always coincide: a correction the assistant needs is not always worth a card in the
+    # app, and a long app article is not what a chat reply should quote.
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    use_in_bot: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"))
     updated_at: Mapped[datetime] = updated_at_col()
 

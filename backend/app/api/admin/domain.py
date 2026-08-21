@@ -3253,6 +3253,7 @@ def _faq_view(f: FaqItem) -> dict[str, Any]:
         "question": f.question,
         "answer": f.answer,
         "is_published": f.is_active,
+        "use_in_bot": f.use_in_bot,
     }
 
 
@@ -3270,6 +3271,9 @@ class FaqBody(BaseModel):
     answer: str
     sort_order: int = 100
     is_active: bool = True
+    # On by default: somebody writing an answer here is answering a customer question, and
+    # the assistant not knowing it is the situation this flag exists to end.
+    use_in_bot: bool = True
 
 
 @router.post("/faq", status_code=201)
@@ -3295,6 +3299,7 @@ class FaqPatch(BaseModel):
     answer: str | None = None
     sort_order: int | None = None
     is_active: bool | None = None
+    use_in_bot: bool | None = None
 
 
 @router.patch("/faq/{faq_id}")

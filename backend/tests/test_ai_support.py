@@ -15,7 +15,16 @@ from typing import Any
 
 import pytest_asyncio
 from app.bot.handlers import conversation
-from app.models import AdminUser, ConversationMessage, Location, StateCity, Tariff, User
+from app.models import (
+    AdminUser,
+    Connection,
+    ConversationMessage,
+    FaqItem,
+    Location,
+    StateCity,
+    Tariff,
+    User,
+)
 from app.services import ai_support
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -481,3 +490,134 @@ async def test_the_fact_sheet_quotes_the_live_catalogue(session) -> None:
     assert "Monthly" in facts
     assert "$85.00" in facts
     assert "30 days" in facts
+
+
+# ── answers the operator writes, and what they outrank ───────────────────
+async def test_the_carrier_line_cannot_be_read_as_who_we_work_with(session) -> None:
+    """The bug this whole section exists for.
+
+    The pool held Verizon and T-Mobile phones and nothing else, and the line reporting that
+    was captioned "carriers we work with". Asked about AT&T, the assistant read the caption
+    and told a customer we do not work with them, which is untrue — nobody had ever added an
+    AT&T phone, which is a fact about today's stock and not about the business.
+
+    Stock still reaches the prompt, because "what can I buy now" is a real question. What it
+    may not do is answer a different one.
+    """
+    session.add_all(
+        [
+            Connection(
+                iproxy_connection_id="ai-carrier-1", carrier="Verizon",
+                is_sellable=True, online_status="online",
+            ),
+            Connection(
+                iproxy_connection_id="ai-carrier-2", carrier="T-Mobile",
+                is_sellable=True, online_status="online",
+            ),
+        ]
+    )
+    await session.commit()
+
+    facts = await ai_support.build_facts(session)
+
+    assert "Verizon" in facts and "T-Mobile" in facts
+    assert "in our pool at this moment" in facts
+    # The caption that caused it must be gone, not reworded around.
+    assert "Carriers we work with" not in facts
+    # And the model is told outright not to make the inference that went wrong.
+    assert "never tell a customer" in facts
+
+
+async def test_an_operator_answer_reaches_the_prompt(session) -> None:
+    """What the team types in the console is what the assistant is told."""
+    session.add(
+        FaqItem(
+            question="Which carriers do you work with?",
+            answer="AT&T, T-Mobile and Verizon.",
+            use_in_bot=True,
+        )
+    )
+    await session.commit()
+
+    block = await ai_support.build_operator_answers(session)
+
+    assert "Which carriers do you work with?" in block
+    assert "AT&T, T-Mobile and Verizon." in block
+
+
+async def test_an_answer_can_be_given_to_one_channel_without_the_other(session) -> None:
+    """The two switches are independent on purpose.
+
+    A correction the assistant needs is not always worth a card in the app, and an app
+    article is not always what a chat reply should quote. Tying them together would mean
+    the operator cannot fix the bot without publishing, or publish without changing the bot.
+    """
+    session.add_all(
+        [
+            FaqItem(question="Bot only", answer="Only the assistant sees this.",
+                    is_active=False, use_in_bot=True),
+            FaqItem(question="App only", answer="Only the app shows this.",
+                    is_active=True, use_in_bot=False),
+        ]
+    )
+    await session.commit()
+
+    block = await ai_support.build_operator_answers(session)
+
+    assert "Bot only" in block
+    assert "App only" not in block
+
+
+async def test_operator_answers_are_ranked_above_everything_derived(session) -> None:
+    """Precedence has to be stated, not hoped for.
+
+    The prompt carries both the team's answer and the facts it contradicts — that is
+    unavoidable, since the assistant still needs live prices and stock. What decides the
+    outcome is that the team's block sits first and says outright that it wins.
+    """
+    session.add(
+        FaqItem(question="Do you take AT&T?", answer="Yes, AT&T is supported.", use_in_bot=True)
+    )
+    await session.commit()
+
+    system = ai_support._SYSTEM_PROMPT.format(
+        operator_answers=await ai_support.build_operator_answers(session),
+        static_facts=ai_support._STATIC_FACTS,
+        dynamic_facts=await ai_support.build_facts(session),
+    )
+
+    assert system.index("Yes, AT&T is supported.") < system.index("PRODUCT FACTS")
+    assert "it wins over everything" in system
+
+
+async def test_a_long_answer_list_is_cut_and_said_so(session, capsys) -> None:
+    """Silent truncation drops the answer the operator is watching for.
+
+    This block ships on every message, so it has to be bounded — but an operator who adds a
+    fiftieth answer and sees the bot ignore it has no way to find out why unless the cut is
+    recorded.
+    """
+    for i in range(ai_support._ANSWERS_LIMIT + 6):
+        session.add(
+            FaqItem(question=f"Q{i}", answer=f"A{i}", sort_order=i, use_in_bot=True)
+        )
+    await session.commit()
+
+    block = await ai_support.build_operator_answers(session)
+
+    assert "Q0" in block
+    assert f"Q{ai_support._ANSWERS_LIMIT + 5}" not in block
+    assert "answers_truncated" in capsys.readouterr().out
+
+
+async def test_no_operator_answers_leaves_the_prompt_as_it_was(session) -> None:
+    """An empty console must not put an empty authority block in front of the facts."""
+    block = await ai_support.build_operator_answers(session)
+
+    assert block == ""
+    system = ai_support._SYSTEM_PROMPT.format(
+        operator_answers=block,
+        static_facts=ai_support._STATIC_FACTS,
+        dynamic_facts=await ai_support.build_facts(session),
+    )
+    assert "ANSWERS WRITTEN BY OUR TEAM" not in system
