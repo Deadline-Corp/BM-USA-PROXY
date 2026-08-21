@@ -63,7 +63,13 @@ async def refresh_client_handles(ctx: dict) -> dict[str, int] | dict[str, str]:
 
 async def watcher_liveness(ctx: dict) -> dict[str, Any]:
     """Page the operators when a chain stops being scanned — see check_watcher_liveness."""
+    from app.services.payments.onchain.rails import refresh_rails
+
     async with SessionFactory() as s:
+        # The rail list is process-global and loaded by the deposit tick. Relying on that
+        # having happened first would make this check skip silently whenever it did not —
+        # a monitor that quietly does nothing is the failure it exists to catch.
+        await refresh_rails(s)
         result = await check_watcher_liveness(s)
         await s.commit()
     await _beat(ctx, "watcher_liveness")

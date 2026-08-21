@@ -427,6 +427,23 @@ async def run_chain_tick(
     overlap = chain_rescan_overlap(client.chain)
     from_block = max(0, cursor.last_scanned_block + 1 - overlap)
 
+    # A cursor past the head is not a position the chain will ever reach, so every tick
+    # from here on does nothing and the chain is dead with no error to show for it. Found
+    # on production: Solana's cursor sat 42 million slots beyond the head and had not moved
+    # in nine days, while the tick reported success every fifteen seconds. It can only come
+    # from a bad write or a provider changing what it counts, and either way the honest
+    # answer is to start again from where the chain actually is.
+    if cursor.last_scanned_block > head:
+        log.warning(
+            "onchain.cursor_ahead_of_head",
+            chain=client.chain,
+            cursor=cursor.last_scanned_block,
+            head=head,
+        )
+        cursor.last_scanned_block = max(0, head - chain_rescan_overlap(client.chain))
+        cursor.updated_at = datetime.now(UTC)
+        from_block = max(0, cursor.last_scanned_block + 1 - overlap)
+
     transfers: list[IncomingTransfer] = []
     to_block = cursor.last_scanned_block
     # Nothing is owed on this chain: skip the log scan, which is the expensive call by an

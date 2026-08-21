@@ -168,3 +168,29 @@ async def test_a_confirming_deposit_keeps_the_chain_watched(session) -> None:
     await run_chain_tick(session, client, config=_config())
 
     assert client.scans == 1, "an unfinished deposit outranks the age of its invoice"
+
+
+async def test_a_cursor_past_the_head_starts_again_from_the_chain(session) -> None:
+    """A position the chain will never reach is a chain that is dead with nothing to show.
+
+    Found on production: Solana's cursor sat 42 million slots beyond the head and had not
+    moved in nine days, while every tick reported success. `head >= from_block` was simply
+    false, so neither the scan nor the skip ran and the cursor was never touched again — a
+    payment on that rail would have been missed exactly like the Ethereum one, and for a
+    completely different reason.
+    """
+    from app.models import ChainCursor
+
+    await _seed(session)
+    session.add(ChainCursor(chain="tron", last_scanned_block=42_000_000))
+    await session.commit()
+
+    client = CountingClient(head=1_000)
+
+    await run_chain_tick(session, client, config=_config(), max_blocks=100)
+    await session.commit()
+
+    cursor = await session.get(ChainCursor, "tron")
+    assert cursor is not None
+    assert cursor.last_scanned_block <= 1_000, "the cursor must come back to the chain"
+    assert cursor.last_scanned_block > 0
