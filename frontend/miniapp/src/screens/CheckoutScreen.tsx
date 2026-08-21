@@ -316,11 +316,18 @@ export function CheckoutScreen() {
                   </span>
                 ) : null}
               </div>
-              {/* Caption matters more than it looks: with Telegram open on a desktop the
-                  QR is the only comfortable way to pay, and nothing on screen said so. */}
+              {/* The address alone, not the payment URI. A QR is only ever scanned from a
+                  second device — on this one the "Open in wallet" button below is the
+                  shorter path and still prefills everything. The other device is usually an
+                  exchange app, and Bybit and Binance read a withdrawal QR as an address:
+                  handed an ethereum: URI they answer "invalid QR code", which is where the
+                  client's operator gave up and typed it by hand. Wallets accept a bare
+                  address too — they just ask for the amount, which is printed beside this
+                  with its own copy button. A QR some apps refuse outright is worse than one
+                  that always scans and asks for one more field. */}
               <div className="flex shrink-0 flex-col items-center gap-1">
-                <PaymentQr payload={invoice.pay_uri} />
-                {invoice.pay_uri ? (
+                <PaymentQr payload={invoice.pay_address} />
+                {invoice.pay_address ? (
                   <span className="max-w-[86px] text-center text-[10px] leading-tight text-text-3">
                     {strings.checkout.qrHint}
                   </span>
