@@ -178,6 +178,21 @@ async def process_outgoing(session: AsyncSession, transfer: IncomingTransfer) ->
     return True
 
 
+async def _payouts_awaiting(session: AsyncSession, networks: list[str]) -> bool:
+    """Is any payout on these rails still waiting to be spotted on-chain?
+
+    An outgoing scan can only ever confirm an approved payout, so with none approved there
+    is nothing on the chain that this pass could recognise — and the log scan is the
+    expensive call by an order of magnitude.
+    """
+    found = await session.scalar(
+        select(Payout.id)
+        .where(Payout.status.in_(_OPEN_PAYOUT_STATUSES), Payout.network.in_(networks))
+        .limit(1)
+    )
+    return found is not None
+
+
 async def run_payout_tick(
     session: AsyncSession, client: OutgoingCapableClient, config: OnchainConfig
 ) -> int:
@@ -189,6 +204,22 @@ async def run_payout_tick(
     head = await client.get_block_height()
     backfill = _TRON_BACKFILL_MS if client.chain == "tron" else _EVM_BACKFILL_BLOCKS
     cursor = await _cursor(session, client.chain, head, backfill)
+
+    # The deposit watcher stopped scanning when nobody owed us anything; this one never
+    # did, and it runs twice a minute on three chains. Measured on production: one payout
+    # has ever been made and it was confirmed long ago, so every scan since has been
+    # looking for a transfer that cannot exist — on a plan that bills by the call, and it
+    # is the plan that ran out. Nothing that could have been found is skipped: a scan only
+    # ever confirms an approved payout, and with none approved there is nothing to confirm.
+    #
+    # The cursor is still carried forward, one backfill window behind the head, for the
+    # same two reasons as over there. No backlog builds up for the next real payout to
+    # crawl through, and the trailing window covers an operator who sends the money a
+    # moment before marking it approved.
+    if not await _payouts_awaiting(session, [s.network for s in sources]):
+        cursor.last_scanned_block = max(0, head - backfill)
+        cursor.updated_at = datetime.now(UTC)
+        return 0
     from_block = cursor.last_scanned_block + 1
     if head < from_block:
         return 0

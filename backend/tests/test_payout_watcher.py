@@ -232,3 +232,57 @@ async def test_tick_scans_configured_source_and_advances_cursor(session) -> None
     # a second tick with no new transfers is a no-op
     client._transfers = []
     assert await run_payout_tick(session, client, _config()) == 0
+
+
+# ── the scan costs money, so it must not run when it cannot find anything ─
+async def test_no_approved_payout_means_no_log_scan(session) -> None:
+    """This tick ran twice a minute on three chains and never once asked whether it could
+    find anything.
+
+    Measured on production: one payout has ever been made and it was confirmed long ago, so
+    every scan since was looking for a transfer that cannot exist. On a plan billed by the
+    call, that is the plan running out — which is exactly what happened, and it took the
+    deposit watcher down with it on the same key.
+    """
+    await _payout(session, amount="9.99", status="paid")  # settled, nothing to look for
+    client = FakeOutgoingClient(1_700_000_000_000, [_transfer("0xnope", "9.99")])
+
+    confirmed = await run_payout_tick(session, client, _config())
+
+    assert confirmed == 0
+    assert client.calls == [], "nothing approved — the expensive scan must not be made"
+
+
+async def test_an_approved_payout_still_gets_scanned_for(session) -> None:
+    """The other half: the moment there is something to confirm, the scan happens."""
+    payout = await _payout(session, amount="9.99", status="approved")
+    client = FakeOutgoingClient(1_700_000_000_000, [_transfer("0xyes", "9.99")])
+
+    confirmed = await run_payout_tick(session, client, _config())
+
+    assert confirmed == 1
+    assert client.calls, "an approved payout must still be looked for"
+    await session.refresh(payout)
+    assert payout.status == "paid"
+
+
+async def test_an_idle_tick_still_carries_the_cursor_forward(session) -> None:
+    """Otherwise the saving becomes a debt: the cursor stands still while the chain moves,
+    and the next real payout pays for every block that went by in between."""
+    from app.models.onchain import ChainCursor
+
+    await _payout(session, amount="9.99", status="paid")
+    early = FakeOutgoingClient(1_700_000_000_000, [])
+    await run_payout_tick(session, early, _config())
+    await session.flush()
+    first = await session.get(ChainCursor, "tron:payout")
+    assert first is not None
+    started_at = first.last_scanned_block
+
+    later = FakeOutgoingClient(1_700_000_600_000, [])  # ten minutes of chain later
+    await run_payout_tick(session, later, _config())
+    await session.flush()
+    moved = await session.get(ChainCursor, "tron:payout")
+
+    assert moved is not None
+    assert moved.last_scanned_block > started_at, "an idle tick must not let a backlog form"
