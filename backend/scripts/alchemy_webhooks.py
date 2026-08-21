@@ -42,7 +42,10 @@ def _callback_url() -> str:
     base = (os.environ.get("PUBLIC_BASE_URL") or settings.public_base_url or "").rstrip("/")
     if not base.startswith("https://"):
         sys.exit(f"PUBLIC_BASE_URL must be a public https URL, got {base!r}")
-    return f"{base}/api/webhooks/alchemy"
+    # The webhook router is mounted at the root, not under /api — verified against the
+    # deployed service, because a callback registered one path off is a webhook that
+    # answers 404 until Alchemy gives up on it.
+    return f"{base}/webhooks/alchemy"
 
 
 async def _wanted() -> dict[str, list[str]]:
