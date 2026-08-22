@@ -4,6 +4,9 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
+# any sibling venv — a WSL one left beside the Windows one carries a lib64
+# symlink that the Railway uploader cannot read, and the deploy dies indexing it.
+.venv*
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/

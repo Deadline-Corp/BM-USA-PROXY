@@ -4,6 +4,9 @@
 !.env.example
 .venv
 venv
+# any sibling venv — a WSL one left beside the Windows one carries a lib64
+# symlink that the Railway uploader cannot read, and the deploy dies indexing it.
+.venv*
 **/__pycache__
 **/*.pyc
 .mypy_cache
