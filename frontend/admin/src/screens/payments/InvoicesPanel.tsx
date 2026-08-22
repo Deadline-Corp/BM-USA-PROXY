@@ -13,6 +13,7 @@ import { useInvoices } from "@/shared/hooks/useLedger";
 import { useDebouncedValue } from "@/shared/hooks/useDebouncedValue";
 import { usePagination } from "@/shared/hooks/usePagination";
 import { strings } from "@/shared/strings";
+import { CHAINS, ASSETS } from "@/shared/constants/payments";
 import type { InvoiceRow } from "@/shared/api/types";
 
 /** `awaiting` is first and is not a real column value — it is the three statuses that all
@@ -21,8 +22,6 @@ const STATUSES = [
   "awaiting", "pending", "confirming", "paid", "expired",
   "underpaid", "overpaid", "manual_review", "failed",
 ];
-const CHAINS = ["tron", "ethereum", "bsc", "solana", "bitcoin", "litecoin"];
-const ASSETS = ["USDT", "USDC", "TRX", "ETH", "BNB", "SOL", "BTC", "LTC"];
 
 /**
  * Invoices raised, paid or not.

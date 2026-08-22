@@ -96,7 +96,7 @@ export function ChangePasswordModal({
           value={next}
           onChange={setNext}
           hint={strings.settings.newPasswordHint}
-          error={tooShort ? `At least ${MIN_LENGTH} characters.` : undefined}
+          error={tooShort ? strings.settings.passwordTooShort.replace("{min}", String(MIN_LENGTH)) : undefined}
         />
         <PasswordInput
           id="repeat-password"

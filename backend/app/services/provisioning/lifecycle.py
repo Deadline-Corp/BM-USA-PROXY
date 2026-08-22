@@ -63,9 +63,15 @@ async def provision_access(
         issued = await get_provisioner().issue(
             iproxy_connection_id=iproxy_conn_id, duration_minutes=duration
         )
-    except ProvisioningError:
-        # Release the connection: mark the half-created access as failed so the
-        # unique "one live access per connection" index frees it for reuse.
+    except Exception as exc:
+        # ProvisioningError is the expected path (pool empty, provider down). But
+        # IproxyBadRequest, IproxyAuthError or any other uncaught exception also leaves
+        # the half-created access in 'provisioning' — which blocks the connection's
+        # unique index and wedges every subsequent issue attempt. Widen to Exception so
+        # no provider error escapes into the webhook handler as a 500 with the order
+        # stuck. The access is marked failed either way, freeing the connection.
+        if not isinstance(exc, ProvisioningError):
+            log.exception("provision.unexpected_error", order_id=order.id, access_id=access.id)
         access.status = "failed"
         session.add(
             AccessEvent(access_id=access.id, type="provision_failed", actor="system")

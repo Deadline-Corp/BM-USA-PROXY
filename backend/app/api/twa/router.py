@@ -109,10 +109,10 @@ async def payment_methods(session: DbSession) -> dict[str, Any]:
     this endpoint returned nothing.
     """
     from app.services.payments.onchain.config import get_onchain_config
-    from app.services.payments.onchain.rails import refresh_rails
+    from app.services.payments.onchain.rails_cache import refresh_rails_cached
 
     try:
-        await refresh_rails(session)
+        await refresh_rails_cached(session)
         cfg = get_onchain_config()
     except Exception:
         return {"methods": []}
@@ -188,7 +188,10 @@ def _invoice_view(inv: Invoice | None, order_public_id: str | None = None) -> di
 
 @router.post("/orders")
 async def create_order(body: CreateOrder, user: CurrentUser, session: DbSession) -> dict[str, Any]:
-    await orders_svc.guard_order_attempt(session, user_id=user.id, tariff_code=body.tariff_code)
+    await orders_svc.guard_order_attempt(
+        session, user_id=user.id, tariff_code=body.tariff_code,
+        asset=body.asset, network=body.network,
+    )
     order, invoice = await orders_svc.create_order(
         session, user=user, tariff_code=body.tariff_code,
         location_id=body.location_id, carrier=body.carrier,
@@ -210,7 +213,7 @@ _ACTIVE_ORDER_STATUSES = ("awaiting_payment", "paid", "provisioning")
 async def list_active_orders(user: CurrentUser, session: DbSession) -> dict[str, Any]:
     """Orders still in flight, newest first.
 
-    Without this the buyer had no way back to an unpaid order: the payment details lived
+    Without this the mini app had no way back to an unpaid order: the payment details lived
     only in the tab's sessionStorage, so closing the mini app lost the address, the exact
     amount and any sense of what was happening to the money already sent.
     """
@@ -225,9 +228,28 @@ async def list_active_orders(user: CurrentUser, session: DbSession) -> dict[str,
             .limit(20)
         )
     )
+    if not orders:
+        return {"orders": []}
+    # Single query for all invoices — was one scalar per order (N+1, up to 21 queries).
+    # Fetch the newest invoice per order_id (same behaviour as the old per-order scalar,
+    # which returned the first match with no explicit ordering).
+    order_ids = [o.id for o in orders]
+    invoices_by_order: dict[int, Invoice] = {}
+    invoice_rows = list(
+        await session.scalars(
+            select(Invoice)
+            .where(Invoice.order_id.in_(order_ids))
+            .order_by(Invoice.id.desc())
+        )
+    )
+    for inv in invoice_rows:
+        # Only keep the first (newest) invoice per order — same as the old scalar's
+        # implicit "first row" behaviour, now deterministic.
+        if inv.order_id not in invoices_by_order:
+            invoices_by_order[inv.order_id] = inv
     out = []
     for order in orders:
-        inv = await session.scalar(select(Invoice).where(Invoice.order_id == order.id))
+        inv_order: Invoice | None = invoices_by_order.get(order.id)
         out.append(
             {
                 "public_id": str(order.public_id),
@@ -235,7 +257,7 @@ async def list_active_orders(user: CurrentUser, session: DbSession) -> dict[str,
                 "tariff_code": order.tariff_code,
                 "amount_usd": float(order.amount_usd),
                 "created_at": order.created_at.isoformat() if order.created_at else None,
-                "invoice": _invoice_view(inv, str(order.public_id)),
+                "invoice": _invoice_view(inv_order, str(order.public_id)),
             }
         )
     return {"orders": out}
@@ -409,15 +431,9 @@ async def request_config(
 # ── referral (read; full engine in Stage 4) ─────────────────────────────
 @router.get("/referral")
 async def referral(user: CurrentUser, session: DbSession) -> dict[str, Any]:
-    def _sum(status: str) -> Any:
-        return select(func.coalesce(func.sum(ReferralLedger.amount_usd), 0)).where(
-            ReferralLedger.referrer_user_id == user.id, ReferralLedger.status == status
-        )
+    from app.services import referral as referral_svc
 
-    balances = {
-        s: float(await session.scalar(_sum(s)) or 0)
-        for s in ("hold", "available", "requested", "paid")
-    }
+    balances = await referral_svc.balances(session, user.id)
     signups = await session.scalar(
         select(func.count()).select_from(catalog_svc.User).where(
             catalog_svc.User.referrer_user_id == user.id

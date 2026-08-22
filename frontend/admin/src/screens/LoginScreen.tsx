@@ -109,8 +109,8 @@ export function LoginScreen() {
             <h1 className="text-[1.35rem] mb-1">{strings.auth.otpTitle}</h1>
             <p className="text-[.86rem] text-text-2 mb-6">
               {pending.sentTo
-                ? `We sent a six-digit code to ${pending.sentTo} on Telegram. It expires in 5 minutes.`
-                : "We sent a six-digit code to your Telegram. It expires in 5 minutes."}
+                ? strings.auth.otpBody.replace("{dest}", pending.sentTo)
+                : strings.auth.otpBodyFallback}
             </p>
 
             <form onSubmit={onSubmitCode} className="flex flex-col gap-4" noValidate>

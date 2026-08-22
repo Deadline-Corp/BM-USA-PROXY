@@ -124,10 +124,10 @@ export function ClientDossier({ clientId, onClose }: ClientDossierProps) {
     try {
       if (profile.banned) {
         await unbanMutation.mutateAsync(profile.id);
-        toast.success("Client unbanned");
+        toast.success(strings.clients.clientUnbanned);
       } else {
         await banMutation.mutateAsync(profile.id);
-        toast.success("Client banned");
+        toast.success(strings.clients.clientBanned);
       }
       setConfirmBan(false);
     } catch (err) {
@@ -171,7 +171,7 @@ export function ClientDossier({ clientId, onClose }: ClientDossierProps) {
           ...(issueCarrier ? { carrier: issueCarrier } : {}),
         },
       });
-      toast.success("Access issued");
+      toast.success(strings.clients.accessIssued);
       setIssueOpen(false);
       setIssueTariff("");
       setIssueLocationId("");
@@ -440,7 +440,7 @@ function DossierBody({
         }
       >
         {data.accesses.length === 0 ? (
-          <EmptyRow text="No accesses yet" />
+          <EmptyRow text={strings.clients.noAccesses} />
         ) : (
           <RowList>
             {data.accesses.map((a) => (
@@ -469,7 +469,7 @@ function DossierBody({
       {/* Orders */}
       <CollapsibleSection title={strings.clients.dossierOrders} count={data.orders.length}>
         {data.orders.length === 0 ? (
-          <EmptyRow text="No orders yet" />
+          <EmptyRow text={strings.clients.noOrders} />
         ) : (
           <RowList>
             {data.orders.map((o) => (
@@ -495,14 +495,14 @@ function DossierBody({
       {/* Referral */}
       <Section title={strings.clients.dossierReferral}>
         {!data.referral ? (
-          <EmptyRow text="Not a referrer" />
+          <EmptyRow text={strings.clients.notReferrer} />
         ) : (
           <div className="flex flex-col gap-2">
             {/* The code is here because of what an operator does next with it: paste it into
                 the search on Referrals to pull up everything this person has earned and
                 every payout they have asked for. */}
             <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 px-3 py-2">
-              <span className="text-[.78rem] text-text-3">Referral code</span>
+              <span className="text-[.78rem] text-text-3">{strings.clients.referralCode}</span>
               <CopyInline value={data.referral.code} />
             </div>
             <div className="grid grid-cols-3 gap-2">

@@ -126,7 +126,7 @@ export function PackagesScreen() {
         enabled,
         minutes: enabled ? autoRotateMinutes : null,
       });
-      toast.success(enabled ? `Rotating every ${autoRotateMinutes}m` : "Auto-rotation off");
+      toast.success(enabled ? strings.packages.rotatingEvery.replace("{minutes}", String(autoRotateMinutes)) : strings.packages.autoRotationOff);
       closeAction();
     } catch (err) {
       toast.error(apiErrorMessage(err));
@@ -315,7 +315,7 @@ export function PackagesScreen() {
           isError={isError}
           onRetry={refetch}
           getRowId={(row) => row.id}
-          emptyTitle={isFiltered ? "Nothing matches these filters" : "No packages found"}
+          emptyTitle={isFiltered ? strings.packages.nothingMatchesFilters : strings.packages.noPackagesFound}
           emptyHint={isFiltered ? "Widen the date range, or clear the filters." : undefined}
           toolbar={
             <FilterBar

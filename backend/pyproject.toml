@@ -2,7 +2,7 @@
 name = "bm-usa-proxy"
 version = "0.1.0"
 description = "BM USA Proxy — Telegram ecosystem for reselling US mobile proxies (backend)"
-requires-python = ">=3.11"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
@@ -44,7 +44,7 @@ packages = ["app"]
 
 [tool.ruff]
 line-length = 110
-target-version = "py311"
+target-version = "py312"
 src = ["app", "tests", "scripts"]
 
 [tool.ruff.lint]
@@ -64,7 +64,7 @@ extend-immutable-calls = [
 ]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 plugins = ["pydantic.mypy"]
 strict = false
 warn_unused_ignores = true

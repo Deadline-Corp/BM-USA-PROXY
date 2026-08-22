@@ -80,18 +80,32 @@ class IproxyClient:
         self._base = (base_url or settings.iproxy_base_url).rstrip("/")
         self._bucket = _TokenBucket(rate)
         self._max_retries = max_retries
+        # One shared client for the lifetime of this IproxyClient, instead of a new
+        # httpx.AsyncClient per _request call. Connection pooling reduces latency and
+        # avoids the TLS handshake overhead on every provision/revoke/rotate call.
+        self._client: httpx.AsyncClient | None = None
+
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(timeout=20.0)
+        return self._client
+
+    async def aclose(self) -> None:
+        if self._client is not None and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
 
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self._key}", "Accept": "application/json"}
 
     async def _request(self, method: str, path: str, *, json: Any = None) -> Any:
         url = f"{self._base}{path}"
+        client = self._get_client()
         last_exc: Exception | None = None
         for attempt in range(self._max_retries):
             await self._bucket.acquire()
             try:
-                async with httpx.AsyncClient(timeout=20.0) as client:
-                    resp = await client.request(method, url, headers=self._headers(), json=json)
+                resp = await client.request(method, url, headers=self._headers(), json=json)
             except (httpx.TimeoutException, httpx.TransportError) as exc:
                 last_exc = IproxyUnavailable(str(exc))
                 await asyncio.sleep(0.5 * (2**attempt))

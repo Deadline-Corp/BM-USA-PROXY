@@ -63,13 +63,13 @@ async def refresh_client_handles(ctx: dict) -> dict[str, int] | dict[str, str]:
 
 async def watcher_liveness(ctx: dict) -> dict[str, Any]:
     """Page the operators when a chain stops being scanned — see check_watcher_liveness."""
-    from app.services.payments.onchain.rails import refresh_rails
+    from app.services.payments.onchain.rails_cache import refresh_rails_cached
 
     async with SessionFactory() as s:
         # The rail list is process-global and loaded by the deposit tick. Relying on that
         # having happened first would make this check skip silently whenever it did not —
         # a monitor that quietly does nothing is the failure it exists to catch.
-        await refresh_rails(s)
+        await refresh_rails_cached(s)
         result = await check_watcher_liveness(s)
         await s.commit()
     await _beat(ctx, "watcher_liveness")
@@ -172,13 +172,13 @@ async def watch_onchain_deposits(ctx: dict) -> dict[str, int] | None:
 
     from app.services.payments.onchain.clients import build_client, chain_max_scan
     from app.services.payments.onchain.config import get_onchain_config
-    from app.services.payments.onchain.rails import refresh_rails
+    from app.services.payments.onchain.rails_cache import refresh_rails_cached
     from app.services.payments.onchain.watcher import run_chain_tick
 
     # The worker is its own process, so a rail saved in the console reaches it here —
     # once a minute, on the tick that is about to use it.
     async with SessionFactory() as s:
-        await refresh_rails(s)
+        await refresh_rails_cached(s)
     config = get_onchain_config()
 
     async def tick(chain: str) -> tuple[str, int] | None:
@@ -218,7 +218,13 @@ async def watch_payout_transfers(ctx: dict) -> dict[str, int] | None:
     from app.services.payments.onchain.clients import build_client
     from app.services.payments.onchain.config import get_onchain_config
     from app.services.payments.onchain.payout_watcher import run_payout_tick
+    from app.services.payments.onchain.rails import refresh_rails
 
+    # Same reason as watch_onchain_deposits: the worker is its own process, so a rail /
+    # payout wallet saved in the console reaches it here. Without this the config never
+    # loads from the DB and get_onchain_config() answers from ONCHAIN_* env vars alone.
+    async with SessionFactory() as s:
+        await refresh_rails(s)
     config = get_onchain_config()
     if not config.payout_sources:
         await _beat(ctx, "watch_payout_transfers")

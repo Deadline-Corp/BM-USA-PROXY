@@ -32,10 +32,25 @@ fi
 
 echo "[start] role=api"
 alembic upgrade head || exit 1
-python -m scripts.seed || exit 1
 
-if [ "${RUN_WORKER:-true}" = "true" ]; then
+# Seed is idempotent but needs SEED_ADMIN_PASSWORD to bootstrap the owner account.
+# Without it seed_admin() logs a warning and returns (see scripts/seed.py), so the
+# command itself never fails — but we guard anyway so a missing password can never
+# boot-loop the API under `set -e`.
+if [ -n "${SEED_ADMIN_PASSWORD:-}" ]; then
+  python -m scripts.seed || echo "[start] seed failed — continuing (non-fatal)"
+else
+  echo "[start] SEED_ADMIN_PASSWORD not set — skipping seed (admin bootstrap deferred)"
+fi
+
+# RUN_WORKER=true keeps arq inside the API container during the migration to a
+# standalone worker service. The default is false: Railway should run a separate
+# worker service (see railway.worker.json) and leave this flag off on the API.
+if [ "${RUN_WORKER:-false}" = "true" ]; then
   echo "[start] RUN_WORKER=true — also running arq in-container (staging topology)"
+  # Graceful shutdown: SIGTERM to the main process (uvicorn) must not kill arq
+  # mid-job. Trap TERM, signal the arq supervisor, wait for it to drain, then exit.
+  trap 'kill $ARQ_PID 2>/dev/null; wait $ARQ_PID 2>/dev/null; exit 0' TERM
   (
     while true; do
       arq app.workers.main.WorkerSettings
@@ -43,6 +58,7 @@ if [ "${RUN_WORKER:-true}" = "true" ]; then
       sleep 3
     done
   ) &
+  ARQ_PID=$!
 fi
 
 exec uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}"

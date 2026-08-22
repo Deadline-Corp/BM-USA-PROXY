@@ -134,7 +134,7 @@ export function PoolsScreen() {
             entries stopped reading as one list. The bar wants width more than they do. */}
         <div className="px-6 py-3.5 flex flex-col gap-2 border-t border-border">
             <div className="flex justify-between items-baseline">
-              <span className="text-[.69rem] uppercase tracking-[.08em] text-text-3">Capacity</span>
+              <span className="text-[.69rem] uppercase tracking-[.08em] text-text-3">{strings.pools.capacity}</span>
               <span className="font-mono tabular-nums text-[.78rem] text-text-2">{usedPct}%</span>
             </div>
             {/* The legend promised three colours; the bar drew one solid accent fill, so
@@ -169,10 +169,10 @@ export function PoolsScreen() {
               {/* Free / Used echo the summary cells to the left, so the same number is not
                   called two different things a few centimetres apart. */}
               <span className="flex items-center gap-1 whitespace-nowrap">
-                <span className="w-1.5 h-1.5 rounded-full bg-success" />Free {freeSlots}
+                <span className="w-1.5 h-1.5 rounded-full bg-success" />{strings.pools.free} {freeSlots}
               </span>
               <span className="flex items-center gap-1 whitespace-nowrap">
-                <span className="w-1.5 h-1.5 rounded-full bg-warning" />Busy {usedSlots}
+                <span className="w-1.5 h-1.5 rounded-full bg-warning" />{strings.pools.used} {usedSlots}
               </span>
               <span className="flex items-center gap-1 whitespace-nowrap">
                 <span className="w-1.5 h-1.5 rounded-full bg-warning/50" />
@@ -186,7 +186,7 @@ export function PoolsScreen() {
                 {/* Not "Offline": this bucket also holds phones reporting 'unknown' and
                     ones an operator withheld from sale while they are still online. What
                     they share is that none of them can be sold. */}
-                <span className="w-1.5 h-1.5 rounded-full bg-text-3" />Unavailable{" "}
+                <span className="w-1.5 h-1.5 rounded-full bg-text-3" />{strings.pools.unavailable}{" "}
                 {unavailableSlots}
               </span>
             </div>

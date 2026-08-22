@@ -164,10 +164,10 @@ export function OrdersScreen() {
           onSortingChange={isManual ? undefined : setSorting}
           emptyTitle={
             isManual
-              ? "Nothing needs manual review"
+              ? strings.orders.emptyManualReview
               : filtered
                 ? strings.orders.emptyFiltered
-                : "No orders yet"
+                : strings.orders.empty
           }
           emptyHint={!isManual && filtered ? strings.orders.emptyFilteredHint : undefined}
           toolbar={

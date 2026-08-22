@@ -15,3 +15,5 @@ project_info
 demo
 *.md
 .claude
+**/*.tsbuildinfo
+**/.vite

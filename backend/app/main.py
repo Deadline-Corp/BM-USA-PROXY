@@ -152,6 +152,20 @@ def _register_telegram_webhook(app: FastAPI) -> None:
         from aiogram.types import Update
 
         update = Update.model_validate(await request.json(), context={"bot": bot})
+
+        # Deduplicate by update_id: Telegram retries a delivery that did not get a 200
+        # within its timeout, and the same update can arrive 2–3 times. Without this every
+        # retry became a duplicate message in the thread, a duplicate operator alert, and a
+        # duplicate AI answer. SET NX with a 24h TTL is enough — update_id is unique per
+        # bot and monotonic, so a seen id will never come back legitimately.
+        update_id = getattr(update, "update_id", None)
+        if update_id is not None:
+            from app.core.redis import redis_client
+
+            dedup_key = f"tg:upd:{update_id}"
+            if not await redis_client.set(dedup_key, "1", nx=True, ex=86400):
+                return JSONResponse({"ok": True})  # already processed — ack and drop
+
         await get_dispatcher().feed_update(bot, update)
         return JSONResponse({"ok": True})
 
