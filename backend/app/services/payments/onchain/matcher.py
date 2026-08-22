@@ -101,6 +101,11 @@ class PaymentMatcher:
         # Checked BEFORE the "no open invoices at all" exit on purpose: when the buyer's
         # invoice is the only one there is and it has expired, that list is empty — and an
         # early return there is exactly the case this is meant to name.
+        #
+        # ORDER BY id DESC + LIMIT 1: two closed invoices with the same exact amount
+        # (same rail, same address) would otherwise match non-deterministically. Picking
+        # the newest one is the right default — it is the invoice the buyer was most
+        # recently looking at when they sent the payment.
         stale_exact = await self.session.scalar(
             select(Invoice).where(
                 Invoice.provider == "onchain",
@@ -109,7 +114,7 @@ class PaymentMatcher:
                 Invoice.crypto_network == transfer.network,
                 Invoice.pay_address == transfer.to_address,
                 Invoice.crypto_amount == paid,
-            )
+            ).order_by(Invoice.id.desc()).limit(1)
         )
         if stale_exact is not None:
             return MatchResult(None, "exact_match_on_closed_invoice", closed_invoice=stale_exact)

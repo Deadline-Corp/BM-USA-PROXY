@@ -268,3 +268,82 @@ async def capture_message(message: Message) -> None:
             await session.commit()
     except Exception as exc:  # noqa: BLE001
         log.warning("bot.ack_record_failed", user_id=user_id, error=str(exc))
+
+
+# Screenshots, photos, documents and videos sent to the bot used to be met with silence:
+# the handler above only matches F.text, so anything without a text field fell through to
+# no handler at all. The customer saw nothing, the operator saw nothing, and a payment
+# screenshot or a problem report simply vanished. This handler captures them with a
+# placeholder body (the file_id is stored so an operator can retrieve the file) and pages
+# the operator the same way a text message does.
+@router.message(F.photo | F.document | F.video)
+async def capture_media_message(message: Message) -> None:
+    if message.from_user is None:
+        return
+    # Build a placeholder body that records what was sent and carries the file_id so an
+    # operator can fetch it later. The caption (if any) is included so the customer's
+    # own description of what the screenshot shows is not lost.
+    caption = (message.caption or "")[:4000]
+    if message.photo:
+        # photo is a list of PhotoSize; the largest is the last one.
+        file_id = message.photo[-1].file_id
+        body = f"[photo:{file_id}]" + (f"\n{caption}" if caption else "")
+    elif message.document:
+        file_id = message.document.file_id
+        body = f"[document:{file_id}]" + (f"\n{caption}" if caption else "")
+    elif message.video:
+        file_id = message.video.file_id
+        body = f"[video:{file_id}]" + (f"\n{caption}" if caption else "")
+    else:  # pragma: no cover — the filter guarantees one of the three
+        body = "[media]"
+    body = body[:4096]
+
+    async with SessionFactory() as session:
+        user = await upsert_from_telegram(session, _identity(message))
+        session.add(
+            ConversationMessage(
+                user_id=user.id,
+                direction="in",
+                body=body,
+                tg_message_id=message.message_id,
+            )
+        )
+        await session.commit()
+        display = (
+            f"@{user.tg_username}" if user.tg_username else (user.first_name or f"#{user.id}")
+        )
+        who = f"{display} (tg {user.tg_user_id})"
+
+        # Media always pages the operator — the AI assistant cannot see images, so there
+        # is no try_answer path. One alert per burst, same as the text handler.
+        if await _starts_a_burst(session, user.id):
+            with contextlib.suppress(Exception):
+                await ops_alerts.notify_ops(
+                    session, f"📎 Media from {who}:\n{caption[:500] or '(no caption)'}"
+                )
+
+    # Ack the customer the same way the text handler does, so a screenshot is not met
+    # with silence either.
+    ack_due = True
+    try:
+        async with SessionFactory() as session:
+            ack_due = await _ack_is_due(session, user.id)
+            ack_text = await render(session, ACK_TEMPLATE, {}) if ack_due else None
+    except Exception as exc:  # noqa: BLE001
+        log.warning("bot.media_ack_check_failed", error=str(exc))
+        return
+    if not ack_text:
+        return
+    try:
+        await message.answer(ack_text)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("bot.ack_send_failed", error=str(exc))
+        return
+    try:
+        async with SessionFactory() as session:
+            session.add(
+                ConversationMessage(user_id=user.id, direction="out", body=ack_text)
+            )
+            await session.commit()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("bot.ack_record_failed", error=str(exc))

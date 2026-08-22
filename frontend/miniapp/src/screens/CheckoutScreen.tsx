@@ -62,7 +62,7 @@ function PaymentQr({ payload }: { payload: string | null }) {
   return (
     <img
       src={src}
-      alt="Payment QR code"
+      alt={strings.checkout.qrAlt}
       className="h-[82px] w-[82px] shrink-0 rounded-[8px] border-[1.5px] border-border-2 bg-white p-1"
     />
   );
@@ -93,7 +93,7 @@ function PayAmountRow({ amount, currency }: { amount: string | null; currency: s
         <button
           type="button"
           className="ml-0.5 flex h-[22px] w-[22px] shrink-0 items-center justify-center self-center rounded-[6px] border border-border-2 bg-transparent text-text-3 transition-colors duration-150 ease-out hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-          aria-label="Copy exact amount"
+          aria-label={strings.common.copyAmount}
           onClick={() => copy(shown)}
         >
           {copied ? <Check size={12} /> : <Copy size={12} />}
@@ -119,7 +119,7 @@ function PayAddressRow({ address }: { address: string }) {
       <button
         type="button"
         className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[8px] border border-border-2 bg-transparent text-text-3 transition-colors duration-150 ease-out hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-        aria-label="Copy payment address"
+        aria-label={strings.common.copyAddress}
         onClick={() => copy(address)}
       >
         {copied ? <Check size={14} /> : <Copy size={14} />}
@@ -141,13 +141,13 @@ const STATUS_META: Record<
   confirming: {
     icon: Loader2,
     title: strings.checkout.confirming,
-    body: "Your payment was detected on-chain — waiting for enough confirmations.",
+    body: strings.checkout.statusConfirming,
     tone: "accent",
   },
   provisioning: {
     icon: Loader2,
     title: strings.checkout.provisioning,
-    body: "Your device is being assigned. This usually takes a few seconds.",
+    body: strings.checkout.statusProvisioning,
     tone: "accent",
   },
   completed: {

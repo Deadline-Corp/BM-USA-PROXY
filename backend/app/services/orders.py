@@ -25,7 +25,7 @@ from app.services.catalog import trial_available
 from app.services.notifications import enqueue
 from app.services.payments.base import InvoiceDTO
 from app.services.payments.onchain.config import get_onchain_config
-from app.services.payments.onchain.rails import refresh_rails
+from app.services.payments.onchain.rails_cache import refresh_rails_cached
 from app.services.payments.registry import get_payment_provider
 from app.services.provisioning.allocator import release_reservations, reserve
 from app.services.provisioning.lifecycle import extend_access, provision_access, swap_access
@@ -93,7 +93,14 @@ async def _ensure_unique_crypto_amount(session: AsyncSession, provider_name: str
         dto.crypto_amount += step
 
 
-async def guard_order_attempt(session: AsyncSession, *, user_id: int, tariff_code: str) -> None:
+async def guard_order_attempt(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    tariff_code: str,
+    asset: str | None = None,
+    network: str | None = None,
+) -> None:
     """Apply the order rate limit — unless this specific attempt is certain to fail anyway.
 
     A paid-tariff purchase against a store with zero on-chain rails configured always ends
@@ -110,10 +117,27 @@ async def guard_order_attempt(session: AsyncSession, *, user_id: int, tariff_cod
     an invoice. Under ``PAYMENT_PROVIDER=mock`` (every non-prod default) or any future
     non-on-chain provider, an empty on-chain rail list means nothing — checking it anyway
     would block purchases a real attempt could satisfy just fine.
+
+    When the buyer has chosen a specific rail (asset + network), validate that it exists
+    and raise a 4xx ``ValidationError`` instead of letting it blow up as a 500 deeper in
+    ``create_invoice``.
     """
     if get_payment_provider().name == "onchain":
-        await refresh_rails(session)
-        if get_onchain_config().default_method() is None:
+        await refresh_rails_cached(session)
+        cfg = get_onchain_config()
+        if asset is not None and network is not None:
+            # The buyer picked a specific rail — if it is not configured, that is a
+            # client-side validation error (4xx), not a server error (500).
+            if cfg.method(asset, network) is None:
+                price = await session.scalar(
+                    select(Tariff.price_usd).where(Tariff.code == tariff_code, Tariff.is_active)
+                )
+                if price is not None and float(price) > 0:
+                    raise ValidationError(
+                        f"the selected payment method ({asset}/{network}) is not available. "
+                        "Please choose a different payment method."
+                    )
+        elif cfg.default_method() is None:
             price = await session.scalar(
                 select(Tariff.price_usd).where(Tariff.code == tariff_code, Tariff.is_active)
             )
@@ -258,7 +282,7 @@ async def create_order(
 
     # Pick up whatever rail list the console last saved before quoting an address —
     # otherwise this process keeps handing out the address an operator already replaced.
-    await refresh_rails(session)
+    await refresh_rails_cached(session)
     provider = get_payment_provider()
     dto = await provider.create_invoice(
         order_public_id=str(order.public_id),
@@ -368,7 +392,7 @@ async def create_extension_order(
 
     # Pick up whatever rail list the console last saved before quoting an address —
     # otherwise this process keeps handing out the address an operator already replaced.
-    await refresh_rails(session)
+    await refresh_rails_cached(session)
     provider = get_payment_provider()
     ttl = int(await settings_svc.get(session, "invoice_ttl_minutes", 60))
     dto = await provider.create_invoice(
@@ -408,8 +432,15 @@ async def _provision_or_review(session: AsyncSession, order: Order) -> None:
             # copies of "your proxy is ready" is not ten times as useful as one.
             await provision_access(session, order=order, notify=False)
             issued += 1
-        except ProvisioningError as exc:
-            failure = exc
+        except Exception as exc:
+            # ProvisioningError is expected (pool empty, provider down). But
+            # IproxyBadRequest / IproxyAuthError / any other uncaught exception escapes
+            # to the webhook handler as a 500 and leaves the order stuck in
+            # 'provisioning'. Widen to Exception, log unexpected ones, and mark the
+            # order for manual reconcile so an operator can see it.
+            if not isinstance(exc, ProvisioningError):
+                log.exception("order.provision_unexpected_error", order_id=order.id)
+            failure = exc if isinstance(exc, ProvisioningError) else ProvisioningError(str(exc))
             # Release the connection held by the half-created access: mark it failed and
             # record an event so the invariant (one live access per connection) frees up.
             access = await session.scalar(

@@ -60,7 +60,7 @@ class Settings(BaseSettings):
     # On-chain watcher (provider='onchain'; see doc 15). Both are raw JSON strings.
     onchain_methods: str | None = None  # array of enabled rails + receiving addresses
     onchain_rpc: str | None = None      # object of per-chain RPC endpoints + api keys
-    onchain_network: str = "mainnet"    # "mainnet" | "testnet" — selects default RPC endpoints
+    onchain_network: Literal["mainnet", "testnet"] = "mainnet"  # selects default RPC endpoints
     # wallets we SEND referral payouts from — watched to auto-confirm those payouts
     # (public addresses only): [{"network":"trc20","address":"T..."}]
     onchain_payout_sources: str | None = None
@@ -89,11 +89,6 @@ class Settings(BaseSettings):
     def is_prod(self) -> bool:
         return self.env == "prod"
 
-    @property
-    def sync_database_url(self) -> str:
-        """Alembic uses a sync driver; swap asyncpg → psycopg where needed."""
-        return self.database_url.replace("+asyncpg", "")
-
     @model_validator(mode="after")
     def _require_prod_secrets(self) -> Settings:
         """Fail closed: any non-local env must not boot on default/missing/weak secrets.
@@ -101,6 +96,10 @@ class Settings(BaseSettings):
         Only an explicit ``ENV=local`` is exempt (CWE-798 / CWE-1188). A public staging
         tier registers a Telegram webhook and is internet-reachable, so it must be held
         to the same bar as prod — a default ``BOT_WEBHOOK_SECRET`` there is forgeable.
+
+        Provider-specific validation is also applied: when ``payment_provider=onchain``,
+        ``ONCHAIN_METHODS`` and ``ONCHAIN_RPC`` must be set; the mock provider is
+        left alone — it is refused entirely by the provider registry wherever it matters.
         """
         if self.env == "local":
             return self
@@ -111,11 +110,32 @@ class Settings(BaseSettings):
             missing.append("BOT_WEBHOOK_SECRET")
         if not self.credentials_key:
             missing.append("CREDENTIALS_KEY")
+        # Core infra: a non-local deployment cannot run without these.
+        if not self.bot_token:
+            missing.append("BOT_TOKEN")
+        if not self.database_url or "postgresql+asyncpg://" not in self.database_url:
+            missing.append("DATABASE_URL")
+        if not self.redis_url:
+            missing.append("REDIS_URL")
         if self.feature_real_payments:
             if self.payment_provider == "mock":
                 missing.append("PAYMENT_PROVIDER (still 'mock')")
             if not self.payment_webhook_secret:
                 missing.append("PAYMENT_WEBHOOK_SECRET")
+        # Provider-specific startup validation — the config that each provider needs to
+        # actually work, checked once at boot rather than failing on the first request.
+        if self.payment_provider == "onchain":
+            if not self.onchain_methods:
+                missing.append("ONCHAIN_METHODS (required when PAYMENT_PROVIDER=onchain)")
+            if not self.onchain_rpc:
+                missing.append("ONCHAIN_RPC (required when PAYMENT_PROVIDER=onchain)")
+        # No rule for the mock provider here. It reads as a missing gate, but the secret
+        # is not one: MockPaymentProvider.verify_webhook returns True unconditionally and
+        # never looks at it, so demanding it would buy nothing and refuse to boot a staging
+        # tier that is legitimately running the mock with no money in play. What actually
+        # protects that is payments/registry.get_payment_provider, which refuses the mock
+        # outright once is_prod or feature_real_payments is set — the guard is in the place
+        # that can enforce it.
         if missing:
             raise ValueError(
                 f"{self.env} refuses to start with default/missing/weak secrets: "

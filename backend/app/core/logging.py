@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import re
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping, MutableMapping
+from typing import Any
 
 import structlog
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -12,6 +14,21 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from app.core.config import settings
+
+# Keys whose values must never appear in logs — case-insensitive substring match.
+# Matches ``password``, ``token``, ``key``, ``secret``, ``api_key`` and any
+# compound key that contains them (e.g. ``stripe_secret_key``, ``auth_token``).
+_SENSITIVE_KEY_RE = re.compile(r"(password|token|key|secret|api_key)", re.IGNORECASE)
+
+
+def scrub_sensitive_values(
+    _logger: Any, _method_name: str, event_dict: MutableMapping[str, Any]
+) -> Mapping[str, Any]:
+    """Replace values of sensitive keys with ``'***'`` before rendering."""
+    for key in list(event_dict):
+        if _SENSITIVE_KEY_RE.search(key):
+            event_dict[key] = "***"
+    return event_dict
 
 
 def configure_logging() -> None:
@@ -23,6 +40,7 @@ def configure_logging() -> None:
             structlog.processors.TimeStamper(fmt="iso"),
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
+            scrub_sensitive_values,
             structlog.processors.JSONRenderer(),
         ],
         wrapper_class=structlog.make_filtering_bound_logger(

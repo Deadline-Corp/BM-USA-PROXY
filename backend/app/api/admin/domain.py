@@ -2415,7 +2415,15 @@ class RefundBody(BaseModel):
 async def refund_order(
     order_id: str, body: RefundBody, admin: CurrentAdmin, session: DbSession
 ) -> dict[str, Any]:
-    order = await _get_order(session, order_id)
+    # SELECT ... FOR UPDATE on the order row: two concurrent POST /refund can both pass
+    # the already_refunded check below and issue a double refund + double referral.reverse.
+    # The row lock serialises them the same way pg_advisory_xact_lock does in
+    # referral.request_payout — one transaction waits for the other to commit.
+    order = await session.scalar(
+        select(Order).where(Order.public_id == order_id).with_for_update()
+    )
+    if order is None:
+        raise NotFound("order not found")
     if order.paid_at is None:
         raise ValidationError("cannot refund an order that was never paid")
     already_refunded = Decimal(
@@ -2434,12 +2442,27 @@ async def refund_order(
         raise ValidationError(
             "refund amount must be > 0 and total refunds must not exceed the order amount"
         )
-    order.status = "refunded"
-
-    active_access = await session.scalar(
-        select(Access).where(Access.order_id == order.id, Access.status.in_(_ACTIVE_ACCESS))
+    # Only a FULL refund marks the order as 'refunded'. A partial refund revokes all
+    # accesses (the customer is not getting their money back on part of an order while
+    # keeping the proxies) but the order status stays 'partially_refunded' so the ledger
+    # never claims the order was fully refunded when it was not.
+    is_full_refund = already_refunded + Decimal(str(body.amount_usd)) >= Decimal(
+        str(order.amount_usd)
     )
-    if active_access is not None:
+    order.status = "refunded" if is_full_refund else "partially_refunded"
+
+    # Revoke ALL active accesses for this order — a multi-proxy order (quantity up to 50)
+    # has up to 50 live accesses, and a scalar query only found one. The rest stayed live
+    # after a full refund, handing the customer 49 working proxies they had been paid back
+    # for.
+    active_accesses = list(
+        await session.scalars(
+            select(Access).where(
+                Access.order_id == order.id, Access.status.in_(_ACTIVE_ACCESS)
+            )
+        )
+    )
+    for active_access in active_accesses:
         await revoke_access(session, access=active_access, reason="refund", actor=f"admin:{admin.id}")
 
     refund = Refund(
@@ -3412,10 +3435,11 @@ async def _payment_rails_view(session: DbSession) -> dict[str, Any]:
         get_onchain_config,
         rails_are_console_managed,
     )
-    from app.services.payments.onchain.rails import refresh_rails, supported_rails
+    from app.services.payments.onchain.rails import supported_rails
+    from app.services.payments.onchain.rails_cache import refresh_rails_cached
     from app.services.payouts import PAYOUT_RAILS
 
-    await refresh_rails(session)
+    await refresh_rails_cached(session)
 
     error: str | None = None
     try:
@@ -3509,6 +3533,7 @@ async def put_payment_rails(
     """
     from app.services.payments.onchain.config import OnchainConfigError, get_onchain_config
     from app.services.payments.onchain.rails import save_payout_wallets, save_rails
+    from app.services.payments.onchain.rails_cache import invalidate_refresh_rails_cache
 
     before = {
         (m.asset, m.network): m.address
@@ -3528,6 +3553,10 @@ async def put_payment_rails(
         )
     except OnchainConfigError as exc:
         raise ValidationError(str(exc)) from None
+
+    # The cached refresh would otherwise serve the old rail list for up to 10s —
+    # unacceptable when an operator just changed the address money is sent to.
+    invalidate_refresh_rails_cache()
 
     after = {(r["asset"], r["network"]): r["address"] for r in saved}
     changes = {

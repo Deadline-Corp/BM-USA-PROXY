@@ -23,6 +23,8 @@ export const strings = {
     copy: "Copy",
     copied: "Copied",
     copyAll: "Copy all",
+    copyAmount: "Copy exact amount",
+    copyAddress: "Copy payment address",
     cancel: "Cancel",
     confirm: "Confirm",
     back: "Back",
@@ -36,6 +38,8 @@ export const strings = {
     hide: "Hide",
     optional: "optional",
     required: "required",
+    errorBoundaryMessage: "Something went wrong. Please reload.",
+    reload: "Reload",
   },
 
   errors: {
@@ -152,6 +156,13 @@ export const strings = {
     // invite (e.g. "https://t.me/+AbCdEf"), which has no username to show.
     supportLinkLabel: "Support",
     channelLinkLabel: "Channel",
+    referNudge: "Refer a client & earn a commission on every payment, for life.",
+    referNudgePrefix: "Refer a client & earn a ",
+    referNudgeHighlight: "commission",
+    referNudgeSuffix: " on every payment, for life.",
+    supportSubtext: "Free trial · all sales inquiries",
+    channelSubtext: "BM USA PROXY CLUB · news & updates",
+    usCities: "US cities",
   },
 
   checkout: {
@@ -163,6 +174,9 @@ export const strings = {
     waitingForPayment: "Waiting for payment…",
     confirming: "Confirming payment…",
     provisioning: "Issuing your access…",
+    statusConfirming: "Your payment was detected on-chain — waiting for enough confirmations.",
+    statusProvisioning: "Your device is being assigned. This usually takes a few seconds.",
+    qrAlt: "Payment QR code",
     completedTitle: "Access issued",
     completedBody: "Your proxy is ready. Credentials are in your access details.",
     expiredTitle: "Invoice expired",

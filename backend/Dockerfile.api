@@ -4,24 +4,46 @@
 # ── frontend bundles ────────────────────────────────────────────────────
 FROM node:24-slim AS frontend
 WORKDIR /fe
+
+# miniapp — cache deps first (layer stays valid across code-only commits)
 COPY frontend/miniapp/package*.json frontend/miniapp/
 RUN cd frontend/miniapp && npm ci
 COPY frontend/miniapp frontend/miniapp
 RUN cd frontend/miniapp && npm run build
-# admin build must fail loudly if npm build breaks
+
+# admin — same pattern: package.json → npm ci → rest of code
+COPY frontend/admin/package*.json frontend/admin/
+RUN cd frontend/admin && npm ci
 COPY frontend/admin frontend/admin
-RUN cd frontend/admin && (npm ci && npm run build)
+RUN cd frontend/admin && npm run build
 
 # ── backend ─────────────────────────────────────────────────────────────
 FROM python:3.12-slim
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1
 WORKDIR /app
 COPY --from=ghcr.io/astral-sh/uv:0.5.20 /uv /usr/local/bin/uv
-COPY backend/ .
-RUN uv pip install --system .
+
+# Install dependencies from lockfile first (layer cached across code commits)
+COPY backend/pyproject.toml backend/uv.lock ./
+RUN uv sync --frozen --no-dev
+
+# uv sync installs into /app/.venv, not the system Python — so `alembic`,
+# `uvicorn` and `arq` are not on PATH and start.sh dies on its first line.
+# Proven by running the built image: "start.sh: 34: alembic: not found".
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Application code (scripts/ is NOT part of the app wheel — copy it explicitly)
+COPY backend/app ./app
+COPY backend/alembic ./alembic
+COPY backend/alembic.ini ./alembic.ini
+COPY backend/scripts ./scripts
+COPY backend/start.sh ./start.sh
+
+# Frontend bundles
 COPY --from=frontend /fe/frontend/miniapp/dist /static/miniapp
 COPY --from=frontend /fe/frontend/admin/dist /static/admin
+
 RUN useradd -r -u 10001 appuser && chown -R appuser /app /static
 USER appuser
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "start.sh"]

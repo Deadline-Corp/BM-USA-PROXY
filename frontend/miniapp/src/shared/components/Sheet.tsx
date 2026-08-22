@@ -27,7 +27,7 @@ export function Sheet({ open, onClose, title, children, footer }: SheetProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center" role="dialog" aria-modal="true" aria-label={title}>
       <div
-        className="absolute inset-0 bg-[#121B40]/40 animate-[m-fade_.2s_cubic-bezier(.16,1,.3,1)]"
+        className="absolute inset-0 bg-text/40 animate-[m-fade_.2s_cubic-bezier(.16,1,.3,1)]"
         onClick={onClose}
         aria-hidden="true"
       />

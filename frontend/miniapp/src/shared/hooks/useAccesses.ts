@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../api/client";
+import { activeOrdersQueryKey } from "./useOrder";
+import { requestsQueryKey } from "./useRequests";
 import type {
   AccessDetail,
   AccessesResponse,
@@ -123,15 +125,25 @@ export function useSwapAccess(publicId: string | undefined) {
 }
 
 export function useExtendAccess(publicId: string | undefined) {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (body: ExtendBody) =>
       api.post<CreateOrderResponse>(`/accesses/${publicId}/extend`, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: activeOrdersQueryKey });
+      queryClient.invalidateQueries({ queryKey: accessesQueryKey });
+      queryClient.invalidateQueries({ queryKey: accessDetailQueryKey(publicId) });
+    },
   });
 }
 
 export function useRequestConfig(publicId: string | undefined) {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (body: ConfigBody) => api.post<ConfigResponse>(`/accesses/${publicId}/config`, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: requestsQueryKey });
+    },
   });
 }
 

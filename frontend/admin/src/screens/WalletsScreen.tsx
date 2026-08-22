@@ -237,6 +237,7 @@ export function WalletsScreen() {
                         )
                       }
                       placeholder={strings.wallets.payoutPlaceholder}
+                      aria-label={`Payout address for ${w.network}`}
                       className="w-full font-mono text-[.82rem]"
                       size={1}
                     />

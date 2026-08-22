@@ -27,7 +27,7 @@ export function RequestSlideOver({ request, onClose }: RequestSlideOverProps) {
     if (!request || !comment.trim()) return;
     try {
       await commentMutation.mutateAsync({ id: request.id, body: comment.trim() });
-      toast.success("Comment added");
+      toast.success(strings.requests.commentAdded);
       setComment("");
     } catch (err) {
       toast.error(apiErrorMessage(err));
@@ -48,7 +48,7 @@ export function RequestSlideOver({ request, onClose }: RequestSlideOverProps) {
           {detail?.body ? (
             <div>
               <div className="text-[.72rem] uppercase tracking-[.08em] text-text-3 font-semibold mb-2">
-                Message
+                {strings.requests.messageLabel}
               </div>
               <p className="whitespace-pre-wrap text-[.86rem] leading-relaxed text-text border border-border rounded-lg px-3.5 py-3 bg-surface">
                 {detail.body}
@@ -64,7 +64,7 @@ export function RequestSlideOver({ request, onClose }: RequestSlideOverProps) {
               <Skeleton className="h-16" />
             ) : (detail?.comments.length ?? 0) === 0 ? (
               <div className="text-[.82rem] text-text-3 border border-dashed border-border rounded-lg px-3.5 py-3">
-                No comments yet.
+                {strings.requests.noComments}
               </div>
             ) : (
               <div className="flex flex-col gap-2">

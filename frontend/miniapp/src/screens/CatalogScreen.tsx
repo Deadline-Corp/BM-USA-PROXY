@@ -369,8 +369,7 @@ export function CatalogScreen() {
       <div className="mt-2.5 flex items-center gap-2.5 rounded border border-accent/[.18] bg-accent/[.07] px-3.5 py-3 text-[13px] text-text-2">
         <Users size={15} className="shrink-0 text-accent" aria-hidden="true" />
         <span>
-          Refer a client &amp; earn a <b className="text-accent">commission</b> on every payment,
-          for life.
+          {strings.catalog.referNudgePrefix}<b className="text-accent">{strings.catalog.referNudgeHighlight}</b>{strings.catalog.referNudgeSuffix}
         </span>
       </div>
 
@@ -378,7 +377,7 @@ export function CatalogScreen() {
       {catalogQuery.data && catalogQuery.data.locations.length > 0 ? (
         <>
           <SectionLabel className="mt-[18px]">
-            {strings.catalog.coverageLabel} — <Num>{catalogQuery.data.locations.length}</Num> US cities
+            {strings.catalog.coverageLabel} — <Num>{catalogQuery.data.locations.length}</Num> {strings.catalog.usCities}
           </SectionLabel>
           <div className="flex items-start gap-2.5 rounded border border-border bg-surface px-4 py-3.5">
             <MapPin size={16} className="mt-0.5 shrink-0 text-text-3" aria-hidden="true" />
@@ -410,7 +409,7 @@ export function CatalogScreen() {
           </span>
           <span className="min-w-0 flex-1">
             <b className="block text-[15px] font-semibold text-text">{strings.catalog.supportLinkLabel}</b>
-            <small className="text-[12.5px] text-text-3">Free trial · all sales inquiries</small>
+            <small className="text-[12.5px] text-text-3">{strings.catalog.supportSubtext}</small>
           </span>
           <ChevronRight size={15} className="shrink-0 text-text-3" aria-hidden="true" />
         </a>
@@ -425,7 +424,7 @@ export function CatalogScreen() {
           </span>
           <span className="min-w-0 flex-1">
             <b className="block text-[15px] font-semibold text-text">{strings.catalog.channelLinkLabel}</b>
-            <small className="text-[12.5px] text-text-3">BM USA PROXY CLUB · news &amp; updates</small>
+            <small className="text-[12.5px] text-text-3">{strings.catalog.channelSubtext}</small>
           </span>
           <ChevronRight size={15} className="shrink-0 text-text-3" aria-hidden="true" />
         </a>

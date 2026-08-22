@@ -108,7 +108,7 @@ async def alchemy_activity(request: Request) -> JSONResponse | dict[str, bool]:
 
     chain = onchain_webhooks.chain_of(payload)
     if chain is None:
-        log.warning("onchain.webhook.unknown_network", payload_keys=sorted(payload)[:5])
+        log.warning("onchain.webhook.unknown_network", payload_fields=sorted(payload)[:5])
         return {"ok": True}
 
     await onchain_webhooks.ring(chain)

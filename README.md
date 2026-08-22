@@ -60,7 +60,32 @@ uv run pytest -q && uv run ruff check . && uv run mypy app
 ## Deploying
 
 Two Railway services run the same image, told apart by `ROLE`: **api** (web + migrations +
-both SPAs) and **worker** (ARQ crons). Deploy each by name:
+both SPAs) and **worker** (ARQ crons). See [Railway services](#railway-services) below for
+the config files, env vars per service, and deploy commands.
+
+## Railway services
+
+Two Railway services run the same image (built from `backend/Dockerfile.api`), told
+apart by the `ROLE` env var: **api** (web + migrations + seed + both SPAs) and
+**worker** (ARQ crons). The repo carries two Railway config files as documented
+examples — wire them to the corresponding service in the Railway dashboard:
+
+| File | Service | Start command | Notes |
+| --- | --- | --- | --- |
+| `railway.json` | api | `sh start.sh` | runs `alembic upgrade head`, seed (if `SEED_ADMIN_PASSWORD` set), then uvicorn |
+| `railway.worker.json` | worker | `arq app.workers.main.WorkerSettings` | `ROLE=worker` in env; waits for schema before starting arq |
+
+**Worker env vars (Railway dashboard → worker service → Variables):**
+
+| Variable | Value | Description |
+| --- | --- | --- |
+| `ROLE` | `worker` | selects the worker branch in `start.sh` |
+| `DATABASE_URL` | *(same as api)* | Postgres connection string |
+| `REDIS_URL` | *(same as api)* | Redis connection string |
+| `CREDENTIALS_KEY` | *(same as api)* | Fernet key — worker encrypts/decrypts proxy credentials |
+| `RUN_WORKER` | *(unset / `false`)* | only relevant on the api service; leave off on worker |
+
+Deploy each by name (always pass `--service`):
 
 ```sh
 railway up --ci --service api      # migrations run here, on startup
@@ -93,12 +118,67 @@ curl -s https://<host>/health
 | Variable | Required | Description |
 | --- | --- | --- |
 | `CREDENTIALS_KEY` | yes | Fernet key for encrypting proxy credentials at rest |
-| `ADMIN_JWT_SECRET` | yes | Secret for signing admin JWTs |
+| `ADMIN_JWT_SECRET` | yes | Secret for signing admin JWTs (≥ 32 chars) |
 | `BOT_TOKEN` | yes | Telegram bot token from BotFather |
 | `BOT_WEBHOOK_SECRET` | yes | `X-Telegram-Bot-Api-Secret-Token` webhook guard |
-| `SEED_ADMIN_PASSWORD` | recommended | Initial owner admin password (required for `make seed`) |
-| `PAYMENT_PROVIDER` | optional | `mock` (default) \| `bitpay` \| `coinbase` \| `cryptomus` |
+| `SEED_ADMIN_PASSWORD` | recommended | Initial owner admin password (required for `make seed` / first boot) |
+| `SEED_ADMIN_EMAIL` | optional | Owner admin email (default `admin@bmusproxy.local`) |
+| `SENTRY_DSN` | optional | Sentry DSN for error tracking (Sentry SDK initialised when set) |
+| `PAYMENT_PROVIDER` | optional | `mock` (default) \| `bitpay` \| `coinbase` \| `cryptomus` \| `onchain` |
 | `PAYMENT_API_KEY` | optional | API key for the chosen payment provider |
 | `PAYMENT_WEBHOOK_SECRET` | optional | Secret guarding payment provider webhooks |
+| `ONCHAIN_METHODS` | optional | JSON array of enabled on-chain rails + receiving addresses (see `onchain/config.py`) |
+| `ONCHAIN_RPC` | optional | JSON object of per-chain RPC endpoints + optional api keys |
+| `ONCHAIN_PAYOUT_SOURCES` | optional | JSON array of wallets we send referral payouts from (public addresses only) |
+| `ALCHEMY_WEBHOOK_KEYS` | optional | JSON object of Alchemy address-activity webhook signing keys (e.g. `{"ETH_MAINNET":"whsec_..."}`) |
+| `AI_SUPPORT_API_KEY` | optional | Anthropic API key for the bot's AI support layer (unset = layer asleep, messages go to operator) |
+| `AI_SUPPORT_BASE_URL` | optional | Anthropic-compatible gateway URL (blank = direct Anthropic; e.g. `https://openrouter.ai/api`) |
+| `AI_SUPPORT_MODEL` | optional | Model for AI support (default `claude-haiku-4-5`) |
+| `FEATURE_REAL_PAYMENTS` | optional | `false` (default) — set `true` in prod to enable real payment processing |
+| `FEATURE_REAL_PROVISIONING` | optional | `false` (default) — set `true` to enable real iproxy issuance (decoupled from payments) |
+| `SEED_DEV_FIXTURES` | optional | `true` (default) — seed demo users/connections; set `false` in prod |
+| `RUN_WORKER` | optional | `false` (default) — set `true` only on the api service during the staging topology transition |
 
 Optional DB defaults (overridable via env): `POSTGRES_USER=bm`, `POSTGRES_PASSWORD=bm`, `POSTGRES_DB=bm_usa_proxy`.
+
+## Postgres backup & restore
+
+**Railway volume snapshots.** Railway takes automatic volume snapshots for Postgres
+add-on databases. These are point-in-time filesystem snapshots — suitable for disaster
+recovery but not a substitute for logical backups (a corrupted row or accidental `DELETE`
+is committed to the snapshot too). Check the Railway dashboard → Postgres service →
+Settings → Backups for retention policy and restore-from-snapshot.
+
+**Recommended `pg_dump` cron.** Run a logical export on a schedule (at minimum daily) so a
+restore can target a specific table or row without rewinding the whole volume:
+
+```sh
+# Daily logical backup (run from a scheduler or Railway cron job)
+pg_dump "$DATABASE_URL_SYNC" \
+  --no-owner --no-privileges --format=custom \
+  --file="/backups/bm_usa_proxy_$(date -u +%Y%m%d_%H%M%S).dump"
+
+# Retain 14 days, then prune
+find /backups -name 'bm_usa_proxy_*.dump' -mtime +14 -delete
+```
+
+`DATABASE_URL_SYNC` is the `DATABASE_URL` with `+asyncpg` removed (the sync psycopg driver
+that `pg_dump` needs). Keep the backup volume outside the Postgres data volume so a volume
+failure does not take both down.
+
+**Restore procedure.**
+
+```sh
+# Full restore (drop + recreate + load) — run against a fresh/empty database
+dropdb "$DATABASE_URL_SYNC" && createdb "$DATABASE_URL_SYNC"
+pg_restore --dbname="$DATABASE_URL_SYNC" --no-owner --no-privileges --clean \
+  /backups/bm_usa_proxy_YYYYMMDD_HHMMSS.dump
+
+# Single-table restore (extract + load just that table)
+pg_restore --dbname="$DATABASE_URL_SYNC" --table=connections \
+  /backups/bm_usa_proxy_YYYYMMDD_HHMMSS.dump
+```
+
+After a restore, run `alembic upgrade head` to bring the schema to the latest revision if
+the backup predates it, then `python -m scripts.seed` (safe — seed is idempotent and
+insert-if-absent).

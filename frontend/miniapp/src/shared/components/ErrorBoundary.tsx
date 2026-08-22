@@ -1,5 +1,6 @@
 import { Component } from "react";
 import type { ErrorInfo, ReactNode } from "react";
+import { strings } from "../strings";
 
 interface Props {
   children: ReactNode;
@@ -29,13 +30,13 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-app px-6 text-center">
-          <p className="text-[13.5px] font-medium text-text">Something went wrong. Please reload.</p>
+          <p className="text-[13.5px] font-medium text-text">{strings.common.errorBoundaryMessage}</p>
           <button
             type="button"
             onClick={() => window.location.reload()}
             className="rounded-lg border border-border bg-surface px-4 py-2 text-[13px] font-medium text-text"
           >
-            Reload
+            {strings.common.reload}
           </button>
         </div>
       );

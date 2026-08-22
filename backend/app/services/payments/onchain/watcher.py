@@ -33,13 +33,9 @@ from app.services.payments.onchain.amounts import classify
 from app.services.payments.onchain.chain_client import ChainClient, IncomingTransfer
 from app.services.payments.onchain.clients import chain_rescan_overlap
 from app.services.payments.onchain.config import OnchainConfig, get_onchain_config
+from app.services.payments.onchain.constants import TERMINAL_LEDGER as _TERMINAL_LEDGER
 from app.services.payments.onchain.ledger import LedgerWriter
 from app.services.payments.onchain.matcher import PaymentMatcher
-
-# a transfer in one of these ledger states is settled — don't reprocess it
-_TERMINAL_LEDGER = frozenset(
-    {"paid", "overpaid", "underpaid", "unmatched", "expired_deposit", "orphaned", "reorg_rollback"}
-)
 
 # safety bound on how many blocks one tick will scan (chain clients may lower this)
 DEFAULT_MAX_BLOCKS = 500

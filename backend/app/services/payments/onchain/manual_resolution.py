@@ -27,12 +27,9 @@ from app.models.onchain import OnchainDepositLedger
 from app.services.payments import processing
 from app.services.payments.base import PaymentEventDTO
 from app.services.payments.onchain.chain_client import IncomingTransfer
+from app.services.payments.onchain.constants import RESOLVABLE as _RESOLVABLE
+from app.services.payments.onchain.constants import SETTLED as _SETTLED
 from app.services.payments.onchain.ledger import LedgerWriter
-
-# States where the deposit is still waiting for a human decision.
-_RESOLVABLE = ("unmatched", "underpaid", "expired_deposit", "orphaned")
-# States that already settled — re-resolving would double-credit.
-_SETTLED = ("paid", "matched", "overpaid")
 
 
 def _utcnow() -> datetime:

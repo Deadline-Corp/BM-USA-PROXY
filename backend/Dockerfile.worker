@@ -7,8 +7,18 @@ WORKDIR /app
 
 COPY --from=ghcr.io/astral-sh/uv:0.5.20 /uv /usr/local/bin/uv
 
-COPY . .
-RUN uv pip install --system .
+# Install dependencies from lockfile first (layer cached across code commits)
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev
+
+# uv sync installs into /app/.venv, not the system Python — so `alembic`,
+# `uvicorn` and `arq` are not on PATH and start.sh dies on its first line.
+# Proven by running the built image: "start.sh: 34: alembic: not found".
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Application code (scripts/ is NOT part of the app wheel — copy it explicitly)
+COPY app ./app
+COPY scripts ./scripts
 
 RUN useradd -r -u 10001 appuser && chown -R appuser /app
 USER appuser

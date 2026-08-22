@@ -214,7 +214,7 @@ export function ReferralsScreen() {
             ) : (payoutsQuery.data?.items.length ?? 0) === 0 ? (
               // Not the default "try adjusting your filters" — this queue has no filters,
               // and an empty one is the normal, good state.
-              <EmptyState title="No pending payouts" hint="Requests appear here as referrers ask to be paid." />
+              <EmptyState title={strings.referrals.noPendingPayouts} hint={strings.referrals.noPendingPayoutsHint} />
             ) : (
               payoutsQuery.data?.items.map((p) => (
                 <div key={p.id} className="flex items-center gap-3 px-[18px] py-3.5 border-b border-border last:border-b-0">

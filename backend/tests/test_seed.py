@@ -144,10 +144,9 @@ async def test_a_development_password_never_creates_an_admin_off_local(session, 
     Refusing to create the account is the right failure — a bootstrap admin nobody can sign
     in as is recoverable, one anybody can is not.
     """
-    from pydantic import SecretStr
-
     from app.core.config import settings as app_settings
     from app.models import AdminUser
+    from pydantic import SecretStr
     from scripts.seed import seed_admin
 
     monkeypatch.setattr(app_settings, "env", "staging", raising=False)
@@ -165,10 +164,9 @@ async def test_a_development_password_never_creates_an_admin_off_local(session, 
 
 async def test_a_real_password_still_seeds_the_owner(session, monkeypatch) -> None:
     """The guard must refuse the known-weak list, not the feature."""
-    from pydantic import SecretStr
-
     from app.core.config import settings as app_settings
     from app.models import AdminUser
+    from pydantic import SecretStr
     from scripts.seed import seed_admin
 
     monkeypatch.setattr(app_settings, "env", "staging", raising=False)

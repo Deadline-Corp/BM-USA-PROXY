@@ -115,6 +115,9 @@ export function RequestsScreen() {
                     <div
                       key={r.id}
                       draggable
+                      role="option"
+                      aria-label={`Request ${r.id}, status: ${r.status}`}
+                      aria-grabbed={dragging?.id === r.id}
                       onDragStart={() => setDragging(r)}
                       onDragEnd={() => {
                         setDragging(null);

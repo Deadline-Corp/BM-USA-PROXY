@@ -23,6 +23,8 @@ export const strings = {
     otpSubmitting: "Checking…",
     otpBack: "Use a different account",
     otpError: "Wrong or expired code. Check the latest message, or start again.",
+    otpBody: "We sent a six-digit code to {dest} on Telegram. It expires in 5 minutes.",
+    otpBodyFallback: "We sent a six-digit code to your Telegram. It expires in 5 minutes.",
   },
   common: {
     loading: "Loading…",
@@ -59,6 +61,8 @@ export const strings = {
     filterTo: "To",
     anyDate: "Any date",
     off: "Off",
+    errorBoundaryMessage: "Something went wrong. Please reload.",
+    reload: "Reload",
   },
   nav: {
     groupOperations: "Operations",
@@ -166,6 +170,17 @@ export const strings = {
     conversationOperator: "Operator",
     conversationAuto: "Auto-reply",
     conversationAi: "AI assistant",
+    accessIssued: "Access issued",
+    clientBanned: "Client banned",
+    clientUnbanned: "Client unbanned",
+    noAccesses: "No accesses yet",
+    noOrders: "No orders yet",
+    notReferrer: "Not a referrer",
+    referralCode: "Referral code",
+    hasAccess: "Has access",
+    noAccess: "No access",
+    noClientsFound: "No clients found",
+    noClientsFoundHint: "Try a different search or clear filters.",
   },
   pools: {
     title: "Proxies pool",
@@ -184,6 +199,7 @@ export const strings = {
     // for one state across the screen, and it reads right about a phone as well as a slot.
     used: "Busy",
     free: "Free",
+    capacity: "Capacity",
     // Online but held by an access created straight in the iproxy console, offline, or
     // switched off for sale — stock that exists and cannot be sold.
     unavailable: "Unavailable",
@@ -243,6 +259,10 @@ export const strings = {
     reissueConnection: "New connection (optional)",
     cannotRevoke: "Already revoked — nothing left to revoke",
     cannotExtend: "This access is no longer usable — reissue it instead of extending it",
+    rotatingEvery: "Rotating every {minutes}m",
+    autoRotationOff: "Auto-rotation off",
+    nothingMatchesFilters: "Nothing matches these filters",
+    noPackagesFound: "No packages found",
   },
   requests: {
     title: "Requests",
@@ -255,6 +275,9 @@ export const strings = {
     comments: "Comments",
     addComment: "Add comment",
     commentPlaceholder: "Write an internal comment…",
+    commentAdded: "Comment added",
+    noComments: "No comments yet.",
+    messageLabel: "Message",
   },
   tariffs: {
     title: "Plans",
@@ -288,6 +311,8 @@ export const strings = {
     searchPlaceholder: "Search order number, client, plan…",
     emptyFiltered: "No orders match these filters",
     emptyFilteredHint: "Clear a filter, or widen the date range.",
+    emptyManualReview: "Nothing needs manual review",
+    empty: "No orders yet",
     colStatus: "Status",
     approve: "Approve",
     fail: "Mark failed",
@@ -394,6 +419,8 @@ export const strings = {
     qrAlt: "QR code with the payout address",
     qrHint: "Scan with the wallet you send payouts from",
     alreadyConfirmed: "Already confirmed on-chain",
+    noPendingPayouts: "No pending payouts",
+    noPendingPayoutsHint: "Requests appear here as referrers ask to be paid.",
   },
   broadcasts: {
     title: "Broadcasts",
@@ -486,6 +513,7 @@ export const strings = {
     repeatPassword: "Repeat new password",
     changePassword: "Change password",
     passwordsDiffer: "The two do not match.",
+    passwordTooShort: "At least {min} characters.",
     passwordChanged: "Password changed — that account is now signed out everywhere.",
     generatePassword: "Generate a strong one",
     // Says the thing the interface would otherwise have to be asked about: there is no

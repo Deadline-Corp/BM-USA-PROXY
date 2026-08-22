@@ -116,9 +116,9 @@ export function ClientsScreen() {
         accessorKey: "has_active_access",
         cell: ({ row }) =>
           row.original.has_active_access ? (
-            <StatusBadge tone="accent" label="Has access" />
+            <StatusBadge tone="accent" label={strings.clients.hasAccess} />
           ) : (
-            <StatusBadge tone="neutral" label="No access" />
+            <StatusBadge tone="neutral" label={strings.clients.noAccess} />
           ),
       },
       {
@@ -156,8 +156,8 @@ export function ClientsScreen() {
           onRetry={refetch}
           onRowClick={(row) => setSelectedId(row.id)}
           getRowId={(row) => row.id}
-          emptyTitle="No clients found"
-          emptyHint="Try a different search or clear filters."
+          emptyTitle={strings.clients.noClientsFound}
+          emptyHint={strings.clients.noClientsFoundHint}
           toolbar={
             <FilterBar
               search={search}
@@ -171,8 +171,8 @@ export function ClientsScreen() {
                 value={access}
                 onChange={setAccess}
                 options={[
-                  { value: "yes", label: "Has access" },
-                  { value: "no", label: "No access" },
+                  { value: "yes", label: strings.clients.hasAccess },
+                  { value: "no", label: strings.clients.noAccess },
                 ]}
                 allLabel={strings.common.all}
               />

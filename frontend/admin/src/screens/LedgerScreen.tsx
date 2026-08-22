@@ -16,6 +16,7 @@ import { ResolveDepositModal } from "@/screens/payments/ResolveDepositModal";
 import { InvoicesPanel } from "@/screens/payments/InvoicesPanel";
 import { usePagination } from "@/shared/hooks/usePagination";
 import { strings } from "@/shared/strings";
+import { CHAINS, ASSETS } from "@/shared/constants/payments";
 import type { DepositLedgerEntry } from "@/shared/api/types";
 
 /**
@@ -34,8 +35,6 @@ const STATUSES = [
   "confirming", "matched", "paid", "underpaid",
   "overpaid", "unmatched", "expired_deposit", "orphaned", "reorg_rollback",
 ];
-const CHAINS = ["tron", "ethereum", "bsc", "solana", "bitcoin", "litecoin"];
-const ASSETS = ["USDT", "USDC", "TRX", "ETH", "BNB", "SOL", "BTC", "LTC"];
 
 /** Deposit states that are waiting for a human decision. */
 const RESOLVABLE = ["unmatched", "underpaid", "expired_deposit", "orphaned"];
