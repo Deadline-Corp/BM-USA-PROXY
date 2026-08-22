@@ -98,8 +98,8 @@ class Settings(BaseSettings):
         to the same bar as prod — a default ``BOT_WEBHOOK_SECRET`` there is forgeable.
 
         Provider-specific validation is also applied: when ``payment_provider=onchain``,
-        ``ONCHAIN_METHODS`` and ``ONCHAIN_RPC`` must be set; when ``payment_provider=mock``,
-        ``PAYMENT_WEBHOOK_SECRET`` must be set (it is the mock's only auth gate).
+        ``ONCHAIN_METHODS`` and ``ONCHAIN_RPC`` must be set; the mock provider is
+        left alone — it is refused entirely by the provider registry wherever it matters.
         """
         if self.env == "local":
             return self
@@ -129,9 +129,13 @@ class Settings(BaseSettings):
                 missing.append("ONCHAIN_METHODS (required when PAYMENT_PROVIDER=onchain)")
             if not self.onchain_rpc:
                 missing.append("ONCHAIN_RPC (required when PAYMENT_PROVIDER=onchain)")
-        elif self.payment_provider == "mock":
-            if not self.payment_webhook_secret:
-                missing.append("PAYMENT_WEBHOOK_SECRET (required when PAYMENT_PROVIDER=mock)")
+        # No rule for the mock provider here. It reads as a missing gate, but the secret
+        # is not one: MockPaymentProvider.verify_webhook returns True unconditionally and
+        # never looks at it, so demanding it would buy nothing and refuse to boot a staging
+        # tier that is legitimately running the mock with no money in play. What actually
+        # protects that is payments/registry.get_payment_provider, which refuses the mock
+        # outright once is_prod or feature_real_payments is set — the guard is in the place
+        # that can enforce it.
         if missing:
             raise ValueError(
                 f"{self.env} refuses to start with default/missing/weak secrets: "

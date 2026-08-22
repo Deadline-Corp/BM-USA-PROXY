@@ -61,7 +61,7 @@ class Order(Base):
     __table_args__ = (
         CheckConstraint(
             "status IN ('awaiting_payment','paid','provisioning','completed',"
-            "'cancelled','expired','refunded','manual_review')",
+            "'cancelled','expired','refunded','partially_refunded','manual_review')",
             name="status_valid",
         ),
         CheckConstraint("origin IN ('twa','admin')", name="origin_valid"),
