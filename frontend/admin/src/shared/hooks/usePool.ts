@@ -37,6 +37,17 @@ export function useUpdateConnection() {
   });
 }
 
+/** Send a reboot to one phone.
+ *
+ *  Invalidates nothing: the device drops off the network for a minute or two, so the pool
+ *  list refetching right now would only paint it offline before it has had a chance to
+ *  come back. The next scheduled refresh reports what actually happened. */
+export function useRebootConnection() {
+  return useMutation({
+    mutationFn: (id: string) => poolApi.reboot(id),
+  });
+}
+
 export function useSyncPool() {
   const qc = useQueryClient();
   return useMutation({

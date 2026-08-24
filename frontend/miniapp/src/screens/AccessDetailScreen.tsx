@@ -6,6 +6,7 @@ import {
   RefreshCw,
   CalendarPlus,
   ArrowLeftRight,
+  Power,
   ChevronDown,
   FileDown,
   Copy,
@@ -13,6 +14,7 @@ import {
 } from "lucide-react";
 import {
   useAccessDetail,
+  useRebootDevice,
   useRotateIp,
   useSwapAccess,
   useExtendAccess,
@@ -43,6 +45,11 @@ import type { Carrier, ConfigType } from "../shared/api/types";
 
 const ANY = "any" as const;
 
+// What the server's reboot_cooldown_sec default is. Only ever used to start the local
+// countdown after a successful press — a 429 carries the real remaining time in
+// Retry-After, and that always wins over this guess.
+const REBOOT_COOLDOWN_HINT_MS = 600_000;
+
 export function AccessDetailScreen() {
   const { publicId } = useParams<{ publicId: string }>();
   const navigate = useNavigate();
@@ -54,6 +61,7 @@ export function AccessDetailScreen() {
   const detailQuery = useAccessDetail(publicId, { refetchInterval: rotating ? 4000 : undefined });
   const catalogQuery = useCatalog();
   const rotateIp = useRotateIp(publicId);
+  const rebootDevice = useRebootDevice(publicId);
   const swapAccess = useSwapAccess(publicId);
   const extendAccess = useExtendAccess(publicId);
   const requestConfig = useRequestConfig(publicId);
@@ -65,6 +73,9 @@ export function AccessDetailScreen() {
   const [rotateCooldownUntil, setRotateCooldownUntil] = useState<number | null>(null);
   const [rotateCooldownRemaining, setRotateCooldownRemaining] = useState(0);
   const [rotateConfirmOpen, setRotateConfirmOpen] = useState(false);
+  const [rebootConfirmOpen, setRebootConfirmOpen] = useState(false);
+  const [rebootCooldownUntil, setRebootCooldownUntil] = useState<number | null>(null);
+  const [rebootCooldownRemaining, setRebootCooldownRemaining] = useState(0);
   const [swapSheetOpen, setSwapSheetOpen] = useState(false);
   const [swapConfirmOpen, setSwapConfirmOpen] = useState(false);
   const [swapLocationId, setSwapLocationId] = useState<number | typeof ANY>(ANY);
@@ -106,6 +117,38 @@ export function AccessDetailScreen() {
     const timeout = setTimeout(() => setRotating(false), 90_000);
     return () => clearTimeout(timeout);
   }, [rotating]);
+
+  // Ten minutes, not sixty seconds: the phone is off the network while it starts up,
+  // so the wait has to be visible rather than discovered by pressing a dead button.
+  useEffect(() => {
+    if (rebootCooldownUntil === null) return;
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((rebootCooldownUntil - Date.now()) / 1000));
+      setRebootCooldownRemaining(remaining);
+      if (remaining <= 0) setRebootCooldownUntil(null);
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [rebootCooldownUntil]);
+
+  async function handleReboot() {
+    setRebootConfirmOpen(false);
+    try {
+      await rebootDevice.mutateAsync();
+      // "sent", not "rebooted" — iproxy accepts the command without waiting for the
+      // device, and a phone without Owner Mode enabled ignores it entirely. Claiming the
+      // restart happened would be the app asserting something it cannot see.
+      showToast(strings.access.rebootSentToast);
+      setRebootCooldownUntil(Date.now() + REBOOT_COOLDOWN_HINT_MS);
+    } catch (error) {
+      if (isRetryAfterError(error)) {
+        setRebootCooldownUntil(Date.now() + getRetryAfterSeconds(error) * 1000);
+        return;
+      }
+      showToast(error instanceof ApiError ? error.message : strings.errors.generic, "error");
+    }
+  }
 
   async function handleRotate() {
     setRotateConfirmOpen(false);
@@ -334,6 +377,27 @@ export function AccessDetailScreen() {
                 strings.access.swap
               )}
             </Button>
+
+            {/* Last of the three, and the heaviest. Rotate redials the connection and the
+                port is back in seconds; this restarts the phone and takes the proxy with
+                it. Ordered by how much it costs to press. */}
+            <Button
+              variant="ghost"
+              block
+              className="mt-2"
+              disabled={rebootDevice.isPending || rebootCooldownRemaining > 0}
+              onClick={() => setRebootConfirmOpen(true)}
+            >
+              <Power size={15} aria-hidden="true" />
+              {rebootCooldownRemaining > 0 ? (
+                <>
+                  {strings.access.rebootCoolingPrefix}{" "}
+                  <Num>{formatTimeLeft(rebootCooldownRemaining)}</Num>
+                </>
+              ) : (
+                strings.access.reboot
+              )}
+            </Button>
           </>
         )}
 
@@ -456,6 +520,20 @@ export function AccessDetailScreen() {
         }
       >
         <p className="text-[14px] leading-relaxed text-text-2">{strings.access.rotateConfirmBody}</p>
+      </Sheet>
+
+      {/* ── reboot sheet ── */}
+      <Sheet
+        open={rebootConfirmOpen}
+        onClose={() => setRebootConfirmOpen(false)}
+        title={strings.access.rebootConfirmTitle}
+        footer={
+          <Button variant="primary" block disabled={rebootDevice.isPending} onClick={handleReboot}>
+            {strings.access.rebootConfirmCta}
+          </Button>
+        }
+      >
+        <p className="text-[14px] leading-relaxed text-text-2">{strings.access.rebootConfirmBody}</p>
       </Sheet>
 
       {/* ── swap sheet ── */}

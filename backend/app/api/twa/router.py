@@ -319,6 +319,32 @@ async def access_detail(public_id: str, user: CurrentUser, session: DbSession) -
     return await accesses_svc.detail_for_user(session, public_id, user.id)
 
 
+@router.post("/accesses/{public_id}/reboot")
+async def reboot(public_id: str, user: CurrentUser, session: DbSession) -> dict[str, str]:
+    """Restart the phone behind this access.
+
+    A much longer cooldown than rotation, because it is a much heavier thing: rotation
+    redials the data connection and the port is back in seconds, a reboot takes the whole
+    device down for a minute or two. Sixty seconds between reboots would let a customer
+    keep their own proxy permanently offline by pressing a button.
+    """
+    from app.core.ratelimit import cooldown
+    from app.services.provisioning.lifecycle import reboot_device
+
+    access = await accesses_svc.get_owned(session, public_id, user.id)
+    if access.status not in ("active", "expiring"):
+        raise Conflict("access is not active")
+    cd = int(await settings_svc.get(session, "reboot_cooldown_sec", 600))
+    # Keyed on the phone, not on the access, so that this window is the same one the
+    # admin console's Reboot device honours. The cooldown is there to stop a second
+    # restart landing while the device is still booting, and the device does not care
+    # which of the two screens asked.
+    await cooldown(f"reboot:conn:{access.connection_id}", seconds=cd)
+    await reboot_device(session, access=access, actor="user")
+    # "sent", not "rebooted" — see reboot_device. The device decides.
+    return {"status": "reboot_sent"}
+
+
 @router.post("/accesses/{public_id}/rotate-ip")
 async def rotate(public_id: str, user: CurrentUser, session: DbSession) -> dict[str, str]:
     from app.core.ratelimit import cooldown

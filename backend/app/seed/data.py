@@ -88,6 +88,10 @@ def default_settings(tos_version: int = 1) -> dict[str, object]:
         "referral_min_payout_usd": 0,
         "invoice_ttl_minutes": 60,
         "rotation_cooldown_sec": 60,
+        # Ten minutes between reboots. A reboot takes the phone off the network for a
+        # minute or two, so a short cooldown would let somebody keep their own proxy
+        # down by pressing a button — and keep an operator's phone down from the console.
+        "reboot_cooldown_sec": 600,
         "pool_low_watermark": 10,
         # How often the low-stock check looks. The job itself runs every minute and
         # returns early until this has elapsed.

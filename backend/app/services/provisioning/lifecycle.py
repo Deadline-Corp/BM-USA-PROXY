@@ -152,6 +152,29 @@ async def extend_access(session: AsyncSession, *, access: Access, minutes: int) 
     )
 
 
+async def reboot_device(
+    session: AsyncSession, *, access: Access, actor: str = "user"
+) -> None:
+    """Restart the phone behind a live access.
+
+    Scoped to the access, not the connection, for the same reason rotation is: revoking an
+    access frees its phone for somebody else, and rebooting through a dead access would
+    take down a different customer's proxy for two minutes.
+
+    All this can honestly claim is that the command was accepted. iproxy answers "command
+    has been sent" without waiting for the device, and a phone with Owner Mode off ignores
+    it entirely — so nothing here, and nothing in the UI above it, may say the phone came
+    back. The event is recorded as an intent, which is what it is.
+    """
+    if access.status not in ("active", "expiring"):
+        raise Conflict("only a live access can be rebooted")
+    conn = await session.get(Connection, access.connection_id)
+    if conn is None:
+        raise ProvisioningError("connection missing")
+    await get_provisioner().reboot(iproxy_connection_id=conn.iproxy_connection_id)
+    session.add(AccessEvent(access_id=access.id, type="reboot", actor=actor))
+
+
 async def rotate_ip(session: AsyncSession, *, access: Access, actor: str = "user") -> None:
     # This rotates the *connection*, not the access — and revoking an access frees its
     # connection to be sold to somebody else. Rotating through a dead access would then

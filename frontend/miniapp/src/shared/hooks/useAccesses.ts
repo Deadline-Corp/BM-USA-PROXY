@@ -92,6 +92,20 @@ export function useRotateIp(publicId: string | undefined) {
   });
 }
 
+/** Restart the phone behind this access.
+ *
+ *  Deliberately does not invalidate the detail query on success. Rotation does, because a
+ *  new address turns up seconds later and the screen should go and look; a reboot takes
+ *  the device off the network for a minute or two, so refetching now would only redraw the
+ *  same screen with a request that may itself time out while the phone is down. */
+export function useRebootDevice(publicId: string | undefined) {
+  return useMutation({
+    mutationFn: () => api.post<{ status: string }>(`/accesses/${publicId}/reboot`),
+    // Same as rotation: callers read isError + error to drive the cooldown message.
+    retry: false,
+  });
+}
+
 /** Turn scheduled rotation on (with an interval, in minutes) or off. */
 export function useSetAutoRotate(publicId: string | undefined) {
   const queryClient = useQueryClient();

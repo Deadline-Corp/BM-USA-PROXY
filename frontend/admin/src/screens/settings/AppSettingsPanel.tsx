@@ -33,6 +33,9 @@ const SETTING_LABELS: Record<string, string> = {
   referral_hold_days: strings.referrals.holdDays,
   invoice_ttl_minutes: "Invoice lifetime (minutes)",
   rotation_cooldown_sec: "IP rotation cooldown (seconds)",
+  // Longer than the rotation one by design: rotation redials the data connection and
+  // the port is back in seconds, a reboot takes the phone off the network entirely.
+  reboot_cooldown_sec: "Device reboot cooldown (seconds)",
   pool_low_watermark: "Pool low-stock alert (free slots)",
   pool_check_interval_minutes: "Pool check interval (minutes)",
   pool_alert_repeat_hours: "Repeat the low-stock alert every (hours)",

@@ -189,6 +189,23 @@ class IproxyClient:
             json={"action": "changeip"},
         )
 
+    async def reboot(self, connection_id: str) -> None:
+        """Restart the device. Same command channel as changeip, different action.
+
+        The documented actions on this endpoint are change_connection, changeip,
+        debug_report, find_my_device, fix_lte, refresh_fingerprint, refresh, reboot,
+        speed_test, toggle_proxy, upgrade_app and upload_logs. Only reboot and changeip
+        are ours to send; the rest belong to whoever owns the phones.
+
+        A 200 means "command has been sent", not "the phone restarted" — and a phone
+        without Owner Mode enabled ignores it entirely. See iproxy.online/docs-api-console.
+        """
+        await self._request(
+            "POST",
+            f"/api/console/v1/connection/{connection_id}/command-push",
+            json={"action": "reboot"},
+        )
+
     async def get_connection(self, connection_id: str) -> dict[str, Any]:
         data = await self._request("GET", f"/api/console/v1/connection/{connection_id}")
         return data if isinstance(data, dict) else {}
@@ -439,6 +456,12 @@ class IproxyProvisioner(Provisioner):
             await self._client.change_ip(iproxy_connection_id)
         except IproxyError as exc:
             raise ProvisioningError(f"iproxy rotate failed: {exc}") from exc
+
+    async def reboot(self, *, iproxy_connection_id: str) -> None:
+        try:
+            await self._client.reboot(iproxy_connection_id)
+        except IproxyError as exc:
+            raise ProvisioningError(f"iproxy reboot failed: {exc}") from exc
 
     async def current_ip(self, *, iproxy_connection_id: str) -> str | None:
         return (await self.current_exit_ip(iproxy_connection_id=iproxy_connection_id)).address

@@ -246,6 +246,17 @@ export const strings = {
     rotateCoolingPrefix: "Rotate IP",
     extend: "Extend",
     extendSheetTitle: "Extend access",
+    reboot: "Reboot device",
+    rebootConfirmTitle: "Reboot the device?",
+    // Says what it costs before they press it. The proxy is gone while the phone starts
+    // up — that is the whole difference from Rotate IP, and finding it out afterwards is
+    // how a support message gets written.
+    rebootConfirmBody:
+      "The phone restarts completely. Your proxy is offline for a minute or two, and the IP may change.",
+    rebootConfirmCta: "Reboot",
+    // Sent, not done: iproxy accepts the command without waiting for the device.
+    rebootSentToast: "Reboot command sent — the proxy comes back in a minute or two",
+    rebootCoolingPrefix: "Reboot available in",
     swap: "Swap phone",
     swapSheetTitle: "Swap phone",
     swapConfirmTitle: "Swap onto another phone?",

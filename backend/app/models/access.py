@@ -106,8 +106,8 @@ class AccessEvent(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "type IN ('issued','rotate_ip','extended','expiry_warning','expired','revoked',"
-            "'reissued','config_delivered','provision_failed')",
+            "type IN ('issued','rotate_ip','reboot','extended','expiry_warning','expired',"
+            "'revoked','reissued','config_delivered','provision_failed')",
             name="type_valid",
         ),
         Index("ix_access_events_access", "access_id", text("created_at DESC")),

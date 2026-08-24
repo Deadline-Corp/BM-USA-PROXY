@@ -145,6 +145,10 @@ export const poolApi = {
       .then((r) => r.data),
   updateConnection: (id: string, body: ConnectionUpdate) =>
     apiClient.patch<Connection>(`/connections/${id}`, body).then((r) => r.data),
+  // Restarts the phone. Answers as soon as iproxy accepts the command, not when the
+  // device is back — the console must not claim a reboot it cannot observe.
+  reboot: (id: string) =>
+    apiClient.post<{ status: string }>(`/connections/${id}/reboot`).then((r) => r.data),
   sync: () => apiClient.post<void>("/connections/sync").then((r) => r.data),
   summary: () => apiClient.get<PoolSummary>("/pool/summary").then((r) => r.data),
   // Cities that have at least one phone — the pickers for issuing an access.

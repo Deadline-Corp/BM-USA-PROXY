@@ -49,6 +49,9 @@ class MockProvisioner(Provisioner):
     async def rotate_ip(self, *, iproxy_connection_id: str) -> None:
         return None
 
+    async def reboot(self, *, iproxy_connection_id: str) -> None:
+        return None
+
     async def current_ip(self, *, iproxy_connection_id: str) -> str | None:
         return None
 

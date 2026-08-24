@@ -39,6 +39,19 @@ class Provisioner(Protocol):
 
     async def rotate_ip(self, *, iproxy_connection_id: str) -> None: ...
 
+    async def reboot(self, *, iproxy_connection_id: str) -> None:
+        """Restart the phone itself.
+
+        Not a heavier rotate. `rotate_ip` drops and redials the data connection and the
+        proxy is back in seconds; this restarts the device, so the port is down for a
+        minute or two and everything on it goes with it. It is the answer when a phone is
+        wedged rather than when an address is stale.
+
+        Fire-and-forget by nature: iproxy answers "command has been sent" and the phone
+        obeys only if Owner Mode is enabled on it. Nothing here can promise it came back.
+        """
+        ...
+
     async def current_ip(self, *, iproxy_connection_id: str) -> str | None: ...
 
     # Same provider call as current_ip, but carries the city alongside the address so a

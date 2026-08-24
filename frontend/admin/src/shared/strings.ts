@@ -210,6 +210,24 @@ export const strings = {
     reservedHint:
       "Held for an order that has not been paid yet. It goes back in the pool by itself if that invoice expires.",
     editConnection: "Edit connection",
+    rebootDevice: "Reboot device",
+    rebootConfirmTitle: "Reboot this device?",
+    // Names the customer, because from the console the operator cannot see who is on the
+    // phone. Rebooting a busy device is sometimes exactly right (it is wedged) and
+    // sometimes an outage somebody else has to explain.
+    rebootConfirmBody:
+      "The phone restarts and its proxy is offline for a minute or two. Anyone using it right now loses the connection until it comes back.",
+    rebootConfirmBusy:
+      "This phone is serving a customer right now. Their proxy goes down until it restarts.",
+    rebootCta: "Reboot",
+    // "Sent", not "rebooted": iproxy accepts the command without waiting for the device,
+    // and a phone without Owner Mode enabled ignores it.
+    rebootSent: "Reboot command sent",
+    // The operator owns the phones, so they are the one who can act on this. Left out of
+    // the customer's copy on purpose — a buyer cannot enable Owner Mode on somebody
+    // else's device, so telling them would only be noise.
+    rebootOwnerModeNote:
+      "The phone obeys this only if Owner Mode is enabled on it in the iproxy app.",
   },
   cities: {
     title: "Cities",

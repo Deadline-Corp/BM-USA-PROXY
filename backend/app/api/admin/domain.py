@@ -1174,6 +1174,44 @@ async def patch_connection(
     )
 
 
+@router.post("/connections/{connection_id}/reboot")
+async def reboot_connection(
+    connection_id: int, admin: CurrentAdmin, session: DbSession
+) -> dict[str, Any]:
+    """Restart a phone from the console.
+
+    By connection rather than by access, because the reason an operator reaches for this is
+    usually a phone that is wedged and serving nobody — the customer-facing button in the
+    mini app is the one scoped to an access.
+
+    Cooldown shared with that button, keyed on the connection: two people pressing it from
+    two places would otherwise reboot a device that is still coming up, and the second
+    restart lands mid-boot.
+
+    Answers "sent". iproxy accepts the command without waiting for the device, and a phone
+    with Owner Mode off ignores it — so the console must not report a restart it cannot
+    see. What it can show is the audit row, which is written here either way.
+    """
+    from app.core.ratelimit import cooldown
+    from app.services.provisioning.registry import get_provisioner
+
+    conn = await session.get(Connection, connection_id)
+    if conn is None:
+        raise NotFound("connection not found")
+    cd = int(await settings_svc.get(session, "reboot_cooldown_sec", 600))
+    await cooldown(f"reboot:conn:{conn.id}", seconds=cd)
+    await get_provisioner().reboot(iproxy_connection_id=conn.iproxy_connection_id)
+    await audit.write(
+        session,
+        admin_id=admin.id,
+        action="connection.reboot",
+        entity="connection",
+        entity_id=conn.id,
+        after={"iproxy_connection_id": conn.iproxy_connection_id},
+    )
+    return {"status": "reboot_sent", "connection_id": str(conn.id)}
+
+
 @router.post("/connections/sync")
 async def sync_connections(admin: CurrentAdmin, session: DbSession) -> dict[str, Any]:
     from app.core.config import settings
@@ -3617,6 +3655,7 @@ _SETTINGS_WHITELIST: frozenset[str] = frozenset(
         "referral_min_payout_usd",
         "invoice_ttl_minutes",
         "rotation_cooldown_sec",
+        "reboot_cooldown_sec",
         "pool_low_watermark",
         "pool_check_interval_minutes",
         "pool_alert_repeat_hours",
