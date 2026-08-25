@@ -76,6 +76,13 @@ class Settings(BaseSettings):
     # A delivery is a doorbell, never a receipt — see services.payments.onchain.webhooks.
     alchemy_webhook_keys: str | None = None
 
+    # Free Demo key from the CoinGecko developer dashboard, sent as x-cg-demo-api-key.
+    # Optional: without it the oracle calls the same endpoint unauthenticated, which is
+    # what it did until the shared Railway egress IP started collecting 429s and turning
+    # them into failed checkouts. The key moves us off that shared quota onto our own.
+    # Header, not query string — a key in a URL ends up in access logs.
+    coingecko_api_key: str | None = None
+
     ai_support_api_key: str | None = None
     ai_support_base_url: str | None = None
     ai_support_model: str = "claude-haiku-4-5"
