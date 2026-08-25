@@ -186,6 +186,9 @@ export const strings = {
     cancelledTitle: "Order cancelled",
     cancelledBody: "This order was cancelled.",
     qrHint: "Scan — amount included",
+    qrTapToEnlarge: "Tap to enlarge",
+    qrEnlarge: "Show the code larger",
+    qrSheetTitle: "Scan to pay",
     qrHintAddressOnly: "Address only — enter the amount yourself",
     proxiesInThisOrder: "proxies in this order",
     // The single most common way a payment goes wrong: the buyer sends the invoiced
