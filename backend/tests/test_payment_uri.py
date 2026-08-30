@@ -5,7 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from app.services.payments.onchain.assets import get_spec
-from app.services.payments.onchain.payment_uri import build_payment_uri, qr_payload
+from app.services.payments.onchain.payment_uri import build_payment_uri
 
 ADDR_EVM = "0x1111111111111111111111111111111111111111"
 ADDR_TRON = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
@@ -77,9 +77,9 @@ def test_solana_names_the_mint_for_token_payments() -> None:
 
 def test_tron_has_no_standard_and_falls_back_to_the_address() -> None:
     spec = get_spec("USDT", "trc20")
+    # None is the answer callers act on: `invoice_wallet_link` falls back to the bare
+    # address, which is what the Open-in-wallet button and the copy row both use.
     assert build_payment_uri(spec=spec, to_address=ADDR_TRON, amount=Decimal("10")) is None
-    # the QR still has to show something scannable
-    assert qr_payload(spec=spec, to_address=ADDR_TRON, amount=Decimal("10")) == ADDR_TRON
 
 
 def test_solana_carries_the_invoice_reference() -> None:
@@ -100,11 +100,6 @@ def test_solana_carries_the_invoice_reference() -> None:
         spec=get_spec("SOL", "native"), to_address=ADDR_SOL, amount=Decimal("1.5"), reference=ref
     )
     assert native == f"solana:{ADDR_SOL}?amount=1.5&reference={ref}"
-
-    # and it survives the QR wrapper the checkout screen actually calls
-    assert f"reference={ref}" in qr_payload(
-        spec=spl, to_address=ADDR_SOL, amount=Decimal("25"), reference=ref
-    )
 
 
 def test_non_solana_rails_ignore_the_reference() -> None:
@@ -137,50 +132,11 @@ def _invoice(asset: str, network: str, address: str, amount: str):
     )
 
 
-def test_a_token_qr_never_leads_with_the_contract_address() -> None:
-    """The one case where this is about losing money, not convenience.
-
-    An EIP-681 token payment is a contract call, so the address after `ethereum:` is the
-    TOKEN, not the payee. An exchange scanner reads the leading address and stops: Bybit
-    refusing the code — which is what the client's operator hit — is the safe outcome, and
-    an app that parsed it naively would withdraw the customer's USDT to the USDT contract,
-    where it cannot be recovered. So the QR carries the address alone.
-    """
-    from app.services.payments.invoice_links import invoice_pay_uri, invoice_qr_code
-
-    for asset, network in (("USDT", "erc20"), ("USDC", "erc20"), ("USDT", "bep20")):
-        inv = _invoice(asset, network, ADDR_EVM, "4.003")
-        uri = invoice_pay_uri(inv)
-        assert uri is not None and uri.split(":")[1].split("@")[0].lower() != ADDR_EVM.lower(), (
-            "this test is pointless unless the URI really does lead with the contract"
-        )
-        assert invoice_qr_code(inv) == ADDR_EVM
-
-
-def test_a_qr_carries_the_amount_wherever_the_payee_comes_first() -> None:
-    """Bitcoin, Litecoin and Solana put the recipient straight after the scheme, so an app
-    that understands only addresses still reads the right destination and the amount simply
-    rides along. One code then serves a wallet and an exchange both."""
-    from app.services.payments.invoice_links import invoice_qr_code
-
-    btc = invoice_qr_code(_invoice("BTC", "native", ADDR_BTC, "0.00042"))
-    assert btc == f"bitcoin:{ADDR_BTC}?amount=0.00042"
-
-    sol = invoice_qr_code(_invoice("SOL", "native", ADDR_SOL, "1.5"))
-    assert sol is not None and sol.startswith(f"solana:{ADDR_SOL}?amount=1.5")
-
-
-def test_a_rail_with_no_uri_standard_still_gets_a_scannable_qr() -> None:
-    """Tron has no scheme the wallets honour, and the address alone is what everything
-    reads — which is also the rail we point small payments at."""
-    from app.services.payments.invoice_links import invoice_qr_code
-
-    assert invoice_qr_code(_invoice("USDT", "trc20", ADDR_TRON, "4.003")) == ADDR_TRON
-
-
-def test_the_wallet_deep_link_is_left_alone() -> None:
-    """The button beside the code opens a wallet on this device, where the contract call is
-    exactly right. Narrowing the QR must not narrow that too."""
+def test_the_wallet_deep_link_is_a_real_transfer_call() -> None:
+    """The Open-in-wallet button is the whole of the deep-link path now that the checkout
+    shows no code. On an EVM token that means a contract call: the address after the scheme
+    is the TOKEN and the payee is a parameter, which is right here and was exactly why the
+    code could never carry this URI."""
     from app.services.payments.invoice_links import invoice_pay_uri
 
     uri = invoice_pay_uri(_invoice("USDT", "erc20", ADDR_EVM, "4.003"))

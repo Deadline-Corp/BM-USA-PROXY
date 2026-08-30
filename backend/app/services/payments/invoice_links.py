@@ -1,4 +1,4 @@
-"""Turn an invoice into the links a buyer can act on: a wallet deep link, and a QR payload.
+"""Turn an invoice into the wallet deep link a buyer can act on.
 
 Both the checkout screen and the public `/pay/{order}` hand-off need the same URI built
 the same way, including the per-rail testnet contract override — so it lives here rather
@@ -45,37 +45,7 @@ def invoice_pay_uri(inv: Invoice) -> str | None:
         return None
 
 
-def invoice_qr_payload(inv: Invoice) -> str | None:
-    """What to encode in the checkout QR: the deep link if there is one, else the address."""
+def invoice_wallet_link(inv: Invoice) -> str | None:
+    """What the Open-in-wallet button points at: the deep link, or the address if the rail
+    has no scheme. Was the checkout QR's payload too, until the code came off that screen."""
     return invoice_pay_uri(inv) or inv.pay_address
-
-
-def invoice_qr_code(inv: Invoice) -> str | None:
-    """The QR payload, carrying the amount only where doing so is safe to scan anywhere.
-
-    A QR is scanned from a second device, and that device is usually an exchange app. An
-    exchange reads a withdrawal QR as an address: it takes the text after the scheme and
-    stops. On most rails that is exactly the recipient, so the amount rides along in the
-    query string and both a wallet and an exchange get what they need from one code.
-
-    EIP-681 token payments are the exception, and not for convenience. A token payment is a
-    contract call, so the address after ``ethereum:`` is the TOKEN CONTRACT and the
-    recipient is a parameter. Bybit refusing that code outright — which is what the client's
-    operator hit — is the safe behaviour; an app that parsed it the naive way would send the
-    customer's USDT to the USDT contract, where it is gone for good. So those rails get the
-    bare address and the buyer types the amount printed beside it.
-
-    The rule is read off the URI rather than kept as a list of chains, so a rail added to
-    `build_payment_uri` later is judged by the same test instead of by somebody remembering
-    this comment.
-    """
-    address = inv.pay_address
-    uri = invoice_pay_uri(inv)
-    if not uri or not address:
-        return address
-    scheme, _, rest = uri.partition(":")
-    if not scheme:
-        return address
-    # What a scanner that only understands addresses would come away with.
-    leading = rest.split("?", 1)[0].split("@", 1)[0].split("/", 1)[0]
-    return uri if leading.lower() == address.lower() else address

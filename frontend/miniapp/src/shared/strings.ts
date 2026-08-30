@@ -176,7 +176,6 @@ export const strings = {
     provisioning: "Issuing your access…",
     statusConfirming: "Your payment was detected on-chain — waiting for enough confirmations.",
     statusProvisioning: "Your device is being assigned. This usually takes a few seconds.",
-    qrAlt: "Payment QR code",
     completedTitle: "Access issued",
     completedBody: "Your proxy is ready. Credentials are in your access details.",
     expiredTitle: "Invoice expired",
@@ -185,11 +184,6 @@ export const strings = {
     manualReviewBody: "Your payment needs manual review. Support has been notified — hang tight.",
     cancelledTitle: "Order cancelled",
     cancelledBody: "This order was cancelled.",
-    qrHint: "Scan — amount included",
-    qrTapToEnlarge: "Tap to enlarge",
-    qrEnlarge: "Show the code larger",
-    qrSheetTitle: "Scan to pay",
-    qrHintAddressOnly: "Address only — enter the amount yourself",
     proxiesInThisOrder: "proxies in this order",
     // The single most common way a payment goes wrong: the buyer sends the invoiced
     // amount, their exchange takes its fee out of it, and less arrives than we asked for

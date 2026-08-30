@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import QRCode from "qrcode";
 import {
   ShieldCheck,
   Clock,
@@ -19,125 +18,11 @@ import { Button } from "../shared/components/Button";
 import { Num } from "../shared/components/Num";
 import { CountdownBadge } from "../shared/components/CountdownBadge";
 import { ErrorState } from "../shared/components/ErrorState";
-import { Sheet } from "../shared/components/Sheet";
 import { useCopyToClipboard } from "../shared/hooks/useCopyToClipboard";
 import { formatCryptoAmount, formatUsd } from "../shared/lib/format";
 import { openWalletLink, walletLinkTarget } from "../shared/lib/platform";
 import { readCachedInvoice } from "../shared/lib/invoiceCache";
 import type { OrderStatus } from "../shared/api/types";
-
-/** Roughly how wide each code should come out. Approximate on purpose — `renderQr` rounds
- *  to a whole number of pixels per module, which is what makes the thing scannable, so the
- *  final width lands near these rather than on them. */
-const QR_INLINE_TARGET_PX = 112;
-const QR_LARGE_TARGET_PX = 280;
-
-/** Render a payload so that every module is a whole number of pixels wide.
- *
- *  This is the fix, and it is not about size. `width: 240` asks the library to fit the code
- *  into 240px whatever the module count; 55 modules into 240 is 4.36 px each, so it rounds
- *  some modules to 4 and some to 5. The browser then squeezed that into an 82px box —
- *  a second fractional resample — and the ragged result did not decode.
- *
- *  Measured with a real decoder against the exact Solana Pay payload we issue (175 chars,
- *  55 modules): at a fixed width it failed at 74px, still failed at 116px, and passed at
- *  106px — non-monotonic, which is the signature of ragged modules rather than of a code
- *  that is merely too small. With integer scaling it decodes at every scale down to 1,
- *  i.e. 55px. So: pick the scale, let the width follow.
- *
- *  The scale is chosen to land near a target rather than fixed, so a sparse code
- *  (`bitcoin:` is 39 modules) and a dense one (Solana Pay, 55) come out roughly the same
- *  size on screen instead of the dense one being half as wide.
- */
-async function renderQr(payload: string, targetPx: number): Promise<{ url: string; px: number }> {
-  const modules = QRCode.create(payload, { errorCorrectionLevel: "M" }).modules.size + 2; // +margin
-  const scale = Math.max(2, Math.round(targetPx / modules));
-  const url = await QRCode.toDataURL(payload, { margin: 1, scale, errorCorrectionLevel: "M" });
-  return { url, px: modules * scale };
-}
-
-function useQrImage(payload: string | null, targetPx: number) {
-  const [image, setImage] = useState<{ url: string; px: number } | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    if (!payload) {
-      setImage(null);
-      return;
-    }
-    renderQr(payload, targetPx)
-      .then((next) => {
-        if (alive) setImage(next);
-      })
-      .catch(() => {
-        if (alive) setImage(null);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [payload, targetPx]);
-
-  return image;
-}
-
-/**
- * Real, scannable payment QR.
- *
- * This used to be a hand-drawn 9x9 grid copied from the demo mock — it looked exactly
- * like a QR but encoded nothing, so buyers scanned it, got nothing, and lost trust at the
- * one screen where trust matters most. Renders the wallet deep link the backend built
- * (EIP-681 / BIP-21 / Solana Pay), falling back to the bare address on chains with no
- * standard. Nothing is drawn until we actually have a payload.
- */
-function PaymentQr({ payload, onOpen }: { payload: string | null; onOpen?: () => void }) {
-  const image = useQrImage(payload, QR_INLINE_TARGET_PX);
-
-  if (!image) {
-    // Deliberately blank rather than decorative: a fake QR is worse than none.
-    return (
-      <div
-        style={{ width: QR_INLINE_TARGET_PX, height: QR_INLINE_TARGET_PX }}
-        className="shrink-0 rounded-[8px] border-[1.5px] border-border-2 bg-surface-2"
-      />
-    );
-  }
-  // Displayed at the pixel size it was drawn at. Scaling it in CSS would undo the whole
-  // point — the browser would resample whole modules into fractions of one again.
-  const img = (
-    <img
-      src={image.url}
-      alt={strings.checkout.qrAlt}
-      style={{ width: image.px, height: image.px, imageRendering: "pixelated" }}
-      className="shrink-0 rounded-[8px] border-[1.5px] border-border-2 bg-white p-1"
-    />
-  );
-  if (!onOpen) return img;
-  return (
-    <button type="button" onClick={onOpen} className="shrink-0" aria-label={strings.checkout.qrEnlarge}>
-      {img}
-    </button>
-  );
-}
-
-/** The same code, large, for a fussier scanner or a phone held further away. */
-function PaymentQrLarge({ payload }: { payload: string }) {
-  const image = useQrImage(payload, QR_LARGE_TARGET_PX);
-
-  if (!image) return <div className="mx-auto aspect-square w-[280px] rounded-[12px] bg-surface-2" />;
-  return (
-    <img
-      src={image.url}
-      alt={strings.checkout.qrAlt}
-      style={{ width: image.px, height: image.px, imageRendering: "pixelated" }}
-      className="mx-auto rounded-[12px] border-[1.5px] border-border-2 bg-white p-3"
-    />
-  );
-}
-
-function truncateMiddle(value: string, head = 8, tail = 4): string {
-  if (value.length <= head + tail + 1) return value;
-  return `${value.slice(0, head)}…${value.slice(-tail)}`;
-}
 
 /**
  * The exact amount, with its own copy button.
@@ -169,22 +54,32 @@ function PayAmountRow({ amount, currency }: { amount: string | null; currency: s
   );
 }
 
+/**
+ * Where to send the money, in full.
+ *
+ * Shown whole rather than shortened to `13F7…WLDD`. There is no QR on this screen, so this
+ * string is the only way the payment can be addressed at all — and a buyer whose wallet is
+ * on a second phone has to read it off this one. A truncation is fine next to a code that
+ * carries the address anyway; on its own it is a dead end.
+ *
+ * `break-all` rather than a word break: these are unbroken base58 and hex strings with no
+ * spaces, so anything gentler leaves them overflowing their box.
+ */
 function PayAddressRow({ address }: { address: string }) {
   const { copied, copy } = useCopyToClipboard();
   return (
-    <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
-      <span className="w-9 shrink-0 text-[12px] font-semibold text-text-3">
-        {strings.checkout.payAddressLabel}
-      </span>
-      <Num
-        as="span"
-        className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[12.5px] text-text-2"
-      >
-        {truncateMiddle(address)}
-      </Num>
+    <div className="flex items-start gap-2.5 border-b border-border px-4 py-3">
+      <div className="min-w-0 flex-1">
+        <div className="mb-1 text-[12px] font-semibold text-text-3">
+          {strings.checkout.payAddressLabel}
+        </div>
+        <Num as="span" className="block break-all text-[13px] leading-snug text-text-2">
+          {address}
+        </Num>
+      </div>
       <button
         type="button"
-        className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[8px] border border-border-2 bg-transparent text-text-3 transition-colors duration-150 ease-out hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+        className="mt-1 flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[8px] border border-border-2 bg-transparent text-text-3 transition-colors duration-150 ease-out hover:border-accent hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
         aria-label={strings.common.copyAddress}
         onClick={() => copy(address)}
       >
@@ -265,7 +160,6 @@ export function CheckoutScreen() {
   const [cachedInvoice] = useState(() => (orderId ? readCachedInvoice(orderId) : null));
   // Buyer pressed "I've paid". Purely a UI acknowledgement — detection is automatic.
   const [claimedPaid, setClaimedPaid] = useState(false);
-  const [qrOpen, setQrOpen] = useState(false);
 
   const status = orderQuery.data?.status;
   const isTerminal = status ? ["completed", "expired", "manual_review", "cancelled"].includes(status) : false;
@@ -365,44 +259,22 @@ export function CheckoutScreen() {
       {orderQuery.data.status === "awaiting_payment" && invoice ? (
         <>
           <div className="mt-4 overflow-hidden rounded-lg border border-border/60 bg-surface shadow-highlight">
-            <div className="flex items-start justify-between gap-3 border-b border-border p-4">
-              <div className="flex flex-col gap-1">
-                {/* Rendered verbatim from the API string — never reformatted. The watcher
-                    matches this amount to the last digit. */}
-                <PayAmountRow amount={invoice.crypto_amount} currency={invoice.crypto_currency} />
-                <span className="text-[12.5px] text-text-3">
-                  {strings.checkout.amountApprox} <Num>{formatUsd(invoice.amount_usd)}</Num> USD
-                  {invoice.crypto_network ? ` · ${invoice.crypto_network}` : ""}
+            <div className="flex flex-col gap-1 border-b border-border p-4">
+              {/* Rendered verbatim from the API string — never reformatted. The watcher
+                  matches this amount to the last digit. */}
+              <PayAmountRow amount={invoice.crypto_amount} currency={invoice.crypto_currency} />
+              <span className="text-[12.5px] text-text-3">
+                {strings.checkout.amountApprox} <Num>{formatUsd(invoice.amount_usd)}</Num> USD
+                {invoice.crypto_network ? ` · ${invoice.crypto_network}` : ""}
+              </span>
+              {/* A total for several proxies needs saying, or an invoice for $20 against
+                  a plan priced at $10 reads as a mistake — and the count may be lower
+                  than what was asked for, if the shelf was short. */}
+              {(orderQuery.data.quantity ?? 1) > 1 ? (
+                <span className="text-[12.5px] font-medium text-text-2">
+                  <Num>{orderQuery.data.quantity}</Num> {strings.checkout.proxiesInThisOrder}
                 </span>
-                {/* A total for several proxies needs saying, or an invoice for $20 against
-                    a plan priced at $10 reads as a mistake — and the count may be lower
-                    than what was asked for, if the shelf was short. */}
-                {(orderQuery.data.quantity ?? 1) > 1 ? (
-                  <span className="text-[12.5px] font-medium text-text-2">
-                    <Num>{orderQuery.data.quantity}</Num> {strings.checkout.proxiesInThisOrder}
-                  </span>
-                ) : null}
-              </div>
-              {/* The server decides what goes in here, because the answer differs by rail
-                  and one of the differences is a way to lose money rather than a matter of
-                  convenience — see invoice_qr_code. The caption follows it: on a rail whose
-                  code carries the amount there is nothing to type, and on one that cannot
-                  the buyer has to be told before they scan, not after. */}
-              <div className="flex shrink-0 flex-col items-center gap-1">
-                <PaymentQr
-                  payload={invoice.qr_payload}
-                  onOpen={invoice.qr_payload ? () => setQrOpen(true) : undefined}
-                />
-                {invoice.qr_payload ? (
-                  <span className="max-w-[124px] text-center text-[10.5px] leading-tight text-text-3">
-                    {invoice.qr_payload === invoice.pay_address
-                      ? strings.checkout.qrHintAddressOnly
-                      : strings.checkout.qrHint}
-                    <br />
-                    <span className="text-accent">{strings.checkout.qrTapToEnlarge}</span>
-                  </span>
-                ) : null}
-              </div>
+              ) : null}
             </div>
 
             {invoice.pay_address ? <PayAddressRow address={invoice.pay_address} /> : null}
@@ -515,23 +387,6 @@ export function CheckoutScreen() {
         </div>
       ) : null}
 
-      {/* ── the code, large ──
-          The one on the card has to share its row with the amount, which caps how big it
-          can be. This one has the screen to itself, which is what a fussy exchange scanner
-          or a phone in bad light needs. The exact amount is repeated under it because a
-          scanner that reads only the address — most exchange withdrawal screens do — leaves
-          the buyer to type the number, and by then the invoice card is behind this sheet. */}
-      <Sheet open={qrOpen} onClose={() => setQrOpen(false)} title={strings.checkout.qrSheetTitle}>
-        {invoice?.qr_payload ? (
-          <div className="flex flex-col gap-3">
-            <PaymentQrLarge payload={invoice.qr_payload} />
-            <div className="text-center">
-              <PayAmountRow amount={invoice.crypto_amount} currency={invoice.crypto_currency} />
-            </div>
-            {invoice.pay_address ? <PayAddressRow address={invoice.pay_address} /> : null}
-          </div>
-        ) : null}
-      </Sheet>
     </div>
   );
 }

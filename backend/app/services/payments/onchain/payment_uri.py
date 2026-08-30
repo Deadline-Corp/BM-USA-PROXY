@@ -72,24 +72,3 @@ def build_payment_uri(
         return uri
 
     return None  # tron and anything else — caller shows the bare address
-
-
-def qr_payload(
-    *,
-    spec: AssetSpec,
-    to_address: str,
-    amount: Decimal,
-    network: str = "mainnet",
-    reference: str | None = None,
-) -> str:
-    """What to encode in the QR: a wallet URI when one exists, else the bare address."""
-    return (
-        build_payment_uri(
-            spec=spec,
-            to_address=to_address,
-            amount=amount,
-            network=network,
-            reference=reference,
-        )
-        or to_address
-    )
