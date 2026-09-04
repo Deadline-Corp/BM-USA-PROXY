@@ -10,7 +10,7 @@ import { Num } from "../shared/components/Num";
 import { Sheet } from "../shared/components/Sheet";
 import { useCopyToClipboard } from "../shared/hooks/useCopyToClipboard";
 import { ApiError } from "../shared/api/client";
-import type { PayoutRail } from "../shared/api/types";
+import type { ReferralPayout, PayoutRail } from "../shared/api/types";
 import { formatUsd } from "../shared/lib/format";
 import { ErrorState } from "../shared/components/ErrorState";
 
@@ -230,6 +230,73 @@ export function ReferralScreen() {
           onSubmit={handlePayoutSubmit}
           pending={requestPayout.isPending}
         />
+      ) : null}
+
+      {/* ── payout history ──
+          The screen used to end at the balance. A partner who filed a request watched the
+          number drop to zero with nothing on the page to reconcile it against, which is
+          indistinguishable from money going missing — reported that way on 2026-09-04. */}
+      {(r.payouts ?? []).length > 0 ? (
+        <>
+          <SectionLabel className="mt-5">{strings.referral.payoutHistory}</SectionLabel>
+          <div className="flex flex-col gap-1.5">
+            {(r.payouts ?? []).map((p) => (
+              <PayoutRow key={p.id} payout={p} />
+            ))}
+          </div>
+        </>
+      ) : null}
+
+      {/* ── who they brought ──
+          By earnings, because that is the question a partner has about a list of people
+          they referred. Handles arrive already shortened to a tail from the server. */}
+      {(r.referrals ?? []).length > 0 ? (
+        <>
+          <SectionLabel className="mt-5">{strings.referral.peopleBrought}</SectionLabel>
+          <div className="flex flex-col gap-1.5">
+            {(r.referrals ?? []).map((person, i) => (
+              <div
+                key={`${person.handle}-${i}`}
+                className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-surface px-3.5 py-2.5"
+              >
+                <Num as="span" className="text-[13.5px] text-text-2">
+                  {person.handle}
+                </Num>
+                <Num className="text-[14px] font-semibold text-text">
+                  {formatUsd(person.earned_usd)}
+                </Num>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+/** One filed request. The status is the point — "requested" is the state the partner could
+ *  not see, and it is what tells them the money is queued rather than gone. */
+function PayoutRow({ payout }: { payout: ReferralPayout }) {
+  const tone = {
+    requested: "text-warning",
+    approved: "text-accent",
+    paid: "text-success",
+    rejected: "text-danger",
+  }[payout.status];
+  return (
+    <div className="flex flex-col gap-1 rounded-lg border border-border/60 bg-surface px-3.5 py-2.5">
+      <div className="flex items-center justify-between gap-3">
+        <Num className="text-[15px] font-semibold text-text">{formatUsd(payout.amount_usd)}</Num>
+        <span className={`text-[12.5px] font-medium ${tone}`}>
+          {strings.referral.payoutStatus[payout.status]}
+        </span>
+      </div>
+      <div className="flex items-center justify-between gap-3 text-[12px] text-text-3">
+        <span>{new Date(payout.requested_at).toLocaleDateString()}</span>
+        <span className="uppercase">{payout.network}</span>
+      </div>
+      {payout.reject_reason ? (
+        <p className="text-[12px] leading-snug text-danger">{payout.reject_reason}</p>
       ) : null}
     </div>
   );

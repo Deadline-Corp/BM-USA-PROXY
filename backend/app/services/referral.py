@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import Conflict, NotFound, ValidationError
 from app.models import Order, Payout, ReferralLedger, User
+from app.services import ops_alerts
 from app.services import payouts as payouts_svc
 from app.services import settings as settings_svc
 from app.services.notifications import enqueue
@@ -199,6 +200,25 @@ async def request_payout(
         .where(ReferralLedger.referrer_user_id == user.id, ReferralLedger.status == "available")
         .values(status="requested", payout_id=payout.id)
     )
+    # Both sides, because filing a request used to notify nobody. The partner saw their
+    # balance go to zero with no acknowledgement anywhere, and the operator only learned of
+    # the request by opening the admin console and looking — so a payout sat until somebody
+    # happened to check. Reported by the client's partner on 2026-09-04.
+    await enqueue(
+        session, user_id=user.id, template_code="payout_requested",
+        payload={
+            "payout_id": payout.id,
+            "amount_usd": float(payout.amount_usd),
+            "network": canonical_network,
+        },
+    )
+    who = f"@{user.tg_username}" if user.tg_username else f"id {user.tg_user_id}"
+    await ops_alerts.notify_ops(
+        session,
+        f"Payout requested: ${_q(available)} to {canonical_network}\n"
+        f"{canonical_address}\n"
+        f"From: {who}",
+    )
     return payout
 
 
@@ -271,3 +291,87 @@ async def reject_payout(
         payload={"reason": reason},
     )
     return payout
+
+
+def mask_handle(username: str | None, tg_user_id: int | None) -> str:
+    """How a referrer is shown their own referrals.
+
+    The last three characters of the handle and nothing else — enough for the partner to
+    tell one person they brought from another, and to recognise somebody they know, without
+    handing them a list of this business's customers to approach directly. Somebody with no
+    username is shown the tail of their Telegram id for the same reason: the row still has
+    to be distinguishable from the row above it.
+    """
+    handle = (username or "").strip().lstrip("@")
+    if handle:
+        return f"…{handle[-3:]}" if len(handle) > 3 else f"@{handle}"
+    tail = str(tg_user_id or "")[-3:]
+    return f"id …{tail}" if tail else "—"
+
+
+async def payout_history(session: AsyncSession, user_id: int, *, limit: int = 20) -> list[dict]:
+    """This partner's payout requests, newest first.
+
+    The cabinet showed a balance and nothing else, so a request that had been filed was
+    indistinguishable from money that had vanished — which is exactly how the client's
+    partner read it.
+    """
+    rows = (
+        await session.execute(
+            select(Payout)
+            .where(Payout.referrer_user_id == user_id)
+            .order_by(Payout.requested_at.desc())
+            .limit(limit)
+        )
+    ).scalars().all()
+    return [
+        {
+            "id": p.id,
+            "amount_usd": float(p.amount_usd),
+            "network": p.network,
+            "status": p.status,
+            "tx_hash": p.tx_hash,
+            "reject_reason": p.reject_reason,
+            "requested_at": p.requested_at.isoformat(),
+            "processed_at": p.processed_at.isoformat() if p.processed_at else None,
+        }
+        for p in rows
+    ]
+
+
+async def referral_breakdown(session: AsyncSession, user_id: int, *, limit: int = 50) -> list[dict]:
+    """Who this partner brought and what each of them has earned them.
+
+    Everyone they referred, including the ones who have not bought yet — "signed up and
+    never paid" and "has not signed up" are different problems and the partner is the one
+    who can act on the difference.
+    """
+    earned = (
+        select(
+            ReferralLedger.referee_user_id.label("uid"),
+            func.coalesce(func.sum(ReferralLedger.amount_usd), 0).label("earned"),
+        )
+        .where(
+            ReferralLedger.referrer_user_id == user_id,
+            ReferralLedger.kind == "accrual",
+        )
+        .group_by(ReferralLedger.referee_user_id)
+        .subquery()
+    )
+    rows = (
+        await session.execute(
+            select(User.id, User.tg_username, User.tg_user_id, User.created_at, earned.c.earned)
+            .outerjoin(earned, earned.c.uid == User.id)
+            .where(User.referrer_user_id == user_id)
+            .order_by(func.coalesce(earned.c.earned, 0).desc(), User.created_at.desc())
+            .limit(limit)
+        )
+    ).all()
+    return [
+        {
+            "handle": mask_handle(username, tg_user_id),
+            "earned_usd": float(earned_usd or 0),
+            "joined_at": created_at.isoformat() if created_at else None,
+        }
+        for _id, username, tg_user_id, created_at, earned_usd in rows
+    ]

@@ -276,6 +276,31 @@ export interface Referral {
   /** Commission rate the ledger applies — operator-editable, so the copy reads it. */
   pct: number;
   payout_rails: PayoutRail[];
+  /** This partner's own payout requests, newest first. A balance alone cannot tell
+   *  "requested, waiting" from "gone". */
+  payouts: ReferralPayout[];
+  /** Who they brought and what each has earned them. Handles are masked server-side. */
+  referrals: ReferralPerson[];
+}
+
+export type ReferralPayoutStatus = "requested" | "approved" | "paid" | "rejected";
+
+export interface ReferralPayout {
+  id: number;
+  amount_usd: number;
+  network: string;
+  status: ReferralPayoutStatus;
+  tx_hash: string | null;
+  reject_reason: string | null;
+  requested_at: string;
+  processed_at: string | null;
+}
+
+export interface ReferralPerson {
+  /** A tail, not a handle — "…vin". Enough to tell one referral from another. */
+  handle: string;
+  earned_usd: number;
+  joined_at: string | null;
 }
 
 export interface ReferralPayoutBody {

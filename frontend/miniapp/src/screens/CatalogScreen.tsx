@@ -9,6 +9,7 @@ import { useTermsGate } from "../shared/hooks/useTermsGate";
 import { useRequireTos } from "../shared/hooks/useRequireTos";
 import { useToast } from "../shared/components/Toast";
 import { strings } from "../shared/strings";
+import { carrierAfterCityChange, carriersAvailable, freeFor } from "../shared/lib/availability";
 import { SectionLabel } from "../shared/components/Card";
 import { Chip } from "../shared/components/Chip";
 import { Button } from "../shared/components/Button";
@@ -493,7 +494,13 @@ export function CatalogScreen() {
           id="buy-city"
           className="mb-3 w-full rounded border border-border bg-surface px-3.5 py-3 text-[15px] text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           value={locationId === ANY ? "" : String(locationId)}
-          onChange={(e) => setLocationId(e.target.value === "" ? ANY : Number(e.target.value))}
+          onChange={(e) => {
+            const next = e.target.value === "" ? ANY : Number(e.target.value);
+            setLocationId(next);
+            // Otherwise the control keeps reading AT&T in a city that has none, and the
+            // only feedback is a Buy button that never enables.
+            setCarrier(carrierAfterCityChange(catalogQuery.data, next, carrier));
+          }}
         >
           <option value="">{strings.common.any}</option>
           {/* No counts — a buyer choosing a city does not need the size of our fleet. But a
@@ -501,7 +508,9 @@ export function CatalogScreen() {
               checkout with "sold out" and no warning; those are marked and unselectable
               rather than hidden, so the coverage on offer stays visible. */}
           {(catalogQuery.data?.locations ?? []).map((loc) => {
-            const soldOut = loc.free.any === 0;
+            // Against the carrier that is actually chosen, not the city's own total. With
+            // T-Mobile selected, a city holding only Verizon has nothing to sell either.
+            const soldOut = freeFor(catalogQuery.data, loc.id, carrier) === 0;
             return (
               <option key={loc.id} value={String(loc.id)} disabled={soldOut}>
                 {formatCityState(loc.city, loc.state_code)}
@@ -525,7 +534,9 @@ export function CatalogScreen() {
           onChange={(e) => setCarrier(e.target.value === "" ? ANY : (e.target.value as Carrier))}
         >
           <option value="">{strings.common.any}</option>
-          {(catalogQuery.data?.carriers ?? []).map((c) => (
+          {/* Only what this city can serve. Listing a carrier with nothing free there is a
+              choice whose single outcome is a disabled Buy button. */}
+          {carriersAvailable(catalogQuery.data, locationId).map((c) => (
             <option key={c} value={c}>
               {c}
             </option>

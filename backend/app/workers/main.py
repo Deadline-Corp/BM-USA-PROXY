@@ -44,9 +44,20 @@ class WorkerSettings:
     cron_jobs = [
         cron(jobs.send_outbox, second={0, 10, 20, 30, 40, 50}, run_at_startup=True),
         cron(jobs.expiry_sweeper, second=0),
-        # Buyer-scheduled IP rotation. Every minute because the shortest interval an
-        # access can ask for is five, and a pass that finds nothing is one indexed read.
-        cron(jobs.auto_rotate_sweeper, second=25),
+        # Buyer-scheduled IP rotation. Four times a minute, because this sweep IS the
+        # precision of the feature: a rotation due between two passes waits for the later
+        # one, so the pass interval is added to every interval a customer sets.
+        #
+        # It ran once a minute under a comment saying the shortest interval an access could
+        # ask for was five. The floor is one — `ge=1` on the endpoint and the CHECK on
+        # `auto_rotate_minutes` — so the error was a whole interval at the shortest setting.
+        # The client reported it exactly: set 1 minute, changes after 2; set 4, changes
+        # after 5. Rotation at 12:00:25 stamps 12:00:25, the next is due at 12:01:25 plus a
+        # second of API latency, the 12:01:25 pass sees "not yet", and 12:02:25 rotates.
+        #
+        # A pass that finds nothing is one indexed read, so the cost of asking more often is
+        # not the reason it was rare. Never early, at most fifteen seconds late.
+        cron(jobs.auto_rotate_sweeper, second={2, 17, 32, 47}),
         cron(jobs.invoice_expirer, second=30),
         cron(jobs.reconcile_invoices, minute=_FIVE_MIN, second=15),
         cron(jobs.watch_onchain_deposits, second={0, 15, 30, 45}, run_at_startup=True),

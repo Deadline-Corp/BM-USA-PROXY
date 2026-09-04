@@ -475,6 +475,14 @@ async def referral(user: CurrentUser, session: DbSession) -> dict[str, Any]:
         "pct": float(await settings_svc.get(session, "referral_pct", 20)),
         # the only rails we pay out on — the client picks from these, never free-types a network
         "payout_rails": payouts_svc.rails_for_client(),
+        # A balance on its own cannot tell "requested, waiting" from "gone". The client's
+        # partner filed a request, watched the number drop to zero, and had nothing on the
+        # screen to reconcile it against.
+        "payouts": await referral_svc.payout_history(session, user.id),
+        # Who they brought and what each is worth to them. Handles are masked to a tail —
+        # enough to recognise somebody, not enough to hand a partner this business's
+        # customer list.
+        "referrals": await referral_svc.referral_breakdown(session, user.id),
     }
 
 

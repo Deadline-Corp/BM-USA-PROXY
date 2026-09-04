@@ -20,7 +20,6 @@ import { CountdownBadge } from "../shared/components/CountdownBadge";
 import { ErrorState } from "../shared/components/ErrorState";
 import { useCopyToClipboard } from "../shared/hooks/useCopyToClipboard";
 import { formatCryptoAmount, formatUsd } from "../shared/lib/format";
-import { openWalletLink, walletLinkTarget } from "../shared/lib/platform";
 import { readCachedInvoice } from "../shared/lib/invoiceCache";
 import type { OrderStatus } from "../shared/api/types";
 
@@ -195,7 +194,6 @@ export function CheckoutScreen() {
   // running after the deposit lands suggests the payment could still time out. It cannot:
   // a matched invoice is no longer expired by the sweeper.
   const showCountdown = stillAwaiting && !seenOnChain && Boolean(invoice?.expires_at);
-  const walletTarget = invoice ? walletLinkTarget(invoice) : null;
 
   return (
     <div className="flex flex-col">
@@ -307,16 +305,6 @@ export function CheckoutScreen() {
               take it. */}
           {!seenOnChain ? (
             <div className="mt-3 flex flex-col gap-2">
-              {/* A button, not a link: inside Telegram the target must be handed to the
-                  client rather than loaded in the WebView, which cannot survive a
-                  `ethereum:` navigation. `walletLinkTarget` picks the route and returns
-                  null where there is none — desktop, or Tron, which has no URI standard. */}
-              {walletTarget ? (
-                <Button variant="primary" block onClick={() => openWalletLink(walletTarget)}>
-                  {strings.checkout.openInWallet}
-                  <ArrowUpRight size={15} aria-hidden="true" />
-                </Button>
-              ) : null}
               <Button
                 variant="primary"
                 block

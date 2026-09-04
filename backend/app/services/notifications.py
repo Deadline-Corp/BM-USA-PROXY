@@ -27,6 +27,7 @@ TEMPLATES = {
     "referral_joined",
     "referral_accrued",
     "referral_available",
+    "payout_requested",
     "payout_approved",
     "payout_paid",
     "payout_rejected",

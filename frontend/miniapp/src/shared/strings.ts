@@ -17,6 +17,7 @@ export const strings = {
   },
 
   common: {
+    doneTyping: "Done",
     loading: "Loading…",
     retry: "Retry",
     somethingWrong: "Something went wrong.",
@@ -191,7 +192,6 @@ export const strings = {
     exactAmountTitle: "Send the exact amount",
     exactAmountBody:
       "Some exchanges and wallets take their fee out of the transfer, so less arrives than you sent. Add the network fee on top so we receive exactly the amount above — otherwise access is not issued automatically and your payment waits for an operator.",
-    openInWallet: "Open in wallet",
     iHavePaid: "I've sent the payment",
     iHavePaidWaiting: "Watching the blockchain…",
     seenOnChainTitle: "Payment received",
@@ -314,6 +314,14 @@ export const strings = {
     requestedLabel: "Requested",
     paidLabel: "Paid out",
     requestPayout: "Request payout",
+    payoutHistory: "Your payout requests",
+    peopleBrought: "People you brought",
+    payoutStatus: {
+      requested: "In the queue",
+      approved: "Approved",
+      paid: "Sent",
+      rejected: "Rejected",
+    },
     payoutFormTitle: "Payout details",
     walletAddress: "Wallet address",
     network: "Network",

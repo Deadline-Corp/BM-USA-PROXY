@@ -182,3 +182,190 @@ async def test_hold_not_counted_until_released(session) -> None:
     bal = await referral.balances(session, referrer.id)
     assert bal["available"] == 0.0
     assert bal["hold"] == 2.0
+
+
+# ── what the partner is told, and shown ───────────────────────────────────
+#
+# All four reported by the client's partner on 2026-09-04, from one payout: no message when
+# the request was filed, no message to the operator either, no history to reconcile a
+# balance that had just gone to zero, and finally "Your payout of $ was sent."
+
+
+async def test_filing_a_request_tells_the_partner_and_the_operator(session, monkeypatch) -> None:
+    from app.services import ops_alerts
+
+    alerts: list[str] = []
+
+    async def fake_notify(_s, text: str) -> int:
+        alerts.append(text)
+        return 1
+
+    monkeypatch.setattr(ops_alerts, "notify_ops", fake_notify)
+    monkeypatch.setattr(referral.ops_alerts, "notify_ops", fake_notify)
+
+    await seed_settings(session)
+    session.add(Tariff(code="daily", name="Daily", kind="auto", duration_minutes=1440,
+                       price_usd=Decimal("10.00"), is_active=True))
+    await session.flush()
+    await settings_svc.set_value(session, "referral_pct", TEST_PCT)
+    referrer = await _mk(session, 91001, "PARTNER1")
+    referee = await _mk(session, 91002, "BROUGHT1", referrer_id=referrer.id)
+    order = await _paid_order(session, referee=referee, referrer=referrer, amount="100")
+    await referral.accrue(session, order=order)
+    await session.execute(
+        update(ReferralLedger)
+        .where(ReferralLedger.referrer_user_id == referrer.id)
+        .values(status="available")
+    )
+    await session.flush()
+
+    payout = await referral.request_payout(
+        session, user=referrer, wallet_address=WALLET_TRC20, network="trc20"
+    )
+    await session.flush()
+
+    from app.models import NotificationOutbox as Notification
+
+    codes = (
+        await session.execute(
+            select(Notification.template_code, Notification.payload).where(
+                Notification.user_id == referrer.id
+            )
+        )
+    ).all()
+    filed = [p for code, p in codes if code == "payout_requested"]
+    assert filed, "the partner has to hear that the request was filed"
+    assert float(filed[0]["amount_usd"]) == float(payout.amount_usd)
+
+    assert alerts, "the operator learned of payouts only by opening the console"
+    assert "Payout requested" in alerts[0] and str(_q_amount(payout)) in alerts[0]
+
+
+def _q_amount(payout) -> Decimal:
+    return Decimal(str(payout.amount_usd)).quantize(Decimal("0.01"))
+
+
+async def test_the_paid_message_carries_the_amount_from_either_route(session) -> None:
+    """It read "Your payout of $ was sent" because the admin console closed payouts with
+    its own copy of this logic and never put the amount in the payload."""
+    from app.bot.notifier import render
+    from app.models import NotificationOutbox as Notification
+
+    await seed_settings(session)
+    session.add(Tariff(code="daily", name="Daily", kind="auto", duration_minutes=1440,
+                       price_usd=Decimal("10.00"), is_active=True))
+    await session.flush()
+    await settings_svc.set_value(session, "referral_pct", TEST_PCT)
+    operator = await _admin(session)
+    referrer = await _mk(session, 91011, "PARTNER2")
+    referee = await _mk(session, 91012, "BROUGHT2", referrer_id=referrer.id)
+    order = await _paid_order(session, referee=referee, referrer=referrer, amount="50")
+    await referral.accrue(session, order=order)
+    await session.execute(
+        update(ReferralLedger)
+        .where(ReferralLedger.referrer_user_id == referrer.id)
+        .values(status="available")
+    )
+    await session.flush()
+    payout = await referral.request_payout(
+        session, user=referrer, wallet_address=WALLET_TRC20, network="trc20"
+    )
+    await session.flush()
+    await referral.mark_payout_paid(
+        session, payout.id, tx_hash="0xabc", operator_id=operator
+    )
+    await session.flush()
+
+    paid = (
+        await session.execute(
+            select(Notification.payload).where(
+                Notification.user_id == referrer.id,
+                Notification.template_code == "payout_paid",
+            )
+        )
+    ).scalars().all()
+    assert paid, "no paid notification at all"
+    text = await render(session, "payout_paid", paid[0])
+    assert text is not None, "a template with an unfilled slot must not be delivered"
+    assert "$ was" not in text
+    assert str(float(payout.amount_usd)) in text
+
+
+async def test_a_template_with_nothing_behind_a_slot_is_refused(session) -> None:
+    """The empty-string substitution is what turned a missing field into a sentence about
+    money that reads as though it went nowhere."""
+    from app.bot.notifier import render
+
+    await seed_settings(session)
+    assert await render(session, "payout_paid", {"tx_hash": "0xabc"}) is None
+    assert await render(session, "payout_paid", {"amount_usd": 10.58, "tx_hash": "0xabc"})
+
+
+async def test_a_partner_sees_their_own_history_and_who_they_brought(session) -> None:
+    await seed_settings(session)
+    session.add(Tariff(code="daily", name="Daily", kind="auto", duration_minutes=1440,
+                       price_usd=Decimal("10.00"), is_active=True))
+    await session.flush()
+    await settings_svc.set_value(session, "referral_pct", TEST_PCT)
+    referrer = await _mk(session, 91021, "PARTNER3")
+    named = User(
+        tg_user_id=91022, referral_code="BROUGHT3", referrer_user_id=referrer.id,
+        tg_username="coodvin",
+    )
+    session.add(named)
+    await session.flush()
+    order = await _paid_order(session, referee=named, referrer=referrer, amount="46")
+    await referral.accrue(session, order=order)
+    await session.execute(
+        update(ReferralLedger)
+        .where(ReferralLedger.referrer_user_id == referrer.id)
+        .values(status="available")
+    )
+    await session.flush()
+    payout = await referral.request_payout(
+        session, user=referrer, wallet_address=WALLET_TRC20, network="trc20"
+    )
+    await session.flush()
+
+    history = await referral.payout_history(session, referrer.id)
+    assert [h["id"] for h in history] == [payout.id]
+    assert history[0]["status"] == "requested"
+    assert history[0]["network"] == "trc20"
+
+    brought = await referral.referral_breakdown(session, referrer.id)
+    assert len(brought) == 1
+    # The tail only: a partner can tell their referrals apart without being handed the
+    # handle of somebody else's customer.
+    assert brought[0]["handle"] == "…vin"
+    assert "coodvin" not in brought[0]["handle"]
+    assert brought[0]["earned_usd"] == float(payout.amount_usd)
+
+
+def test_a_referral_with_no_username_is_still_distinguishable() -> None:
+    assert referral.mask_handle(None, 6428523975) == "id …975"
+    assert referral.mask_handle("@coodvin", None) == "…vin"
+    assert referral.mask_handle("ab", None) == "@ab"
+    assert referral.mask_handle(None, None) == "—"
+
+
+def test_only_one_place_closes_a_payout_as_paid() -> None:
+    """The bug was a second copy, not a wrong line.
+
+    The admin console closed payouts with its own transcription of `mark_payout_paid`, and
+    the copy had drifted: no amount in the notification payload, and none of the check that
+    a payout matches the ledger rows backing it. Nothing was wrong with either version in
+    isolation, which is why it survived review and reached a partner.
+    """
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[1] / "app"
+    senders = [
+        f"{path.relative_to(root)}:{n}"
+        for path in root.rglob("*.py")
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if 'template_code="payout_paid"' in line
+    ]
+    assert senders == ["services/referral.py:257"] or len(senders) == 1, (
+        f"payout_paid is enqueued from {len(senders)} places: {senders}. "
+        "Route every caller through referral.mark_payout_paid instead."
+    )

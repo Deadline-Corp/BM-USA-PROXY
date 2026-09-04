@@ -2961,23 +2961,16 @@ class PayoutMarkPaidBody(BaseModel):
 async def mark_payout_paid(
     payout_id: int, body: PayoutMarkPaidBody, admin: CurrentAdmin, session: DbSession
 ) -> dict[str, Any]:
-    payout = await _get_payout(session, payout_id)
-    if payout.status not in ("requested", "approved"):
-        raise Conflict("payout must be requested or approved")
-    payout.status = "paid"
-    payout.operator_id = admin.id
-    payout.tx_hash = body.tx_hash
-    payout.processed_at = _utcnow()
-    ledger_rows = (
-        (await session.execute(
-            select(ReferralLedger).where(ReferralLedger.payout_id == payout.id)
-        )).scalars().all()
-    )
-    for entry in ledger_rows:
-        entry.status = "paid"
-    await enqueue(
-        session, user_id=payout.referrer_user_id, template_code="payout_paid",
-        payload={"payout_id": payout.id, "tx_hash": body.tx_hash},
+    # Delegated rather than repeated. This endpoint used to close the payout itself, and
+    # the copy had drifted from the original in two ways: it told the partner "Your payout
+    # of $ was sent" because it never put the amount in the payload, and it skipped the
+    # check that the payout matches the ledger rows backing it. Both were invisible until a
+    # partner quoted the message back. The on-chain watcher has always used the service
+    # function; there is one way to close a payout now.
+    from app.services import referral as referral_svc
+
+    payout = await referral_svc.mark_payout_paid(
+        session, payout_id, tx_hash=body.tx_hash, operator_id=admin.id
     )
     await audit.write(session, admin_id=admin.id, action="payout.mark_paid", entity="payout",
                        entity_id=payout.id, after={"tx_hash": body.tx_hash})

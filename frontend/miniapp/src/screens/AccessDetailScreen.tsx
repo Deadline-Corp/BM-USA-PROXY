@@ -27,6 +27,7 @@ import { useCatalog } from "../shared/hooks/useCatalog";
 import { useToast } from "../shared/components/Toast";
 import { useTermsGate } from "../shared/hooks/useTermsGate";
 import { strings } from "../shared/strings";
+import { carrierAfterCityChange, carriersAvailable, locationsAvailable } from "../shared/lib/availability";
 import { useCountdown } from "../shared/hooks/useCountdown";
 import { SectionLabel } from "../shared/components/Card";
 import { Chip, Dot } from "../shared/components/Chip";
@@ -547,12 +548,20 @@ export function AccessDetailScreen() {
                 selected={swapLocationId === ANY}
                 onSelect={() => setSwapLocationId(ANY)}
               />
-              {catalogQuery.data?.locations.map((loc) => (
+              {/* Only cities that can serve the chosen carrier, and hidden rather than
+                  greyed out. The buy screen greys a sold-out city so the coverage on offer
+                  stays visible to someone deciding whether to buy at all; here the customer
+                  has already bought and is picking a replacement, so an unpickable row is
+                  only a way to reach an error. */}
+              {locationsAvailable(catalogQuery.data, swapCarrier).map((loc) => (
                 <PickerRow
                   key={loc.id}
                   label={formatCityState(loc.city, loc.state_code)}
                   selected={swapLocationId === loc.id}
-                  onSelect={() => setSwapLocationId(loc.id)}
+                  onSelect={() => {
+                    setSwapLocationId(loc.id);
+                    setSwapCarrier(carrierAfterCityChange(catalogQuery.data, loc.id, swapCarrier));
+                  }}
                 />
               ))}
             </div>
@@ -561,7 +570,7 @@ export function AccessDetailScreen() {
             <p className="mb-1.5 text-[13px] font-medium text-text-2">{strings.catalog.carrierSelectorLabel}</p>
             <div className="flex flex-col gap-1">
               <PickerRow label={strings.common.any} selected={swapCarrier === ANY} onSelect={() => setSwapCarrier(ANY)} />
-              {catalogQuery.data?.carriers.map((c) => (
+              {carriersAvailable(catalogQuery.data, swapLocationId).map((c) => (
                 <PickerRow key={c} label={c} selected={swapCarrier === c} onSelect={() => setSwapCarrier(c)} />
               ))}
             </div>

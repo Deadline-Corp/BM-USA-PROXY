@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.logging import log
 from app.models import User
 from app.services import settings as settings_svc
 from app.services.notifications import pending_batch
@@ -50,6 +51,12 @@ DEFAULT_TEXTS: dict[str, str] = {
     "referral_joined": "A new user joined with your referral link!",
     "referral_accrued": "You earned ${amount_usd} from a referral (on hold).",
     "referral_available": "${amount_usd} of referral earnings is now available.",
+    # Sent the moment the request is filed. Without it the partner watches their balance
+    # drop to zero and hears nothing — which is what it looks like when money disappears.
+    "payout_requested": (
+        "Payout request received: ${amount_usd} to {network}.\n"
+        "It is in the queue — you will get a message here when it is sent."
+    ),
     "payout_paid": "Your payout of ${amount_usd} was sent. Tx: {tx_hash}",
     "payout_rejected": "Your payout request was rejected: {reason}",
     "config_delivered": "Here is your {config_type} config. Import the file into your VPN app.",
@@ -78,7 +85,15 @@ async def render(session: AsyncSession, code: str, payload: dict[str, Any]) -> s
     data = payload or {}
     # Plain {name} substitution — NOT str.format, which would let an operator-editable
     # template do {x.__class__...} attribute traversal. \w+ never matches a dotted path.
-    return _PLACEHOLDER.sub(lambda m: str(data.get(m.group(1), "")), template)
+    # A placeholder with nothing behind it used to render as an empty string, so a payload
+    # that forgot `amount_usd` produced "Your payout of $ was sent" — which a partner reads
+    # as money going missing. Refusing is the better failure: the outbox marks it skipped,
+    # it is visible to whoever is watching, and nobody is told a wrong thing about money.
+    missing = sorted({m for m in _PLACEHOLDER.findall(template) if data.get(m) in (None, "")})
+    if missing:
+        log.error("notify.placeholder_missing", code=code, missing=missing)
+        return None
+    return _PLACEHOLDER.sub(lambda m: str(data[m.group(1)]), template)
 
 
 def _keyboard(code: str) -> InlineKeyboardMarkup | None:
