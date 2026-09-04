@@ -278,15 +278,20 @@ async def test_a_live_webhook_quiets_the_poll_until_it_rings(session) -> None:
     await webhooks.ring("tron")  # a delivery arrived: webhooks are alive on this chain
     client = CountingClient(head=1000)
 
-    await run_chain_tick(session, client, config=_config(), max_blocks=100)
+    # Enough budget for one scan to reach the head. The window is only honoured while we
+    # are caught up — a backlog no single scan can clear closes it, because otherwise the
+    # heartbeat can never catch up. Tron's cursor is in milliseconds and its rescan overlap
+    # is five minutes of them, so a small budget here would leave a permanent backlog and
+    # this test would be measuring that instead of the webhook.
+    await run_chain_tick(session, client, config=_config(), max_blocks=100_000)
     assert client.scans == 1, "the ring must be honoured"
 
-    await run_chain_tick(session, client, config=_config(), max_blocks=100)
-    await run_chain_tick(session, client, config=_config(), max_blocks=100)
+    await run_chain_tick(session, client, config=_config(), max_blocks=100_000)
+    await run_chain_tick(session, client, config=_config(), max_blocks=100_000)
     assert client.scans == 1, "and nothing more until it rings again or the heartbeat is due"
 
     await webhooks.ring("tron")
-    await run_chain_tick(session, client, config=_config(), max_blocks=100)
+    await run_chain_tick(session, client, config=_config(), max_blocks=100_000)
     assert client.scans == 2
 
 
@@ -308,7 +313,7 @@ async def test_waiting_on_a_webhook_never_advances_the_cursor(session) -> None:
 
     await webhooks.ring("tron")
     first = CountingClient(head=1000)
-    await run_chain_tick(session, first, config=_config(), max_blocks=100)
+    await run_chain_tick(session, first, config=_config(), max_blocks=100_000)
     await session.flush()
     after_scan = await session.get(ChainCursor, "tron")
     assert after_scan is not None
@@ -316,7 +321,7 @@ async def test_waiting_on_a_webhook_never_advances_the_cursor(session) -> None:
 
     # chain moves on, webhook stays quiet
     later = CountingClient(head=50_000)
-    await run_chain_tick(session, later, config=_config(), max_blocks=100)
+    await run_chain_tick(session, later, config=_config(), max_blocks=100_000)
     await session.flush()
     waited = await session.get(ChainCursor, "tron")
 
@@ -358,3 +363,103 @@ def test_only_networks_we_run_on_are_acted_on() -> None:
     assert webhooks.chain_of({"event": {"network": "MATIC_MAINNET"}}) is None
     assert webhooks.chain_of({"nonsense": True}) is None
     assert webhooks.chain_of("not a dict") is None
+
+
+# ── the quiet window must not hold up a payment that is already in ────────
+
+
+class DeepConfirmClient(CountingClient):
+    """Answers that the known txid is buried deep, and counts the log scans it was asked for."""
+
+    def __init__(self, *, head: int = 1000) -> None:
+        super().__init__(head=head)
+        self.confirmation_checks = 0
+
+    async def confirmations(self, txid: str, *, block_number: int | None = None) -> int:
+        self.confirmation_checks += 1
+        return 999
+
+
+async def test_the_quiet_window_skips_the_scan_but_never_the_confirmation_check(
+    session, monkeypatch
+) -> None:
+    """What a customer waited five minutes for on 2026-09-04.
+
+    A BEP20 deposit was seen at 9 confirmations against the rail's 15. BSC makes about two
+    blocks a second, so the six it still needed took under three seconds — but the chain's
+    webhooks were alive, the next tick found the quiet window open and returned before
+    reaching `finalize_confirming`, and nothing looked at the depth again until the window
+    expired 300 seconds later.
+
+    The two calls cost nothing alike and must not share a gate: the scan sweeps a block
+    range for transfers nobody has seen, while this asks the depth of one known txid.
+    """
+    from app.services.payments.onchain import watcher as watcher_mod
+    from app.services.payments.onchain import webhooks as onchain_webhooks
+
+    await _seed(session)
+    await _invoice(session, inv_id="quiet-1", status="confirming", expires_in=timedelta(hours=1))
+    await session.flush()
+
+    calls = {"finalize": 0}
+    real = watcher_mod.finalize_confirming
+
+    async def counting_finalize(*a, **kw):
+        calls["finalize"] += 1
+        return await real(*a, **kw)
+
+    monkeypatch.setattr(watcher_mod, "finalize_confirming", counting_finalize)
+
+    # Webhooks arriving, nothing ringing, a scan just happened — the quiet window.
+    await onchain_webhooks.ring("tron")
+    await onchain_webhooks.note_scan("tron")
+    assert not await onchain_webhooks.scan_is_due("tron"), "test needs the window actually open"
+
+    client = DeepConfirmClient()
+    report = await run_chain_tick(session, client=client, config=_config())
+
+    assert client.scans == 0, "the expensive scan is what the quiet window is for"
+    assert calls["finalize"] == 1, "the depth of a deposit already in hand must still be read"
+    # The property the early return was protecting: a skipped scan must not step the cursor
+    # past blocks the payment could be sitting in.
+    assert report.to_block == report.from_block - 1 or report.transfers == 0
+
+
+class BacklogClient(CountingClient):
+    """A chain whose head has run far ahead of where the cursor was left."""
+
+    async def confirmations(self, txid: str, *, block_number: int | None = None) -> int:
+        return 999
+
+
+async def test_the_quiet_window_closes_once_the_backlog_outgrows_one_scan(session) -> None:
+    """Otherwise the heartbeat cannot catch up, and the cursor falls behind for good.
+
+    A scan covers `max_blocks`. If the chain produces more than that inside one quiet
+    window, every window ends further behind than it started, and there is no later tick
+    that recovers — the gap only grows.
+
+    Measured on production 2026-09-04: BSC makes about 650 blocks in the 300-second window
+    against a 500-block scan, and the deposit cursor had drifted 9,796 blocks — about eighty
+    minutes — behind the head. A customer's USDT sat in a block the scan had not reached.
+    The payout watcher on the same chain, which has no quiet window, was at the head.
+    """
+    from app.services.payments.onchain import webhooks as onchain_webhooks
+
+    await _seed(session)
+    await _invoice(session, inv_id="backlog-1", status="pending", expires_in=timedelta(hours=1))
+    await session.flush()
+
+    await onchain_webhooks.ring("tron")
+    await onchain_webhooks.note_scan("tron")
+    assert not await onchain_webhooks.scan_is_due("tron"), "test needs the window open"
+
+    # Caught up: the window is honoured and the expensive call is skipped.
+    near = BacklogClient(head=1000)
+    await run_chain_tick(session, client=near, config=_config(), max_blocks=500)
+    assert near.scans == 0
+
+    # The same open window, but now the head is further off than one scan can reach.
+    far = BacklogClient(head=1000 + 900)
+    await run_chain_tick(session, client=far, config=_config(), max_blocks=500)
+    assert far.scans == 1, "a backlog no single scan can clear must not wait on the window"

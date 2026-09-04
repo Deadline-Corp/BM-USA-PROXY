@@ -192,6 +192,8 @@ async def test_confirmations_dropped_tx_is_zero() -> None:
 
 
 def test_factory_builds_evm_chains() -> None:
+    from app.services.payments.onchain.webhooks import QUIET_SCAN_INTERVAL
+
     eth = build_client("ethereum", _evm_config("ethereum", "USDC", "erc20"))
     assert eth is not None and eth.chain == "ethereum"
     bsc = build_client("bsc", _evm_config("bsc", "USDT", "bep20"))
@@ -201,8 +203,20 @@ def test_factory_builds_evm_chains() -> None:
     no_ep = load_config(json.dumps([{"asset": "USDC", "network": "erc20", "address": ADDR}]), "{}")
     fallback = build_client("ethereum", no_ep)
     assert fallback is not None and fallback.chain == "ethereum"
-    assert chain_max_scan("ethereum") == 100
-    assert chain_max_scan("bsc") == 200
+    # Not the numbers themselves — the rule they have to satisfy. A scan must cover more
+    # chain than the longest gap between two scans, or the cursor loses ground every gap
+    # and never recovers. On 2026-09-04 BSC's budget said 200 with a note reading "~10 min
+    # of 3s blocks"; the chain had moved to sub-second blocks, making it 90 seconds against
+    # a 300-second quiet window, and the deposit cursor drifted 9,796 blocks behind.
+    #
+    # Block rates measured from our own ledger, not looked up: BSC 705 confirmations in
+    # 315 seconds, Ethereum one block per 12 seconds.
+    for chain, blocks_per_second in (("bsc", 705 / 315), ("ethereum", 1 / 12)):
+        needed = QUIET_SCAN_INTERVAL * blocks_per_second
+        assert chain_max_scan(chain) >= needed, (
+            f"{chain}: a scan covers {chain_max_scan(chain)} blocks but the chain makes "
+            f"{needed:.0f} inside one quiet window"
+        )
 
 
 # ── DB pipeline: real EVM client → watcher → activation ───────────────────

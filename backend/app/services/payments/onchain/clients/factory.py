@@ -52,7 +52,14 @@ def _default_endpoint(chain: str, network: str) -> str | None:
 _MAX_SCAN: dict[str, int] = {
     "tron": 15 * 60 * 1000,  # 15 minutes of transfers
     "ethereum": 100,         # ~20 min of blocks; native scan iterates each block
-    "bsc": 200,              # ~10 min of 3s blocks
+    # 1000, and the number has to be re-derived when a chain changes its block time, not
+    # copied forward. This said 200 with the note "~10 min of 3s blocks", which was true of
+    # BSC once. Measured from our own ledger on 2026-09-04 — 705 confirmations in 315
+    # seconds — it now makes 2.24 blocks a second, so 200 blocks is 90 seconds, not ten
+    # minutes. Against a 300-second quiet window that is a 470-block deficit per window,
+    # and the deposit cursor had drifted 9,796 blocks behind the head before anyone noticed.
+    # A scan must cover more chain than the longest gap between two scans.
+    "bsc": 1000,
     # UTXO/Solana walk the address/signature API (not per-block): cursor jumps to tip
     "bitcoin": 10_000,
     "litecoin": 10_000,

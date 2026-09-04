@@ -465,22 +465,42 @@ async def run_chain_tick(
     # delivery can cost. Anything uncertain — no webhook, one ringing, the heartbeat due —
     # scans, because a payment nobody noticed costs incomparably more than a scan.
     #
-    # Waiting is NOT the idle path below and must not fall into it. That one carries the
-    # cursor to the head, which is right when no invoice exists — nothing in those blocks
-    # could belong to anybody. Here an invoice does exist, so the blocks going by are
-    # exactly the ones the payment may be in: skipping them forward would step over the
-    # money and never look again.
-    if methods and not await onchain_webhooks.scan_is_due(client.chain):
-        return TickReport(
-            chain=client.chain,
-            from_block=from_block,
-            to_block=cursor.last_scanned_block,
-            head=head,
-            transfers=0,
-            finalized=0,
-        )
+    # What is skipped is the LOG SCAN and nothing else. `finalize_confirming` below still
+    # runs on every tick, because it is a different question asked at a different price: the
+    # scan sweeps a block range for transfers nobody has seen, while that one asks the depth
+    # of a handful of known txids — one receipt lookup each.
+    #
+    # Gating both is what a customer paid for on 2026-09-04. A BEP20 deposit was detected at
+    # 06:54:45 with 9 confirmations against the rail's 15. BSC produces about two blocks a
+    # second, so the six it still needed took under three seconds — but the next tick found
+    # the quiet window open, returned here, and the depth was not looked at again until the
+    # window expired. Paid at 07:00:00. Five minutes and fifteen seconds, of which the chain
+    # accounted for three.
+    #
+    # Skipping the scan is NOT the idle path below and must not fall into it. That one
+    # carries the cursor to the head, which is right when no invoice exists — nothing in
+    # those blocks could belong to anybody. Here an invoice does exist, so the blocks going
+    # by are exactly the ones the payment may be in: skipping them forward would step over
+    # the money and never look again.
+    #
+    # And the window closes early whenever the unscanned span has grown past what one scan
+    # can cover, because past that point the heartbeat cannot catch up by construction and
+    # the cursor falls behind for good. Measured on production the same morning: BSC makes
+    # about 650 blocks in a 300-second window and a scan covers 500, so every window lost
+    # 150 blocks. By the time it was noticed the deposit cursor was 9,796 blocks — some
+    # eighty minutes — behind, while the payout watcher on the same chain, which has no
+    # quiet window, sat at the head. A customer's USDT was in a block the scan had not
+    # reached and never would have.
+    behind = max(0, head - cursor.last_scanned_block)
+    quiet = (
+        bool(methods)
+        and behind <= max_blocks
+        and not await onchain_webhooks.scan_is_due(client.chain)
+    )
 
-    if all_methods and head >= from_block and not methods:
+    if quiet:
+        pass  # cursor untouched — see above
+    elif all_methods and head >= from_block and not methods:
         cursor.last_scanned_block = head
         cursor.updated_at = datetime.now(UTC)
         to_block = head
