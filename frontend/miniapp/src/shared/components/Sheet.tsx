@@ -15,7 +15,8 @@ interface SheetProps {
 /** Bottom-sheet modal for pickers (city / carrier / tariff selection). */
 export function Sheet({ open, onClose, title, children, footer }: SheetProps) {
   const panel = useRef<HTMLDivElement>(null);
-  const [typing, setTyping] = useState(false);
+  const backdropPress = useRef(false);
+  const [hasField, setHasField] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -26,35 +27,43 @@ export function Sheet({ open, onClose, title, children, footer }: SheetProps) {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [open, onClose]);
 
+  // Does this sheet contain anything that raises a keyboard? Asked once when it opens,
+  // rather than tracked against focus.
+  //
+  // The focus-tracked version shipped and was broken: Done unmounted the instant it did its
+  // job, so the click that followed the tap had no target left and closed the whole sheet,
+  // losing the quantity and coin the buyer had just chosen. A control that removes itself
+  // between the press and the click cannot be made to work by adjusting the timing — so it
+  // stays mounted for as long as the sheet does, and is simply inert when nothing is
+  // focused.
   useEffect(() => {
-    if (!open) setTyping(false);
-  }, [open]);
-
-  // Whether a field inside this sheet holds focus — i.e. whether a keyboard is up.
-  // Read from the DOM rather than tracked per field, so every sheet gets this without
-  // each screen remembering to wire it.
-  const syncTyping = () => {
-    const el = document.activeElement;
-    setTyping(
-      el instanceof HTMLElement &&
-        !!panel.current?.contains(el) &&
-        el.matches("input, textarea, [contenteditable]"),
-    );
-  };
+    if (!open) {
+      setHasField(false);
+      return;
+    }
+    setHasField(!!panel.current?.querySelector("input, textarea, [contenteditable]"));
+  }, [open, children]);
 
   if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center" role="dialog" aria-modal="true" aria-label={title}>
+      {/* Closes only when the gesture both started and ended here. A press that began
+          inside the sheet — a drag off a field, or a synthetic click the webview delivers
+          after the keyboard has already reflowed the page — must not dismiss it. */}
       <div
         className="absolute inset-0 bg-text/40 animate-[m-fade_.2s_cubic-bezier(.16,1,.3,1)]"
-        onClick={onClose}
+        onPointerDown={(e) => {
+          backdropPress.current = e.target === e.currentTarget;
+        }}
+        onClick={(e) => {
+          if (backdropPress.current && e.target === e.currentTarget) onClose();
+          backdropPress.current = false;
+        }}
         aria-hidden="true"
       />
       <div
         ref={panel}
-        onFocus={syncTyping}
-        onBlur={() => window.setTimeout(syncTyping, 0)}
         className={clsx(
           // Against the viewport the app is actually painted on, not `vh`. On iOS `vh` is
           // the large viewport and ignores the keyboard entirely, so a sheet sized to 80vh
@@ -71,19 +80,22 @@ export function Sheet({ open, onClose, title, children, footer }: SheetProps) {
           <h2 className="min-w-0 flex-1 truncate font-head text-[17px] font-bold tracking-tight text-text">
             {title}
           </h2>
-          {/* iOS gives a number pad no return key at all, so a field like "how many
-              proxies" has no way to dismiss its own keyboard — the client had to tap
-              outside, which inside a sheet closes the sheet. Shown only while something in
-              here is focused, and it sits in the header, which the keyboard never covers.
-              onPointerDown + preventDefault keeps the focus long enough for the click to
-              land; without it the blur unmounts the button first and nothing happens. */}
-          {typing ? (
+          {/* Dismisses the keyboard and does nothing else — it must not close the sheet or
+              submit anything, because the buyer is mid-way through choosing and everything
+              they have picked so far lives in this sheet.
+
+              iOS gives a number pad no return key, so "how many proxies" has no other way
+              to put the keyboard away; tapping outside would close the sheet and lose the
+              choice. The header is the one place the keyboard never covers.
+
+              Plain onClick, and mounted for the whole life of the sheet — see `hasField`. */}
+          {hasField ? (
             <button
               type="button"
               className="shrink-0 rounded-lg border border-accent/40 bg-accent/[.08] px-3 py-1.5 text-[13px] font-semibold text-accent transition-colors hover:bg-accent/[.14] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-              onPointerDown={(e) => {
-                e.preventDefault();
-                (document.activeElement as HTMLElement | null)?.blur();
+              onClick={() => {
+                const el = document.activeElement;
+                if (el instanceof HTMLElement) el.blur();
               }}
             >
               {strings.common.doneTyping}

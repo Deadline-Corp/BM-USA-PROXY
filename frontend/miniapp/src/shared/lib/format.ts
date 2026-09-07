@@ -105,3 +105,27 @@ export function maskSecret(value: string, visibleTail = 4): string {
   if (value.length <= visibleTail) return "•".repeat(value.length);
   return `${"•".repeat(Math.max(4, value.length - visibleTail))}${value.slice(-visibleTail)}`;
 }
+
+/**
+ * A date the reader can trust, whatever their phone is set to.
+ *
+ * `toLocaleDateString()` with no arguments follows the device, and a device in Thailand
+ * follows the Buddhist calendar: the client's partner saw a payout dated 11.08.**2569**.
+ * Same trap in the other direction between `en-US` and everywhere else — 07/09 is two
+ * different days depending on who is holding the phone.
+ *
+ * So the locale and the calendar are both named, and the month is spelled: "07 Sep 2026"
+ * cannot be misread by anybody, and cannot drift with the reader's settings.
+ */
+const DATE_FMT = new Intl.DateTimeFormat("en-GB", {
+  calendar: "gregory",
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+});
+
+export function formatDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const at = new Date(iso);
+  return Number.isNaN(at.getTime()) ? "—" : DATE_FMT.format(at);
+}

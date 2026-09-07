@@ -44,20 +44,24 @@ class WorkerSettings:
     cron_jobs = [
         cron(jobs.send_outbox, second={0, 10, 20, 30, 40, 50}, run_at_startup=True),
         cron(jobs.expiry_sweeper, second=0),
-        # Buyer-scheduled IP rotation. Four times a minute, because this sweep IS the
-        # precision of the feature: a rotation due between two passes waits for the later
-        # one, so the pass interval is added to every interval a customer sets.
+        # Buyer-scheduled IP rotation, every second.
         #
-        # It ran once a minute under a comment saying the shortest interval an access could
-        # ask for was five. The floor is one — `ge=1` on the endpoint and the CHECK on
-        # `auto_rotate_minutes` — so the error was a whole interval at the shortest setting.
-        # The client reported it exactly: set 1 minute, changes after 2; set 4, changes
-        # after 5. Rotation at 12:00:25 stamps 12:00:25, the next is due at 12:01:25 plus a
-        # second of API latency, the 12:01:25 pass sees "not yet", and 12:02:25 rotates.
+        # The sweep interval IS the precision of the feature — a rotation due between two
+        # passes waits for the later one, so whatever the gap is gets added to every
+        # interval a customer sets. There is no scheduling trick that avoids this while the
+        # due time is read by polling; the only lever is how often we look.
         #
-        # A pass that finds nothing is one indexed read, so the cost of asking more often is
-        # not the reason it was rare. Never early, at most fifteen seconds late.
-        cron(jobs.auto_rotate_sweeper, second={2, 17, 32, 47}),
+        # It was once a minute (error: a whole minute at the one-minute floor — set 1,
+        # changed after 2), then four times a minute (error: up to fifteen seconds). The
+        # client asked for the request to leave the moment the minute is up, so: every
+        # second. Error is now under a second, and what remains is iproxy's own latency
+        # between accepting `changeip` and the phone actually redialling, which is theirs.
+        #
+        # Affordable because a pass with nothing due is one read against `accesses` filtered
+        # to live rows with `auto_rotate_minutes` set. Measured on production 2026-09-07:
+        # 2.4 ms median, so 209 seconds of database time across a whole day. The provider is
+        # touched only for accesses that are actually due, which is unchanged.
+        cron(jobs.auto_rotate_sweeper, second=set(range(60))),
         cron(jobs.invoice_expirer, second=30),
         cron(jobs.reconcile_invoices, minute=_FIVE_MIN, second=15),
         cron(jobs.watch_onchain_deposits, second={0, 15, 30, 45}, run_at_startup=True),

@@ -11,7 +11,7 @@ import { Sheet } from "../shared/components/Sheet";
 import { useCopyToClipboard } from "../shared/hooks/useCopyToClipboard";
 import { ApiError } from "../shared/api/client";
 import type { ReferralPayout, PayoutRail } from "../shared/api/types";
-import { formatUsd } from "../shared/lib/format";
+import { formatDate, formatUsd } from "../shared/lib/format";
 import { ErrorState } from "../shared/components/ErrorState";
 
 // The bot accepts this prefix and the shorter `r_`. Changing it here without changing
@@ -292,7 +292,7 @@ function PayoutRow({ payout }: { payout: ReferralPayout }) {
         </span>
       </div>
       <div className="flex items-center justify-between gap-3 text-[12px] text-text-3">
-        <span>{new Date(payout.requested_at).toLocaleDateString()}</span>
+        <span>{formatDate(payout.requested_at)}</span>
         <span className="uppercase">{payout.network}</span>
       </div>
       {payout.reject_reason ? (
