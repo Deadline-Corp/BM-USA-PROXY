@@ -252,3 +252,129 @@ async def test_pool_summary_buckets_cover_every_connection(session) -> None:
             row["nodes_free"] + row["nodes_busy"] + row["nodes_unavailable"]
             == row["slots_total"]
         )
+
+
+# ── a phone the account no longer lists ───────────────────────────────────
+#
+# Both reported by the client on 2026-09-08: two connections shown as "Held in iproxy"
+# that nobody was holding.
+
+
+async def test_a_phone_deleted_in_iproxy_stops_being_sold(session) -> None:
+    """It kept its last row forever — sellable, online, and frozen at whatever hold count
+    it happened to carry. `tm1399_NY` sat that way from 2026-09-03 until the client asked
+    why a phone they had removed was still shown as busy."""
+    stub = _StubIproxy([_conn("keep", "Miami"), _conn("gone", "Chicago")])
+    await sync_pool(session, stub)
+    await session.flush()
+
+    row = await session.scalar(select(Connection).where(Connection.iproxy_connection_id == "gone"))
+    assert row is not None and row.online_status == "online"
+    row.external_access_count = 2  # what the last successful hold check had left behind
+    row.is_sellable = True
+    await session.flush()
+
+    # the client deletes it in the console
+    stub.connections = [_conn("keep", "Miami")]
+    report = await sync_pool(session, stub)
+    await session.flush()
+    await session.refresh(row)
+
+    assert report["gone"] == 1
+    assert row.online_status == "offline", "the allocator only takes phones that are online"
+    assert row.external_access_count == 0, "there is no phone left for anyone to be holding"
+    assert row.health_note and "iproxy" in row.health_note.lower()
+    # Not deleted, and the operator's own flag is left alone — accesses and ledger rows
+    # point at this row, and `is_sellable` is theirs to set.
+    assert row.is_sellable is True
+
+    kept = await session.scalar(select(Connection).where(Connection.iproxy_connection_id == "keep"))
+    assert kept is not None and kept.online_status == "online"
+
+
+async def test_an_empty_listing_cannot_take_the_whole_pool_offline(session) -> None:
+    """One bad answer from the API must not be able to close the shop.
+
+    A phone that has genuinely gone is still missing on the next pass a minute later, so
+    there is nothing to lose by declining to act on nothing.
+    """
+    stub = _StubIproxy([_conn("a", "Miami"), _conn("b", "Chicago")])
+    await sync_pool(session, stub)
+    await session.flush()
+
+    stub.connections = []
+    report = await sync_pool(session, stub)
+    await session.flush()
+
+    assert report["gone"] == 0
+    still_online = await session.scalar(
+        select(func.count()).select_from(Connection).where(Connection.online_status == "online")
+    )
+    assert still_online == 2
+
+
+# ── a proxy iproxy created for itself is not a hold ───────────────────────
+
+
+def test_iproxys_own_automatic_proxy_is_not_somebody_holding_the_phone() -> None:
+    """`tm1406_NY` carried one of these and could not be sold.
+
+    Matched on the label because the payload gives nothing else to go on — no owner, no
+    origin, and an id no different in shape from ours. Ours are stamped "bm-usa-proxy";
+    the client's own are free text, like the "test1" on `att263_WA_S`, which is a real
+    hold and has to keep counting.
+    """
+    from app.services.provisioning.sync import _made_by_iproxy_itself
+
+    assert _made_by_iproxy_itself({"description": "this proxy was created automatically"})
+    assert _made_by_iproxy_itself({"description": "This Proxy Was Created Automatically"})
+    assert not _made_by_iproxy_itself({"description": "bm-usa-proxy"})
+    assert not _made_by_iproxy_itself({"description": "test1"})
+    assert not _made_by_iproxy_itself({"description": None})
+    assert not _made_by_iproxy_itself({})
+
+
+class _HoldsStub:
+    """Enough of IproxyClient for `sync_external_holds` — one phone, whatever accesses."""
+
+    def __init__(self, accesses: list[dict[str, Any]]) -> None:
+        self.accesses = accesses
+
+    async def list_proxy_access(self, _connection_id: str) -> list[dict[str, Any]]:
+        return self.accesses
+
+
+async def test_only_a_real_outsider_marks_the_phone_held(session) -> None:
+    """The count is what makes a phone unsellable, so what goes into it is the whole point.
+
+    Three kinds of access turn up on a live phone, and only one of them means somebody
+    else is using it.
+    """
+    from app.services.provisioning.sync import sync_external_holds
+
+    await sync_pool(session, _StubIproxy([_conn("p1", "Miami")]))
+    await session.flush()
+    conn = await session.scalar(select(Connection).where(Connection.iproxy_connection_id == "p1"))
+    assert conn is not None
+
+    async def holds(accesses: list[dict[str, Any]]) -> int:
+        await sync_external_holds(session, _HoldsStub(accesses))  # type: ignore[arg-type]
+        await session.flush()
+        await session.refresh(conn)
+        return conn.external_access_count
+
+    # iproxy's own, on a phone nobody has bought — this is what `tm1406_NY` carried.
+    assert await holds([{"id": "auto1", "description": "this proxy was created automatically"}]) == 0
+    # The client made one by hand in the console. `att263_WA_S` has exactly this.
+    assert await holds([{"id": "byhand", "description": "test1"}]) == 1
+    # Both at once: still one outsider, not two.
+    assert (
+        await holds(
+            [
+                {"id": "auto1", "description": "this proxy was created automatically"},
+                {"id": "byhand", "description": "test1"},
+            ]
+        )
+        == 1
+    )
+    assert await holds([]) == 0

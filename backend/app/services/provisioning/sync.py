@@ -138,6 +138,22 @@ async def _resolve_location(
     return resolved
 
 
+# iproxy makes a proxy of its own on a connection and labels it in these words. It is not
+# somebody using the phone, so it must not read as a hold — a phone carrying only this was
+# shown as busy and could not be sold, which is what the client reported on `tm1406_NY`
+# (created 2026-09-06, description below, nobody's customer).
+#
+# Matched on the label because the payload carries nothing else to go on: no owner, no
+# origin, and its id is no different in shape from ours. Every access we create is stamped
+# "bm-usa-proxy" (see iproxy.py), and the client's own are free text — "test1" on
+# `att263_WA_S`, which is a real hold and stays counted.
+_IPROXY_AUTOMATIC = "created automatically"
+
+
+def _made_by_iproxy_itself(access: dict[str, Any]) -> bool:
+    return _IPROXY_AUTOMATIC in str(access.get("description") or "").lower()
+
+
 async def sync_external_holds(
     session: AsyncSession, client: IproxyClient | None = None, batch: int = 300
 ) -> dict[str, int]:
@@ -184,7 +200,11 @@ async def sync_external_holds(
         except Exception as exc:  # noqa: BLE001 — one unreachable phone must not stop the walk
             log.warning("iproxy.external_holds_failed", connection=iproxy_id, error=str(exc))
             continue
-        foreign = sum(1 for a in accesses if str(a.get("id") or "") not in ours)
+        foreign = sum(
+            1
+            for a in accesses
+            if str(a.get("id") or "") not in ours and not _made_by_iproxy_itself(a)
+        )
         checked += 1
         if foreign:
             held += 1
@@ -355,5 +375,41 @@ async def sync_pool(session: AsyncSession, client: IproxyClient | None = None) -
             .values(synced_at=now, last_online_at=now)
         )
 
-    log.info("iproxy.sync", seen=seen, written=written, online=online)
-    return {"seen": seen, "written": written, "online": online}
+    # Phones the account no longer lists. Until now nothing looked: a connection deleted in
+    # the iproxy console kept its last row forever — sellable, and frozen at whatever
+    # `external_access_count` it happened to hold, so the console showed it as "Held in
+    # iproxy" indefinitely. `tm1399_NY` sat like that from 2026-09-03 until the client
+    # asked why a phone they had removed was still shown as busy.
+    #
+    # Marked offline rather than deleted or unsold: accesses and ledger rows point at these
+    # rows, `is_sellable` is the operator's own field and not ours to overwrite, and the
+    # allocator already refuses anything that is not `online`. The hold count is cleared in
+    # the same statement — there is no phone left for anyone to be holding.
+    #
+    # Skipped entirely on an empty listing. A phone that has genuinely gone will still be
+    # missing on the next pass a minute later, and an API that answered with nothing must
+    # never be able to take the whole pool offline in one statement.
+    gone = 0
+    if conns:
+        listed = {str(c.get("id") or "") for c in conns}
+        result = await session.execute(
+            update(Connection)
+            .where(
+                Connection.iproxy_connection_id.notin_(listed),
+                (Connection.online_status != "offline")
+                | (Connection.external_access_count != 0),
+            )
+            .values(
+                online_status="offline",
+                external_access_count=0,
+                synced_at=now,
+                health_note="Not in the iproxy account any more — deleted or moved.",
+            )
+            .returning(Connection.id)
+        )
+        gone = len(result.all())
+        if gone:
+            log.warning("iproxy.sync_gone", count=gone)
+
+    log.info("iproxy.sync", seen=seen, written=written, online=online, gone=gone)
+    return {"seen": seen, "written": written, "online": online, "gone": gone}
