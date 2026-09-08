@@ -2847,11 +2847,21 @@ async def list_payouts(
     the wallet and the transaction hash — because "did we already send this one" is
     answered by pasting the hash, not by scrolling.
     """
-    stmt = select(Payout).order_by(Payout.requested_at)
-    if status:
+    # Newest first once history is in play — an operator opening "everything" wants the
+    # last payout, not the first one ever made. The open queue keeps its own order below.
+    stmt = select(Payout).order_by(Payout.requested_at.desc())
+    if status == "all":
+        # Deliberate: the console had no way to see a payout after it was sent, so the
+        # partner could show a history the operator could not. Nothing is filtered here.
+        pass
+    elif status:
         stmt = stmt.where(Payout.status == status)
     else:
-        stmt = stmt.where(Payout.status.in_(("requested", "approved")))
+        # The queue — what still needs somebody to act. Oldest first, because that is the
+        # order they should be dealt with in.
+        stmt = select(Payout).order_by(Payout.requested_at).where(
+            Payout.status.in_(("requested", "approved"))
+        )
     if since:
         stmt = stmt.where(Payout.requested_at >= _parse_day(since))
     if before:
@@ -3562,8 +3572,20 @@ async def put_payment_rails(
     And nothing here can spend: the backend holds no key on any chain. A wrong address
     means money lands where we do not watch, not that money leaves.
     """
-    from app.services.payments.onchain.config import OnchainConfigError, get_onchain_config
-    from app.services.payments.onchain.rails import save_payout_wallets, save_rails
+    import json as _json
+
+    from app.core.config import settings as _settings
+    from app.services.payments.onchain.config import (
+        OnchainConfigError,
+        get_onchain_config,
+        load_config,
+    )
+    from app.services.payments.onchain.rails import (
+        normalise_payout_wallets,
+        normalise_rails,
+        save_payout_wallets,
+        save_rails,
+    )
     from app.services.payments.onchain.rails_cache import invalidate_refresh_rails_cache
 
     before = {
@@ -3573,6 +3595,44 @@ async def put_payment_rails(
     before_payout = {s.network: s.address for s in (
         get_onchain_config().payout_sources if _config_ok() else ()
     )}
+
+    # Build the configuration this save WOULD produce, and refuse if it does not load.
+    #
+    # `normalise_rails` checks a rail one at a time — supported, not duplicated, address
+    # shaped right for its network. The loader checks the set as a whole, and it rejects
+    # things the per-rail pass cannot see: a confirmation count under the chain's mainnet
+    # floor, a rail enabled on a chain with no RPC endpoint configured.
+    #
+    # Those used to be found only on the next read, by which time the value was already
+    # stored and the process override already swapped. The failure was total and silent:
+    # `get_onchain_config` raises, so every rail loses its address on the Wallets screen —
+    # which reads as the addresses having been deleted — and no invoice can be quoted on
+    # any coin. That is what one BTC rail saved at 5 confirmations did on 2026-09-08, and
+    # the console answered the save with 200.
+    #
+    # Same call the running app makes, including strict mode, so nothing can pass here and
+    # fail there.
+    try:
+        prospective_rails = normalise_rails(body.rails, network=_onchain_network())
+        prospective_payout = (
+            normalise_payout_wallets(body.payout_wallets)
+            if body.payout_wallets is not None
+            else None
+        )
+        load_config(
+            _json.dumps(prospective_rails),
+            _settings.onchain_rpc,
+            _onchain_network(),
+            (
+                _json.dumps(prospective_payout)
+                if prospective_payout is not None
+                else _settings.onchain_payout_sources
+            ),
+            strict=True,
+        )
+    except OnchainConfigError as exc:
+        raise ValidationError(str(exc)) from None
+
     try:
         saved = await save_rails(
             session, body.rails, admin_id=admin.id, network=_onchain_network()

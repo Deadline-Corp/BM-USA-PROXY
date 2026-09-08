@@ -5,6 +5,7 @@ import { ApiError, isBannedError } from "./shared/api/client";
 import { markBanned } from "./shared/auth/bannedState";
 import { AuthProvider } from "./shared/auth/AuthProvider";
 import { AuthGate } from "./shared/auth/AuthGate";
+import { KeyboardDismiss } from "./shared/components/KeyboardDismiss";
 import { ToastProvider } from "./shared/components/Toast";
 import { BottomNav } from "./shared/components/BottomNav";
 import { HomeScreen } from "./screens/HomeScreen";
@@ -65,6 +66,9 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <ToastProvider>
+          {/* Once for the whole app: it follows focus, not any one screen, so the
+              inline auto-rotation field gets it as well as every sheet. */}
+          <KeyboardDismiss />
           <BrowserRouter basename="/app">
             <AuthGate>
               <Routes>

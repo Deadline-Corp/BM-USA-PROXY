@@ -17,7 +17,7 @@ export const strings = {
   },
 
   common: {
-    doneTyping: "Done",
+    hideKeyboard: "Hide keyboard",
     loading: "Loading…",
     retry: "Retry",
     somethingWrong: "Something went wrong.",

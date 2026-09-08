@@ -1,8 +1,7 @@
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import clsx from "clsx";
-import { strings } from "../strings";
 
 interface SheetProps {
   open: boolean;
@@ -14,9 +13,7 @@ interface SheetProps {
 
 /** Bottom-sheet modal for pickers (city / carrier / tariff selection). */
 export function Sheet({ open, onClose, title, children, footer }: SheetProps) {
-  const panel = useRef<HTMLDivElement>(null);
   const backdropPress = useRef(false);
-  const [hasField, setHasField] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -26,23 +23,6 @@ export function Sheet({ open, onClose, title, children, footer }: SheetProps) {
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [open, onClose]);
-
-  // Does this sheet contain anything that raises a keyboard? Asked once when it opens,
-  // rather than tracked against focus.
-  //
-  // The focus-tracked version shipped and was broken: Done unmounted the instant it did its
-  // job, so the click that followed the tap had no target left and closed the whole sheet,
-  // losing the quantity and coin the buyer had just chosen. A control that removes itself
-  // between the press and the click cannot be made to work by adjusting the timing — so it
-  // stays mounted for as long as the sheet does, and is simply inert when nothing is
-  // focused.
-  useEffect(() => {
-    if (!open) {
-      setHasField(false);
-      return;
-    }
-    setHasField(!!panel.current?.querySelector("input, textarea, [contenteditable]"));
-  }, [open, children]);
 
   if (!open) return null;
 
@@ -63,7 +43,6 @@ export function Sheet({ open, onClose, title, children, footer }: SheetProps) {
         aria-hidden="true"
       />
       <div
-        ref={panel}
         className={clsx(
           // Against the viewport the app is actually painted on, not `vh`. On iOS `vh` is
           // the large viewport and ignores the keyboard entirely, so a sheet sized to 80vh
@@ -80,27 +59,6 @@ export function Sheet({ open, onClose, title, children, footer }: SheetProps) {
           <h2 className="min-w-0 flex-1 truncate font-head text-[17px] font-bold tracking-tight text-text">
             {title}
           </h2>
-          {/* Dismisses the keyboard and does nothing else — it must not close the sheet or
-              submit anything, because the buyer is mid-way through choosing and everything
-              they have picked so far lives in this sheet.
-
-              iOS gives a number pad no return key, so "how many proxies" has no other way
-              to put the keyboard away; tapping outside would close the sheet and lose the
-              choice. The header is the one place the keyboard never covers.
-
-              Plain onClick, and mounted for the whole life of the sheet — see `hasField`. */}
-          {hasField ? (
-            <button
-              type="button"
-              className="shrink-0 rounded-lg border border-accent/40 bg-accent/[.08] px-3 py-1.5 text-[13px] font-semibold text-accent transition-colors hover:bg-accent/[.14] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-              onClick={() => {
-                const el = document.activeElement;
-                if (el instanceof HTMLElement) el.blur();
-              }}
-            >
-              {strings.common.doneTyping}
-            </button>
-          ) : null}
           <button
             type="button"
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-text-3 transition-colors hover:bg-surface-2 hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"

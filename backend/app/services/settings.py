@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,7 +22,21 @@ async def set_value(
     stmt = insert(AppSetting).values(key=key, value=value, updated_by=admin_id)
     stmt = stmt.on_conflict_do_update(
         index_elements=["key"],
-        set_={"value": stmt.excluded.value, "updated_by": admin_id},
+        # `updated_at` too. Without it the column only ever held the moment the row was
+        # first inserted, so every setting the operator had edited since still read as
+        # untouched — `onchain_rails` said 2026-08-14 on a day it had been saved twice.
+        # A timestamp that does not move is worse than no timestamp: it answers "when did
+        # this last change" confidently and wrongly, and it was read that way during an
+        # outage on 2026-09-08 to rule out a change that had in fact just happened.
+        #
+        # `clock_timestamp`, not `now()`: the latter is the transaction's start time, so
+        # two settings saved in one request would share a timestamp and a value written
+        # twice in one transaction would look unchanged.
+        set_={
+            "value": stmt.excluded.value,
+            "updated_by": admin_id,
+            "updated_at": func.clock_timestamp(),
+        },
     )
     await session.execute(stmt)
 

@@ -36,6 +36,15 @@ import { PayoutInstructionModal } from "@/screens/referrals/PayoutInstructionMod
 /** Every state a commission row can hold — the database constraint's own list. */
 const LEDGER_STATUSES = ["hold", "available", "requested", "paid", "reversed"];
 
+/** What the payouts panel is showing. The empty value is the queue — the two states
+ *  that still need an operator — and is what the endpoint returns when asked for nothing.
+ *  "all" is history: every payout ever, newest first. */
+const PAYOUT_VIEWS = [
+  { value: "all", label: "All" },
+  { value: "paid", label: "Sent" },
+  { value: "rejected", label: "Rejected" },
+];
+
 export function ReferralsScreen() {
   const toast = useToast();
   const summaryQuery = useReferralSummary();
@@ -44,6 +53,10 @@ export function ReferralsScreen() {
   // The queue and the ledger are two lists answering two questions, so they filter
   // separately — narrowing the payouts you are about to send should not also hide half
   // the commission history you are checking them against.
+  // "" is the open queue — what still needs somebody to act. The console had no way
+  // to see a payout after it was sent, so a partner could quote a history from the
+  // mini app that the operator could not find. Reported 2026-09-08.
+  const [payoutStatus, setPayoutStatus] = useState("");
   const [payoutSearch, setPayoutSearch] = useState("");
   const [payoutSince, setPayoutSince] = useState("");
   const [payoutBefore, setPayoutBefore] = useState("");
@@ -74,18 +87,20 @@ export function ReferralsScreen() {
 
   const payoutParams = useMemo(
     () => ({
+      ...(payoutStatus ? { status: payoutStatus } : {}),
       ...(payoutQ ? { q: payoutQ } : {}),
       ...(payoutSince ? { since: payoutSince } : {}),
       ...(payoutBefore ? { before: payoutBefore } : {}),
     }),
-    [payoutQ, payoutSince, payoutBefore],
+    [payoutStatus, payoutQ, payoutSince, payoutBefore],
   );
   // no status → the API returns everything still open (requested + approved). Passing
   // "pending" here filtered on a status that doesn't exist, so the queue was always empty.
   const payoutsQuery = usePayouts(payoutParams);
 
-  const payoutsFiltered = Boolean(payoutQ || payoutSince || payoutBefore);
+  const payoutsFiltered = Boolean(payoutStatus || payoutQ || payoutSince || payoutBefore);
   const clearPayouts = () => {
+    setPayoutStatus("");
     setPayoutSearch("");
     setPayoutSince("");
     setPayoutBefore("");
@@ -185,7 +200,7 @@ export function ReferralsScreen() {
           three buttons no longer fight for the same 400px. */}
       <div className="flex flex-col gap-4">
         <Panel>
-          <Panel.Head title={strings.referrals.payoutsQueue} subtitle={`${payoutsQuery.data?.total ?? 0} pending`} />
+          <Panel.Head title={strings.referrals.payoutsQueue} subtitle={`${payoutsQuery.data?.total ?? 0} ${payoutStatus ? "shown" : "pending"}`} />
           <div className="px-[18px] py-3 border-b border-border">
             <FilterBar
               search={payoutSearch}
@@ -194,6 +209,13 @@ export function ReferralsScreen() {
               isFiltered={payoutsFiltered}
               onClear={clearPayouts}
             >
+              <FilterPill
+                label={strings.orders.colStatus}
+                value={payoutStatus}
+                onChange={setPayoutStatus}
+                options={PAYOUT_VIEWS}
+                allLabel={strings.referrals.payoutViewOpen}
+              />
               <DateFilterPill
                 label={strings.common.filterFrom}
                 value={payoutSince}

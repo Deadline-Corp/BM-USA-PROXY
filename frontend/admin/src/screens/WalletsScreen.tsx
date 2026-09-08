@@ -315,16 +315,22 @@ function RailRow({
             size={1}
           />
         </div>
-        <div className="w-[110px]">
-          <Input
-            label={strings.wallets.confirmations}
-            type="number"
-            min={0}
-            value={rail.confirmations}
-            onChange={(e) => onChange({ confirmations: Number(e.target.value) })}
-            className="w-full"
-            size={1}
-          />
+        {/* Shown, not editable. It is a reorg-safety floor per chain, not a preference:
+            below it a deposit can be finalised and the access handed over before the block
+            it arrived in can still be undone. Every direction of change is wrong from
+            here — under the floor the whole configuration refuses to load (which took
+            payments down on every coin on 2026-09-08, when this box accepted 5 for
+            bitcoin), and above it the buyer simply waits longer for nothing the operator
+            has any way to judge. The number stays on screen because it answers the
+            question an operator does have: why bitcoin takes an hour and Tron a minute. */}
+        <div className="w-[130px]">
+          <div className="mb-1 text-[.72rem] font-medium text-text-3">
+            {strings.wallets.confirmations}
+          </div>
+          <div className="rounded border border-border bg-surface-2 px-3 py-[9px] text-[.9rem] text-text-2">
+            {rail.confirmations}
+            <span className="ml-1 text-[.72rem] text-text-3">{strings.wallets.fixedByChain}</span>
+          </div>
         </div>
       </div>
     </div>

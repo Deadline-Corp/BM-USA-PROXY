@@ -369,3 +369,57 @@ def test_only_one_place_closes_a_payout_as_paid() -> None:
         f"payout_paid is enqueued from {len(senders)} places: {senders}. "
         "Route every caller through referral.mark_payout_paid instead."
     )
+
+
+async def test_the_console_can_see_a_payout_after_it_was_sent(session) -> None:
+    """The queue answers "what needs doing", and that was the only question it could answer.
+
+    A payout left the list the moment it was paid or rejected, so the partner's own history
+    in the mini app showed payouts the operator could not find anywhere. Reported by the
+    client on 2026-09-08, the day after the partner's history shipped.
+    """
+    from app.api.admin.domain import list_payouts
+
+    await seed_settings(session)
+    session.add(Tariff(code="daily", name="Daily", kind="auto", duration_minutes=1440,
+                       price_usd=Decimal("10.00"), is_active=True))
+    await session.flush()
+    await settings_svc.set_value(session, "referral_pct", TEST_PCT)
+    operator = await _admin(session)
+    admin = await session.get(AdminUser, operator)
+    assert admin is not None
+
+    referrer = await _mk(session, 92001, "HISTORY1")
+    referee = await _mk(session, 92002, "HISTBR1", referrer_id=referrer.id)
+    order = await _paid_order(session, referee=referee, referrer=referrer, amount="40")
+    await referral.accrue(session, order=order)
+    await session.execute(
+        update(ReferralLedger)
+        .where(ReferralLedger.referrer_user_id == referrer.id)
+        .values(status="available")
+    )
+    await session.flush()
+    payout = await referral.request_payout(
+        session, user=referrer, wallet_address=WALLET_TRC20, network="trc20"
+    )
+    await session.flush()
+
+    queue = await list_payouts(admin, session)
+    assert payout.id in [int(p["id"]) for p in queue["items"]], "a filed payout is the queue"
+
+    await referral.mark_payout_paid(session, payout.id, tx_hash="0xsent", operator_id=operator)
+    await session.flush()
+
+    gone = await list_payouts(admin, session)
+    assert payout.id not in [int(p["id"]) for p in gone["items"]], (
+        "the queue is what still needs doing — a sent payout does not belong in it"
+    )
+
+    history = await list_payouts(admin, session, status="all")
+    found = [p for p in history["items"] if int(p["id"]) == payout.id]
+    assert found, "and it has to be findable somewhere"
+    assert found[0]["status"] == "paid"
+    assert found[0]["tx_hash"] == "0xsent"
+
+    only_sent = await list_payouts(admin, session, status="paid")
+    assert [int(p["id"]) for p in only_sent["items"]] == [payout.id]
