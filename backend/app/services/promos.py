@@ -56,7 +56,7 @@ async def _live_code(session: AsyncSession, code: str) -> PromoCode:
         select(PromoCode).where(PromoCode.code == code, PromoCode.deleted_at.is_(None))
     )
     if row is None:
-        raise ValidationError("promo code not found")
+        raise ValidationError("Promo code not found")
     return row
 
 
@@ -81,22 +81,23 @@ async def quote(
 ) -> Discount:
     """What this code is worth on this order, or why it cannot be used.
 
-    Writes nothing. Every rejection is a `ValidationError` whose message is meant to be
-    shown to the buyer as-is — "this code has already been used" is something they can act
-    on, an opaque failure is a message to support.
+    Writes nothing. Every rejection is a `ValidationError` whose message is printed into the
+    checkout word for word — which is why they are written as sentences, capital and all —
+    because "You have already used this promo code" is something the buyer can act on and an
+    opaque failure is a message to support.
     """
     normalised = normalise(code)
     if not normalised:
-        raise ValidationError("enter a promo code")
+        raise ValidationError("Enter a promo code")
     promo = await _live_code(session, normalised)
 
     now = _utcnow()
     if promo.starts_at is not None and promo.starts_at > now:
-        raise ValidationError("this promo code is not active yet")
+        raise ValidationError("This promo code is not active yet")
     if promo.expires_at is not None and promo.expires_at <= now:
-        raise ValidationError("this promo code has expired")
+        raise ValidationError("This promo code has expired")
     if is_extension and promo.applies_to == "purchase":
-        raise ValidationError("this promo code applies to new purchases only")
+        raise ValidationError("This promo code applies to new purchases only")
 
     already = await session.scalar(
         select(PromoRedemption.id).where(
@@ -104,10 +105,10 @@ async def quote(
         )
     )
     if already is not None:
-        raise ValidationError("you have already used this promo code")
+        raise ValidationError("You have already used this promo code")
 
     if promo.max_uses is not None and await _uses(session, promo.id) >= promo.max_uses:
-        raise ValidationError("this promo code has run out")
+        raise ValidationError("This promo code has run out")
 
     amount_off = _money(subtotal_usd * Decimal(promo.percent_off) / Decimal(100))
     # Never below zero, and never more than the order is worth. A 100% code is allowed —

@@ -217,7 +217,7 @@ async def guard_open_orders(session: AsyncSession, user: User) -> None:
         return
     if await open_order_count(session, user.id) >= limit:
         raise TooManyOpenOrders(
-            f"you already have {limit} unpaid "
+            f"You already have {limit} unpaid "
             f"{'order' if limit == 1 else 'orders'} — pay or cancel one before starting another"
         )
 
