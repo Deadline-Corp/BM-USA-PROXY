@@ -19,7 +19,7 @@ from app.core.errors import (
 )
 from app.core.logging import log
 from app.models import Access, AccessEvent, Connection, Invoice, Order, Tariff, User
-from app.services import ops_alerts, referral
+from app.services import ops_alerts, promos, referral
 from app.services import settings as settings_svc
 from app.services.catalog import trial_available
 from app.services.notifications import enqueue
@@ -172,6 +172,7 @@ async def create_order(
     asset: str | None = None,
     network: str | None = None,
     quantity: int = 1,
+    promo_code: str | None = None,
 ) -> tuple[Order, Invoice | None]:
     """Create an order for `quantity` proxies, trimmed to what is actually on the shelf —
     and take those proxies off the shelf while the invoice is unpaid.
@@ -274,7 +275,28 @@ async def create_order(
     # back Decimal at runtime, which is what money has to be.
     order.amount_usd = Decimal(str(tariff.price_usd)) * granted  # type: ignore[assignment]
 
-    if float(tariff.price_usd) == 0:  # trial: no invoice, issue immediately
+    # Applied to the order, not to the invoice. Everything downstream reads
+    # `order.amount_usd` — the oracle converting to crypto, the referral accrual, the
+    # refund ceiling — so discounting here is what makes the buyer pay less AND makes the
+    # referrer earn a commission on what was actually paid, which is the rule the client
+    # chose. Discounting the invoice alone would have quoted the right crypto amount and
+    # then paid commission on money nobody sent.
+    #
+    # After the quantity is trimmed to what the shelf could give, so a code takes its
+    # percentage off what is really being sold rather than what was asked for.
+    if promo_code:
+        discount = await promos.redeem(
+            session,
+            code=promo_code,
+            user=user,
+            order=order,
+            subtotal_usd=Decimal(str(order.amount_usd)),
+        )
+        order.promo_code_id = discount.code.id
+        order.discount_usd = discount.amount_off_usd  # type: ignore[assignment]
+        order.amount_usd = discount.total_usd  # type: ignore[assignment]
+
+    if float(order.amount_usd) == 0:  # trial, or a code that took the whole price
         order.status = "paid"
         order.paid_at = _utcnow()
         await _provision_or_review(session, order)
@@ -364,6 +386,7 @@ async def create_extension_order(
     tariff_code: str,
     asset: str | None = None,
     network: str | None = None,
+    promo_code: str | None = None,
 ) -> tuple[Order, Invoice | None]:
     tariff = await session.scalar(
         select(Tariff).where(Tariff.code == tariff_code, Tariff.is_active)
@@ -389,6 +412,20 @@ async def create_extension_order(
     )
     session.add(order)
     await session.flush()
+
+    # `is_extension` is already set, and `promos.redeem` reads it — a code created for new
+    # purchases only refuses here rather than being silently honoured.
+    if promo_code:
+        discount = await promos.redeem(
+            session,
+            code=promo_code,
+            user=user,
+            order=order,
+            subtotal_usd=Decimal(str(order.amount_usd)),
+        )
+        order.promo_code_id = discount.code.id
+        order.discount_usd = discount.amount_off_usd  # type: ignore[assignment]
+        order.amount_usd = discount.total_usd  # type: ignore[assignment]
 
     # Pick up whatever rail list the console last saved before quoting an address —
     # otherwise this process keeps handing out the address an operator already replaced.
@@ -509,6 +546,11 @@ async def cancel_order(session: AsyncSession, *, order: Order) -> None:
         raise Conflict("order can no longer be cancelled")
     order.status = "cancelled"
     await release_reservations(session, order_id=order.id)
+    # And the promo code, if one was used. A one-use code must not burn on an invoice
+    # nobody paid — the buyer changed their mind, and the code they were given would
+    # otherwise be spent with nothing sold. The order keeps its own record of what the
+    # discount was; only the claim on the code goes back.
+    await promos.release(session, order_id=order.id)
     invoices = await session.scalars(
         select(Invoice).where(
             Invoice.order_id == order.id,

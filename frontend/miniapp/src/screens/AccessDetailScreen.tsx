@@ -24,6 +24,7 @@ import {
   getRetryAfterSeconds,
 } from "../shared/hooks/useAccesses";
 import { useCatalog } from "../shared/hooks/useCatalog";
+import { usePaymentMethods } from "../shared/hooks/useOrder";
 import { useToast } from "../shared/components/Toast";
 import { useTermsGate } from "../shared/hooks/useTermsGate";
 import { strings } from "../shared/strings";
@@ -61,6 +62,13 @@ export function AccessDetailScreen() {
   // access showing the address it had when the screen opened.
   const detailQuery = useAccessDetail(publicId, { refetchInterval: rotating ? 4000 : undefined });
   const catalogQuery = useCatalog();
+  const methodsQuery = usePaymentMethods();
+  // Sorted the same way the buy screen sorts them, so a buyer meets the coins in one
+  // order throughout the app rather than two.
+  const payOptions = [...(methodsQuery.data?.methods ?? [])].sort(
+    (a, b) =>
+      a.chain_label.localeCompare(b.chain_label) || a.coin_label.localeCompare(b.coin_label),
+  );
   const rotateIp = useRotateIp(publicId);
   const rebootDevice = useRebootDevice(publicId);
   const swapAccess = useSwapAccess(publicId);
@@ -82,6 +90,11 @@ export function AccessDetailScreen() {
   const [swapLocationId, setSwapLocationId] = useState<number | typeof ANY>(ANY);
   const [swapCarrier, setSwapCarrier] = useState<Carrier | typeof ANY>(ANY);
   const [extendSheetOpen, setExtendSheetOpen] = useState(false);
+  // Empty until chosen. One configured rail is not a choice, so it is preselected —
+  // the same rule the buy screen uses.
+  const [extendCoin, setExtendCoin] = useState("");
+  const chosenExtendCoin =
+    extendCoin || (payOptions.length === 1 ? `${payOptions[0].asset}/${payOptions[0].network}` : "");
   const [howToOpen, setHowToOpen] = useState(false);
 
   // Ticks once a second so the expiry progress bar animates smoothly. Called
@@ -180,9 +193,12 @@ export function AccessDetailScreen() {
   }
 
   async function handleExtend(tariffCode: string) {
+    const [asset, network] = chosenExtendCoin.split("/");
     setExtendSheetOpen(false);
     try {
-      const response = await termsGate(() => extendAccess.mutateAsync({ tariff_code: tariffCode }));
+      const response = await termsGate(() =>
+        extendAccess.mutateAsync({ tariff_code: tariffCode, asset, network }),
+      );
       cacheInvoice(response.order.public_id, response.invoice);
       navigate(`/checkout/${response.order.public_id}`);
     } catch {
@@ -604,6 +620,35 @@ export function AccessDetailScreen() {
 
       {/* ── extend sheet ── */}
       <Sheet open={extendSheetOpen} onClose={() => setExtendSheetOpen(false)} title={strings.access.extendSheetTitle}>
+        {/* Asked before the plan, not after, because tapping a plan is what places the
+            order — there is no confirm step here to change your mind on. Hidden when
+            there is only one rail configured: that is not a choice. */}
+        {payOptions.length > 1 ? (
+          <div className="mb-3">
+            <p className="mb-1.5 text-[13px] font-medium text-text-2">
+              {strings.catalog.payCoinLabel}
+            </p>
+            <select
+              className="w-full rounded border border-border bg-surface px-3.5 py-3 text-[15px] text-text outline-none focus-visible:border-accent"
+              value={extendCoin}
+              onChange={(e) => setExtendCoin(e.target.value)}
+            >
+              <option value="">{strings.catalog.payCoinPlaceholder}</option>
+              {payOptions.map((m) => (
+                <option key={`${m.asset}/${m.network}`} value={`${m.asset}/${m.network}`}>
+                  {/* The label the server built. Formatting it a second time here is how
+                      the two drift apart. */}
+                  {m.label}
+                </option>
+              ))}
+            </select>
+            {/* A list of plans that cannot be tapped, with nothing saying why, is the exact
+                complaint the buy screen drew. */}
+            {!chosenExtendCoin ? (
+              <p className="mt-1.5 text-[12.5px] text-text-3">{strings.catalog.chooseCoinFirst}</p>
+            ) : null}
+          </div>
+        ) : null}
         <div className="flex flex-col gap-1.5">
           {/* Same gate the catalogue uses, plus a price: the backend refuses to extend on
               a free or quote-only plan ("tariff not valid for extension"), so listing one
@@ -617,7 +662,7 @@ export function AccessDetailScreen() {
                 type="button"
                 className="flex items-center justify-between gap-2 rounded border border-border bg-surface px-3.5 py-3 text-left transition-colors hover:border-accent hover:bg-accent/[.05]"
                 onClick={() => handleExtend(tariff.code)}
-                disabled={extendAccess.isPending}
+                disabled={extendAccess.isPending || !chosenExtendCoin}
               >
                 <span>
                   <b className="block text-[15px] font-semibold text-text">{tariff.name}</b>

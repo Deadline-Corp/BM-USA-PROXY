@@ -237,6 +237,11 @@ export interface SwapResponse {
 
 export interface ExtendBody {
   tariff_code: string;
+  /** Which rail to be quoted in. Omitted, the backend falls back to the first configured
+   *  rail — bitcoin on this account, which is why every extension used to be quoted in
+   *  BTC whatever the buyer paid with the first time. */
+  asset?: string;
+  network?: string;
 }
 
 export interface ConfigBody {

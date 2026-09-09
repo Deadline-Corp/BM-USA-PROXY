@@ -49,6 +49,15 @@ class Order(Base):
         ForeignKey("accesses.id", use_alter=True, name="fk_orders_extends_access_id_accesses"),
     )
     origin: Mapped[str] = mapped_column(Text, nullable=False, server_default="twa")
+    # What this order was actually charged, and under which code. Kept on the order rather
+    # than read back through the redemption: the redemption is released when an order is
+    # cancelled, and a completed order still has to be able to say what it sold for.
+    promo_code_id: Mapped[int | None] = mapped_column(
+        ForeignKey("promo_codes.id", ondelete="SET NULL")
+    )
+    discount_usd: Mapped[float] = mapped_column(
+        Numeric(10, 2), nullable=False, server_default="0"
+    )
     referrer_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     source_post_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("posts.id", use_alter=True, name="fk_orders_source_post_id_posts")

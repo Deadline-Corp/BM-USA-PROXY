@@ -63,6 +63,7 @@ from app.models import (
     PaymentEvent,
     Payout,
     Post,
+    PromoCode,
     ReferralLedger,
     Refund,
     Request,
@@ -4073,3 +4074,142 @@ async def list_audit(
         ],
         "total": total,
     }
+
+
+# ── promo codes ───────────────────────────────────────────────────────────
+#
+# An operator writes a code, a percentage, how long it lives and how many times it may be
+# used, and hands it to somebody. Everything about how it is spent lives in
+# services/promos.py; this is the console's end of it.
+
+
+def _promo_view(promo: PromoCode, used: int) -> dict[str, Any]:
+    return {
+        "id": str(promo.id),
+        "code": promo.code,
+        "percent_off": promo.percent_off,
+        "starts_at": promo.starts_at.isoformat() if promo.starts_at else None,
+        "expires_at": promo.expires_at.isoformat() if promo.expires_at else None,
+        "max_uses": promo.max_uses,
+        "used": used,
+        # What an operator actually wants to know at a glance: is this thing working right
+        # now, and if not, why not.
+        "state": _promo_state(promo, used),
+        "applies_to": promo.applies_to,
+        "note": promo.note,
+        "created_at": promo.created_at.isoformat(),
+    }
+
+
+def _promo_state(promo: PromoCode, used: int) -> str:
+    now = _utcnow()
+    if promo.starts_at is not None and promo.starts_at > now:
+        return "scheduled"
+    if promo.expires_at is not None and promo.expires_at <= now:
+        return "expired"
+    if promo.max_uses is not None and used >= promo.max_uses:
+        return "used_up"
+    return "active"
+
+
+@router.get("/promo-codes")
+async def list_promo_codes(admin: CurrentAdmin, session: DbSession) -> dict[str, Any]:
+    """Every code that has not been deleted, newest first, with its use count."""
+    from app.services import promos
+
+    rows = list(
+        (
+            await session.execute(
+                select(PromoCode)
+                .where(PromoCode.deleted_at.is_(None))
+                .order_by(PromoCode.created_at.desc())
+            )
+        ).scalars().all()
+    )
+    counts = await promos.usage_counts(session, [p.id for p in rows])
+    return {
+        "items": [_promo_view(p, counts.get(p.id, 0)) for p in rows],
+        "total": len(rows),
+    }
+
+
+class PromoCodeBody(BaseModel):
+    code: str
+    percent_off: int = Field(ge=1, le=100)
+    # Both optional — neither set means "from now until somebody deletes it".
+    starts_at: datetime | None = None
+    expires_at: datetime | None = None
+    # None = unlimited. The client asked for 1 to mean personal and a number to mean a
+    # campaign, which is the same field.
+    max_uses: int | None = Field(default=None, ge=1)
+    applies_to: str = "any"
+    note: str | None = None
+
+
+@router.post("/promo-codes", status_code=201)
+async def create_promo_code(
+    body: PromoCodeBody, admin: CurrentAdmin, session: DbSession
+) -> dict[str, Any]:
+    """Create a code. The name is stored upper-cased, so buyers may type it however."""
+    from app.services import promos
+
+    if body.applies_to not in ("purchase", "any"):
+        raise ValidationError("applies_to must be 'purchase' or 'any'")
+    code = promos.normalise(body.code)
+    if not code:
+        raise ValidationError("the code cannot be empty")
+    if (
+        body.expires_at is not None
+        and body.starts_at is not None
+        and body.expires_at <= body.starts_at
+    ):
+        raise ValidationError("the end of the window must come after its start")
+    # A code that expired before it was created is a typo, not a campaign.
+    if body.expires_at is not None and body.expires_at <= _utcnow():
+        raise ValidationError("that expiry is already in the past")
+
+    clash = await session.scalar(
+        select(PromoCode.id).where(PromoCode.code == code, PromoCode.deleted_at.is_(None))
+    )
+    if clash is not None:
+        raise Conflict(f"a promo code called {code} already exists")
+
+    promo = PromoCode(
+        code=code,
+        percent_off=body.percent_off,
+        starts_at=body.starts_at,
+        expires_at=body.expires_at,
+        max_uses=body.max_uses,
+        applies_to=body.applies_to,
+        note=body.note,
+        created_by=admin.id,
+    )
+    session.add(promo)
+    await session.flush()
+    await audit.write(
+        session, admin_id=admin.id, action="promo.create", entity="promo_code",
+        entity_id=promo.id,
+        after={"code": code, "percent_off": body.percent_off, "max_uses": body.max_uses},
+    )
+    return _promo_view(promo, 0)
+
+
+@router.delete("/promo-codes/{promo_id}")
+async def delete_promo_code(
+    promo_id: int, admin: CurrentAdmin, session: DbSession
+) -> dict[str, Any]:
+    """Retire a code. It stops working immediately and leaves the list.
+
+    Marked deleted rather than removed: orders sold under it point at this row, and an
+    operator retiring a spent campaign is not asking to rewrite what it sold. The name
+    becomes free again — the uniqueness index covers living codes only.
+    """
+    promo = await session.get(PromoCode, promo_id)
+    if promo is None or promo.deleted_at is not None:
+        raise NotFound("promo code not found")
+    promo.deleted_at = _utcnow()
+    await audit.write(
+        session, admin_id=admin.id, action="promo.delete", entity="promo_code",
+        entity_id=promo.id, after={"code": promo.code},
+    )
+    return {"status": "deleted", "code": promo.code}

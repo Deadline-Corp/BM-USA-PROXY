@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.logging import log
 from app.models import Access, AccessEvent, ChainCursor, Connection, Invoice, Order, Tariff
-from app.services import ops_alerts
+from app.services import ops_alerts, promos
 from app.services import settings as settings_svc
 from app.services.accesses import next_rotation_at
 from app.services.notifications import enqueue
@@ -284,6 +284,10 @@ async def expire_invoices(session: AsyncSession) -> int:
         # waiting for it would keep phones out of the pool for the grace period after
         # every abandoned checkout.
         await allocator.release_reservations(session, order_id=inv.order_id)
+        # Same reasoning as cancelling: an expired invoice sold nothing, so the promo code
+        # it carried has not been used. Without this a one-use code is spent by a buyer who
+        # opened the checkout and closed the app.
+        await promos.release(session, order_id=inv.order_id)
     return len(invoices)
 
 

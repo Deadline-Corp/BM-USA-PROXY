@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter
@@ -72,6 +73,9 @@ class CreateOrder(BaseModel):
     # How many proxies. Trimmed server-side to what is actually free, so the app asking
     # for ten where seven are left gets an order for seven and is told the number back.
     quantity: int = 1
+    # Optional. Checked and spent inside the same transaction that creates the order,
+    # so a code and an order come into existence together or not at all.
+    promo_code: str | None = None
 
 
 # The buyer picks a chain first and a coin second, so those two need separate labels.
@@ -189,7 +193,7 @@ async def create_order(body: CreateOrder, user: CurrentUser, session: DbSession)
     )
     order, invoice = await orders_svc.create_order(
         session, user=user, tariff_code=body.tariff_code,
-        location_id=body.location_id, carrier=body.carrier,
+        location_id=body.location_id, carrier=body.carrier, promo_code=body.promo_code,
         asset=body.asset, network=body.network, quantity=body.quantity,
     )
     return {
@@ -401,15 +405,73 @@ async def swap(public_id: str, body: SwapBody, user: CurrentUser, session: DbSes
     }
 
 
+class PromoCheck(BaseModel):
+    code: str
+    tariff_code: str
+    quantity: int = 1
+    is_extension: bool = False
+
+
+@router.post("/promo/check")
+async def check_promo(
+    body: PromoCheck, user: CurrentUser, session: DbSession
+) -> dict[str, Any]:
+    """What a code is worth on this order, before anything is created.
+
+    Writes nothing, so the buyer can try a code, see the new total, and change their mind.
+    A rejection comes back as a 422 whose message is meant to be shown to them as it is —
+    "you have already used this promo code" is something they can act on.
+
+    The quote is not a promise: the code is checked again, under a lock, when the order is
+    actually created. Between the two, somebody else can take the last use.
+    """
+    from app.services import promos
+
+    tariff = await session.scalar(
+        select(catalog_svc.Tariff).where(
+            catalog_svc.Tariff.code == body.tariff_code, catalog_svc.Tariff.is_active
+        )
+    )
+    if tariff is None:
+        raise NotFound("plan not found")
+    quantity = max(1, min(int(body.quantity or 1), orders_svc.MAX_QUANTITY))
+    subtotal = Decimal(str(tariff.price_usd)) * quantity
+    discount = await promos.quote(
+        session,
+        code=body.code,
+        user=user,
+        subtotal_usd=subtotal,
+        is_extension=body.is_extension,
+    )
+    return {
+        "code": discount.code.code,
+        "percent_off": discount.percent_off,
+        "subtotal_usd": float(subtotal),
+        "amount_off_usd": float(discount.amount_off_usd),
+        "total_usd": float(discount.total_usd),
+    }
+
+
 class ExtendBody(BaseModel):
     tariff_code: str
+    # Which rail to be quoted in. Omitted, the provider falls back to the first configured
+    # one — which on this account is bitcoin, so every extension was quoted in BTC no
+    # matter what the buyer had paid with the first time. The buy screen has always asked;
+    # this one never did.
+    asset: str | None = None
+    network: str | None = None
+    # A code marked "new purchases only" is refused here rather than quietly honoured —
+    # `create_extension_order` sets `is_extension` before the code is checked.
+    promo_code: str | None = None
 
 
 @router.post("/accesses/{public_id}/extend")
 async def extend(public_id: str, body: ExtendBody, user: CurrentUser, session: DbSession) -> dict[str, Any]:
     access = await accesses_svc.get_owned(session, public_id, user.id)
     order, invoice = await orders_svc.create_extension_order(
-        session, user=user, access=access, tariff_code=body.tariff_code
+        session, user=user, access=access, tariff_code=body.tariff_code,
+        asset=body.asset, network=body.network,
+        promo_code=body.promo_code,
     )
     return {
         "order": {"public_id": str(order.public_id), "status": order.status,

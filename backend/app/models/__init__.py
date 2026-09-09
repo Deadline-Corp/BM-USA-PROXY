@@ -14,6 +14,7 @@ from app.models.content import (
     RequestComment,
 )
 from app.models.onchain import ChainCursor, InvoiceStatusHistory, OnchainDepositLedger
+from app.models.promo import PromoCode, PromoRedemption
 from app.models.referral import Payout, ReferralLedger
 from app.models.system import (
     AppSetting,
@@ -51,6 +52,8 @@ __all__ = [
     "Payout",
     "PaymentEvent",
     "Post",
+    "PromoCode",
+    "PromoRedemption",
     "ReferralLedger",
     "Refund",
     "Request",

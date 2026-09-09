@@ -143,6 +143,7 @@ export const strings = {
     shortfallConfirm: "Continue with {count}",
     payCoinLabel: "Coin",
     payCoinPlaceholder: "Select a coin…",
+    chooseCoinFirst: "Pick a coin to continue",
     payCoinDisabled: "Choose a network first",
     payContinue: "Continue to payment",
     buyContinue: "Continue",
