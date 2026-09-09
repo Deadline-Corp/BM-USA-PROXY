@@ -5,12 +5,12 @@ import { ErrorBoundary } from "./shared/components/ErrorBoundary";
 import "./index.css";
 import { isTyping, shellHeight } from "./shared/lib/viewport";
 
-// ── Telegram viewport ──────────────────────────────────────────────────────
-// 100dvh is unreliable inside the Telegram webview (it can exceed the visible
-// area), which pushes the bottom tab bar out of view. Expand the mini-app to
-// full height on launch and expose Telegram's real stable viewport height as
-// the --tg-vh CSS var so the app shell can size to it. Falls back to 100dvh
-// outside Telegram (dev / bare browser).
+// ── viewport height ────────────────────────────────────────────────────────
+// `100dvh` is unreliable inside the Telegram webview — it can resolve to the largest
+// viewport rather than the current one, which pushes the bottom tab bar out of sight. So
+// the shell sizes to a --tg-vh set from JavaScript, and this expands the mini app to full
+// height on launch so there is a full height to measure. What goes into the number, and
+// why Telegram's own viewport figures are not in it, is in shared/lib/viewport.ts.
 interface TgWebApp {
   ready?: () => void;
   expand?: () => void;
@@ -21,14 +21,13 @@ interface TgWebApp {
 
 document.documentElement.style.setProperty("--tg-vh", "100dvh");
 (function initViewportHeight(): void {
-  // Two sources; which of them applies is decided in shared/lib/viewport.ts, and the rule
-  // there is the whole of this. Telegram's `viewportStableHeight` is stable BY DEFINITION
-  // and ignores the keyboard; `visualViewport.height` is precisely the part the keyboard
-  // is not covering, and is the only one that can lie about the ordinary state of the app.
+  // The rule lives in shared/lib/viewport.ts. Telegram's own viewport numbers are
+  // deliberately NOT part of it any more — see that file. They are still worth listening
+  // for, because a `viewportChanged` is a reliable hint that `innerHeight` just moved.
   const wa = (window as unknown as { Telegram?: { WebApp?: TgWebApp } }).Telegram?.WebApp;
   const apply = () => {
     const h = shellHeight({
-      stable: wa?.viewportStableHeight || wa?.viewportHeight,
+      inner: window.innerHeight,
       visual: window.visualViewport?.height,
       typing: isTyping(document.activeElement),
     });
@@ -72,6 +71,30 @@ document.documentElement.style.setProperty("--tg-vh", "100dvh");
     if (!document.hidden) apply();
   });
   apply();
+
+  // A readout of every number this decision is made from, for when it is wrong on a phone
+  // nobody here is holding. Off unless the URL says `?vp=1`, so it costs a substring test.
+  // Written because the first fix for the Android tab bar was a guess about which source
+  // was lying, and it was the wrong guess.
+  if (window.location.search.includes("vp=1")) {
+    const box = document.createElement("div");
+    box.style.cssText =
+      "position:fixed;left:0;right:0;bottom:0;z-index:2147483647;background:#000c;color:#0f0;" +
+      "font:11px/1.4 monospace;padding:6px 8px;white-space:pre;pointer-events:none";
+    document.body.appendChild(box);
+    const draw = () => {
+      const vv = window.visualViewport;
+      box.textContent = [
+        `--tg-vh ${getComputedStyle(document.documentElement).getPropertyValue("--tg-vh").trim()}`,
+        `inner   ${window.innerHeight}   outer ${window.outerHeight}`,
+        `visual  ${vv ? Math.round(vv.height) : "-"}  offTop ${vv ? Math.round(vv.offsetTop) : "-"}  scale ${vv ? vv.scale : "-"}`,
+        `tg      stable ${wa?.viewportStableHeight ?? "-"}  vp ${wa?.viewportHeight ?? "-"}`,
+        `typing  ${isTyping(document.activeElement)}   dpr ${window.devicePixelRatio}`,
+      ].join(String.fromCharCode(10));
+    };
+    window.setInterval(draw, 250);
+    draw();
+  }
 
   // Shrinking the shell is only half the job. The area left over is shorter, so a field
   // that sat near the bottom is now below it — still on the page, simply out of view, with
