@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import { ErrorBoundary } from "./shared/components/ErrorBoundary";
 import "./index.css";
+import { isTyping, shellHeight } from "./shared/lib/viewport";
 
 // ── Telegram viewport ──────────────────────────────────────────────────────
 // 100dvh is unreliable inside the Telegram webview (it can exceed the visible
@@ -20,25 +21,22 @@ interface TgWebApp {
 
 document.documentElement.style.setProperty("--tg-vh", "100dvh");
 (function initViewportHeight(): void {
-  // Two sources, and the smaller one wins, because neither is right alone:
-  //
-  // * Telegram's `viewportStableHeight` is stable BY DEFINITION — it deliberately
-  //   ignores transient changes, and the on-screen keyboard is exactly that. Size
-  //   to it alone and the app keeps its full height while the keyboard covers the
-  //   bottom third of it: on the Terms screen that hid the email field the person
-  //   had just tapped, and the Accept button below it.
-  // * `visualViewport.height` is precisely the part the keyboard is not covering,
-  //   but it is absent in older webviews.
-  //
-  // The smaller of the two is what can actually be painted on right now.
+  // Two sources; which of them applies is decided in shared/lib/viewport.ts, and the rule
+  // there is the whole of this. Telegram's `viewportStableHeight` is stable BY DEFINITION
+  // and ignores the keyboard; `visualViewport.height` is precisely the part the keyboard
+  // is not covering, and is the only one that can lie about the ordinary state of the app.
   const wa = (window as unknown as { Telegram?: { WebApp?: TgWebApp } }).Telegram?.WebApp;
   const apply = () => {
-    const heights = [
-      wa?.viewportStableHeight || wa?.viewportHeight,
-      window.visualViewport?.height,
-    ].filter((h): h is number => typeof h === "number" && h > 0);
-    if (heights.length === 0) return; // no source — keep the 100dvh fallback
-    document.documentElement.style.setProperty("--tg-vh", `${Math.min(...heights)}px`);
+    const h = shellHeight({
+      stable: wa?.viewportStableHeight || wa?.viewportHeight,
+      visual: window.visualViewport?.height,
+      typing: isTyping(document.activeElement),
+    });
+    // `null` is "no usable source", and it has to WRITE the fallback rather than return:
+    // returning would leave whatever pixel value was set a moment ago, which is the same
+    // stuck-short state this whole function exists to prevent, arrived at from the other
+    // direction.
+    document.documentElement.style.setProperty("--tg-vh", h === null ? "100dvh" : `${h}px`);
     // iOS also scrolls the LAYOUT viewport up when the keyboard opens, which slides
     // the app's own header off the top even though the shell is exactly as tall as
     // what is visible. Nothing here scrolls the window — every scroller in the app
@@ -57,6 +55,22 @@ document.documentElement.style.setProperty("--tg-vh", "100dvh");
   // resizing it, so both events matter.
   window.visualViewport?.addEventListener("resize", apply);
   window.visualViewport?.addEventListener("scroll", apply);
+  // The shell can only shrink while a field has focus, so losing it has to re-measure —
+  // this is what puts the height back on Android, where the keyboard closing does not
+  // reliably announce itself through `visualViewport` at all. Deferred a tick: `focusout`
+  // fires before the `focusin` of whatever was tapped next, and reading the focus in
+  // between would expand the shell for one frame on every hop from field to field.
+  document.addEventListener("focusin", apply);
+  document.addEventListener("focusout", () => window.setTimeout(apply, 0));
+  // Android resizes the window itself rather than only the visual viewport, and a rotation
+  // changes everything. Neither used to be listened for, so a height measured before them
+  // simply stayed.
+  window.addEventListener("resize", apply);
+  window.addEventListener("orientationchange", apply);
+  // Coming back to a backgrounded webview: Telegram may have re-laid it out meanwhile.
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) apply();
+  });
   apply();
 
   // Shrinking the shell is only half the job. The area left over is shorter, so a field
