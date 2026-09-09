@@ -167,6 +167,15 @@ export const strings = {
     usCities: "US cities",
   },
 
+  promo: {
+    prompt: "Have a promo code?",
+    label: "Promo code",
+    placeholder: "e.g. SUMMER",
+    apply: "Apply",
+    appliesToPlan: "Taken off the plan you pick below.",
+    remove: "Remove promo code",
+  },
+
   checkout: {
     title: "Checkout",
     subtitle: "Crypto invoice",

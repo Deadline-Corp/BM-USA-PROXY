@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ShieldCheck,
@@ -37,13 +37,14 @@ import { Num } from "../shared/components/Num";
 import { CopyField } from "../shared/components/CopyField";
 import { CountdownBadge } from "../shared/components/CountdownBadge";
 import { Sheet } from "../shared/components/Sheet";
+import { PromoField } from "../shared/components/PromoField";
 import { CredentialRowsSkeleton } from "../shared/components/Skeleton";
 import { ErrorState } from "../shared/components/ErrorState";
 import { useCopyToClipboard } from "../shared/hooks/useCopyToClipboard";
 import { ApiError } from "../shared/api/client";
 import { formatCityState, formatTimeLeft, maskSecret } from "../shared/lib/format";
 import { cacheInvoice } from "../shared/lib/invoiceCache";
-import type { Carrier, ConfigType } from "../shared/api/types";
+import type { Carrier, ConfigType, PromoQuote } from "../shared/api/types";
 
 const ANY = "any" as const;
 
@@ -62,6 +63,18 @@ export function AccessDetailScreen() {
   // access showing the address it had when the screen opened.
   const detailQuery = useAccessDetail(publicId, { refetchInterval: rotating ? 4000 : undefined });
   const catalogQuery = useCatalog();
+  // The plans an extension can actually be bought on. The backend refuses a free or
+  // quote-only plan here ("tariff not valid for extension"), so listing one offered a
+  // button whose only outcome was an error — Reseller sat in this sheet at $0.00 for
+  // exactly that reason. Lifted out of the sheet because the promo field prices against
+  // the first of them.
+  const extendTariffs = useMemo(
+    () =>
+      (catalogQuery.data?.tariffs ?? []).filter(
+        (t) => t.code !== "trial" && t.kind === "auto" && t.auto_issue && t.price_usd > 0,
+      ),
+    [catalogQuery.data],
+  );
   const methodsQuery = usePaymentMethods();
   // Sorted the same way the buy screen sorts them, so a buyer meets the coins in one
   // order throughout the app rather than two.
@@ -95,6 +108,7 @@ export function AccessDetailScreen() {
   const [extendCoin, setExtendCoin] = useState("");
   const chosenExtendCoin =
     extendCoin || (payOptions.length === 1 ? `${payOptions[0].asset}/${payOptions[0].network}` : "");
+  const [extendPromo, setExtendPromo] = useState<PromoQuote | null>(null);
   const [howToOpen, setHowToOpen] = useState(false);
 
   // Ticks once a second so the expiry progress bar animates smoothly. Called
@@ -197,7 +211,12 @@ export function AccessDetailScreen() {
     setExtendSheetOpen(false);
     try {
       const response = await termsGate(() =>
-        extendAccess.mutateAsync({ tariff_code: tariffCode, asset, network }),
+        extendAccess.mutateAsync({
+          tariff_code: tariffCode,
+          asset,
+          network,
+          promo_code: extendPromo?.code,
+        }),
       );
       cacheInvoice(response.order.public_id, response.invoice);
       navigate(`/checkout/${response.order.public_id}`);
@@ -619,7 +638,16 @@ export function AccessDetailScreen() {
       </Sheet>
 
       {/* ── extend sheet ── */}
-      <Sheet open={extendSheetOpen} onClose={() => setExtendSheetOpen(false)} title={strings.access.extendSheetTitle}>
+      <Sheet
+        open={extendSheetOpen}
+        onClose={() => {
+          setExtendSheetOpen(false);
+          // A code left applied on a sheet nobody bought from would come back on the next
+          // open with no field showing it — the promo field lives inside the sheet.
+          setExtendPromo(null);
+        }}
+        title={strings.access.extendSheetTitle}
+      >
         {/* Asked before the plan, not after, because tapping a plan is what places the
             order — there is no confirm step here to change your mind on. Hidden when
             there is only one rail configured: that is not a choice. */}
@@ -649,14 +677,24 @@ export function AccessDetailScreen() {
             ) : null}
           </div>
         ) : null}
+        {/* Priced against the first extendable plan only to check the code is usable — the
+            saving itself is a percentage, so it is the same whichever plan is tapped, and
+            the rows below carry the money. */}
+        {extendTariffs.length > 0 ? (
+          <PromoField
+            tariffCode={extendTariffs[0].code}
+            isExtension
+            totals={false}
+            onChange={setExtendPromo}
+          />
+        ) : null}
+
         <div className="flex flex-col gap-1.5">
-          {/* Same gate the catalogue uses, plus a price: the backend refuses to extend on
-              a free or quote-only plan ("tariff not valid for extension"), so listing one
-              here offered a button whose only outcome was an error. Reseller sat in this
-              sheet at $0.00 for exactly that reason. */}
-          {catalogQuery.data?.tariffs
-            .filter((t) => t.code !== "trial" && t.kind === "auto" && t.auto_issue && t.price_usd > 0)
-            .map((tariff) => (
+          {extendTariffs.map((tariff) => {
+            const discounted = extendPromo
+              ? discountedUsd(tariff.price_usd, extendPromo.percent_off)
+              : null;
+            return (
               <button
                 key={tariff.code}
                 type="button"
@@ -668,13 +706,36 @@ export function AccessDetailScreen() {
                   <b className="block text-[15px] font-semibold text-text">{tariff.name}</b>
                   <small className="text-[12.5px] text-text-3">{tariff.description}</small>
                 </span>
-                <Num className="text-[16px] font-semibold text-accent">${tariff.price_usd.toFixed(2)}</Num>
+                {/* Both prices when a code is on, because a single lower number is one the
+                    buyer has no way to tell apart from the plan simply being cheaper. */}
+                <span className="flex shrink-0 items-baseline gap-1.5">
+                  {discounted !== null ? (
+                    <Num className="text-[13px] text-text-3 line-through">
+                      ${tariff.price_usd.toFixed(2)}
+                    </Num>
+                  ) : null}
+                  <Num className="text-[16px] font-semibold text-accent">
+                    ${(discounted ?? tariff.price_usd).toFixed(2)}
+                  </Num>
+                </span>
               </button>
-            ))}
+            );
+          })}
         </div>
       </Sheet>
     </div>
   );
+}
+
+/** A price with a percentage taken off, rounded the way the server rounds it.
+ *
+ *  Display only — what is actually charged comes back on the invoice. Matching the
+ *  server's arithmetic here keeps the two from disagreeing by a cent in front of the
+ *  buyer, which reads as a mistake even when the charge is right.
+ */
+function discountedUsd(price: number, percentOff: number): number {
+  const off = Math.round(((price * percentOff) / 100) * 100) / 100;
+  return Math.round((price - off) * 100) / 100;
 }
 
 const AUTO_ROTATE_DEFAULT_MINUTES = 30;

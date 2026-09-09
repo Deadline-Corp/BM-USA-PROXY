@@ -16,13 +16,14 @@ import { Button } from "../shared/components/Button";
 import { Num } from "../shared/components/Num";
 import { TariffCard } from "../shared/components/TariffCard";
 import { Sheet } from "../shared/components/Sheet";
+import { PromoField } from "../shared/components/PromoField";
 import { TariffListSkeleton } from "../shared/components/Skeleton";
 import { ErrorState } from "../shared/components/ErrorState";
 import { EmptyState } from "../shared/components/EmptyState";
 import { ApiError } from "../shared/api/client";
 import { formatCityState, formatUsd } from "../shared/lib/format";
 import { cacheInvoice } from "../shared/lib/invoiceCache";
-import type { Carrier, PaymentMethod, Tariff } from "../shared/api/types";
+import type { Carrier, PaymentMethod, PromoQuote, Tariff } from "../shared/api/types";
 
 const ANY = "any" as const;
 
@@ -62,6 +63,9 @@ export function CatalogScreen() {
   const [payCoin, setPayCoin] = useState<string>("");
   const [quantity, setQuantity] = useState<string>("1");
   const [shortfall, setShortfall] = useState<{ asked: number; available: number } | null>(null);
+  // Held here rather than inside the field: the code has to travel with the order, and
+  // a discount that only ever existed on screen is the failure this state prevents.
+  const [promo, setPromo] = useState<PromoQuote | null>(null);
 
   // One list, grouped by network, rather than a network dropdown feeding a coin dropdown.
   // Two controls to answer what is really one question ("what am I paying with?") is a
@@ -157,6 +161,7 @@ export function CatalogScreen() {
     setOrderError(null);
     setQuantity("1");
     setShortfall(null);
+    setPromo(null);
     // Always opens, even for a free plan on a single rail. The sheet is where the city and
     // carrier are chosen now, so skipping it when there is no payment decision would take
     // the geo choice away entirely — which is what the catalogue dropdowns used to carry.
@@ -183,6 +188,7 @@ export function CatalogScreen() {
             asset: method?.asset,
             network: method?.network,
             quantity: qty,
+            promo_code: promo?.code,
           }),
         // Same resume target as the Buy button: /me can say ToS are accepted while the
         // server disagrees (a new Terms version published mid-session), and this is
@@ -572,6 +578,12 @@ export function CatalogScreen() {
               ))}
             </select>
           </>
+        ) : null}
+
+        {/* Nothing to discount on a free plan, and the field would be one more thing to
+            read past on the one purchase that costs nothing. */}
+        {payingFor && payingFor.price_usd > 0 ? (
+          <PromoField tariffCode={payingFor.code} quantity={wantedQty} onChange={setPromo} />
         ) : null}
 
         {/* Asked for more than exists: say so before taking any money, name the number

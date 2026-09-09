@@ -28,6 +28,8 @@ import type {
   NotificationLogEntry,
   Order,
   Paginated,
+  PromoCode,
+  PromoCodeBody,
   Payout,
   PayoutInstruction,
   PoolLocation,
@@ -375,4 +377,16 @@ export const systemApi = {
       .post<WelcomeImageUploadResult>("/settings/welcome-image", form)
       .then((r) => r.data);
   },
+};
+
+// ---------- Promo codes ----------
+
+export const promoApi = {
+  list: () => apiClient.get<Paginated<PromoCode>>("/promo-codes").then((r) => r.data),
+  create: (body: PromoCodeBody) =>
+    apiClient.post<PromoCode>("/promo-codes", body).then((r) => r.data),
+  // Retires it: stops working, leaves the list, and the orders sold under it keep pointing
+  // at it. The name becomes available again.
+  remove: (id: string) =>
+    apiClient.delete<{ status: string }>(`/promo-codes/${id}`).then((r) => r.data),
 };

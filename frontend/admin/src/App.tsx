@@ -11,6 +11,7 @@ import { PackagesScreen } from "@/screens/PackagesScreen";
 import { TariffsScreen } from "@/screens/TariffsScreen";
 import { OrdersScreen } from "@/screens/OrdersScreen";
 import { ReferralsScreen } from "@/screens/ReferralsScreen";
+import { PromoCodesScreen } from "@/screens/PromoCodesScreen";
 import { LedgerScreen } from "@/screens/LedgerScreen";
 import { WalletsScreen } from "@/screens/WalletsScreen";
 import { BroadcastsScreen } from "@/screens/BroadcastsScreen";
@@ -43,6 +44,7 @@ export function App() {
         <Route path="/ledger" element={<LedgerScreen />} />
         <Route path="/wallets" element={<WalletsScreen />} />
         <Route path="/referrals" element={<ReferralsScreen />} />
+        <Route path="/promo-codes" element={<PromoCodesScreen />} />
         <Route path="/broadcasts" element={<BroadcastsScreen />} />
         <Route path="/publications" element={<PublicationsScreen />} />
         <Route path="/faq" element={<FaqScreen />} />

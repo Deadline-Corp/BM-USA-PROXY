@@ -431,3 +431,12 @@ export function IconEyeOff(props: IconProps) {
     </svg>
   );
 }
+
+export function IconTag(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M20.6 13.4 12.4 21.6a2 2 0 0 1-2.8 0l-7.2-7.2a2 2 0 0 1-.6-1.4V4a2 2 0 0 1 2-2h9a2 2 0 0 1 1.4.6l6.4 6.4a2 2 0 0 1 0 2.8Z" />
+      <circle cx="7.5" cy="7.5" r="1.4" />
+    </svg>
+  );
+}

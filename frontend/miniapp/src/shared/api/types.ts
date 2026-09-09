@@ -111,6 +111,8 @@ export interface CreateOrderBody {
   network?: string;
   /** How many proxies. Trimmed server-side to what is free; the response says how many. */
   quantity?: number;
+  /** Checked again server-side when the order is made — the quote below is not a promise. */
+  promo_code?: string;
 }
 
 export interface OrderStatusResponse {
@@ -242,6 +244,26 @@ export interface ExtendBody {
    *  BTC whatever the buyer paid with the first time. */
   asset?: string;
   network?: string;
+  /** A code marked "new purchases only" is refused here rather than quietly honoured. */
+  promo_code?: string;
+}
+
+export interface PromoCheckBody {
+  code: string;
+  tariff_code: string;
+  quantity?: number;
+  is_extension?: boolean;
+}
+
+/** What a code is worth on this order. A quote, not a reservation: the code is checked
+ *  again under a lock when the order is actually created, and somebody else can take the
+ *  last use in between. */
+export interface PromoQuote {
+  code: string;
+  percent_off: number;
+  subtotal_usd: number;
+  amount_off_usd: number;
+  total_usd: number;
 }
 
 export interface ConfigBody {

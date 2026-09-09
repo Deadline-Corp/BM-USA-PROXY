@@ -54,6 +54,8 @@ const STATUS_TONE_MAP: Record<string, BadgeTone> = {
   scheduled: "accent",
   sent: "success",
   published: "success",
+  // promo codes: 'scheduled' and 'expired' above already cover two of the four
+  used_up: "neutral",
 };
 
 export function toneForStatus(status: string): BadgeTone {

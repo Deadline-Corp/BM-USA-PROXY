@@ -730,3 +730,33 @@ export interface AuditLogEntry {
   action: string;
   created_at: string;
 }
+
+/** Why a code is or is not working right now, decided server-side so the console and the
+ *  checkout cannot disagree about it. */
+export type PromoState = "active" | "scheduled" | "expired" | "used_up";
+
+export interface PromoCode {
+  id: string;
+  code: string;
+  percent_off: number;
+  starts_at: string | null;
+  expires_at: string | null;
+  /** null = unlimited. 1 = personal, 50 = a campaign. */
+  max_uses: number | null;
+  used: number;
+  state: PromoState;
+  /** "purchase" = new purchases only, "any" = extensions too. */
+  applies_to: "purchase" | "any";
+  note: string | null;
+  created_at: string;
+}
+
+export interface PromoCodeBody {
+  code: string;
+  percent_off: number;
+  starts_at?: string | null;
+  expires_at?: string | null;
+  max_uses?: number | null;
+  applies_to: "purchase" | "any";
+  note?: string | null;
+}
