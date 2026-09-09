@@ -199,8 +199,13 @@ export function CatalogScreen() {
       navigate(`/checkout/${response.order.public_id}`);
     } catch (error) {
       if (error instanceof ApiError) {
-        if (error.status === 409) setOrderError(strings.errors.soldOut);
-        else if (error.status === 422) setOrderError(strings.errors.trialUsed);
+        // Both of these are the server's own words, and both have to be: the unpaid-order
+        // allowance is a number the operator sets, and a 422 is now anything from a spent
+        // trial to a promo code somebody else took between the quote and this call.
+        // Hardcoding either one here told the buyer something that was not true.
+        if (error.body?.error?.code === "too_many_open_orders") setOrderError(error.message);
+        else if (error.status === 409) setOrderError(strings.errors.soldOut);
+        else if (error.status === 422) setOrderError(error.message || strings.errors.trialUsed);
         else if (error.status === 503) setOrderError(strings.errors.paymentsUnconfigured);
         else if (error.status !== 428) setOrderError(error.message);
       } else {

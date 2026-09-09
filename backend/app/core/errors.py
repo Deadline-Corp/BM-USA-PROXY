@@ -66,6 +66,17 @@ class Conflict(DomainError):
     status = 409
 
 
+class TooManyOpenOrders(Conflict):
+    """Too many unpaid orders already open for this customer.
+
+    A 409 like "sold out", and the mini app used to render it as one — which told a buyer
+    the pool was empty when the actual problem was their own three unpaid invoices. The
+    distinct ``code`` is what lets the checkout say something they can act on.
+    """
+
+    code = "too_many_open_orders"
+
+
 class RateLimited(DomainError):
     """Too many requests."""
 

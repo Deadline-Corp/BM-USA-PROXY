@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -26,6 +26,19 @@ function dayToIso(value: string, edge: "start" | "end"): string | null {
   return at.toISOString();
 }
 
+/** Today, as the value an <input type="date"> holds.
+ *
+ *  Built from the operator's own calendar, not from an ISO instant: the browser is the
+ *  only place that knows what day it is where they are sitting, and a UTC-derived "today"
+ *  is yesterday for half the world. Date strings in this format compare correctly as
+ *  strings, so every check below is a plain <.
+ */
+function todayLocal(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 const promoSchema = z
   .object({
     code: z.string().trim().min(1, "Code is required"),
@@ -39,6 +52,25 @@ const promoSchema = z
     note: z.string(),
   })
   .superRefine((v, ctx) => {
+    // A code cannot start before it exists. The client dated one 1 September on the 9th
+    // and it went live backdated — nothing in the form said no, and the server's floor is
+    // deliberately a day wide because it does not know the operator's timezone. This is
+    // the check that actually knows what day it is here.
+    const today = todayLocal();
+    if (v.starts_at && v.starts_at < today) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["starts_at"],
+        message: "Cannot start in the past",
+      });
+    }
+    if (v.expires_at && v.expires_at < today) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["expires_at"],
+        message: "Already in the past",
+      });
+    }
     if (v.max_uses !== "") {
       const n = Number(v.max_uses);
       if (!Number.isInteger(n) || n < 1) {
@@ -94,6 +126,10 @@ export function PromoFormModal({ open, onClose }: PromoFormModalProps) {
   useEffect(() => {
     if (open) reset(EMPTY);
   }, [open, reset]);
+
+  // Recomputed on every open rather than once per mount: the console is a tab somebody
+  // leaves open, and a `min` fixed at the day it was loaded starts refusing today.
+  const today = useMemo(() => todayLocal(), [open]);
 
   async function onSubmit(values: PromoForm) {
     try {
@@ -156,8 +192,11 @@ export function PromoFormModal({ open, onClose }: PromoFormModalProps) {
           />
         </div>
         <div className="grid grid-cols-2 gap-4">
+          {/* `min` so the picker will not offer a past day at all — the validation above
+              is for a date typed straight into the field, which the browser still allows. */}
           <Input
             type="date"
+            min={today}
             label={strings.promos.startsAt}
             hint={strings.promos.startsAtHint}
             error={errors.starts_at?.message}
@@ -165,6 +204,7 @@ export function PromoFormModal({ open, onClose }: PromoFormModalProps) {
           />
           <Input
             type="date"
+            min={today}
             label={strings.promos.expiresAt}
             hint={strings.promos.expiresAtHint}
             error={errors.expires_at?.message}

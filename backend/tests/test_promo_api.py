@@ -251,3 +251,147 @@ async def test_a_cancelled_order_hands_the_use_back(client: AsyncClient) -> None
     assert listed[0]["used"] == 0
     assert listed[0]["state"] == "active"
     assert listed[0]["id"] == created["id"]
+
+
+async def test_a_start_date_already_gone_is_refused(client: AsyncClient) -> None:
+    """The client made a code dated 1 September on the 9th and it went live backdated.
+
+    The floor here is a day wide on purpose: this process does not know what date it is
+    where the operator is sitting, and their local midnight today can be most of a day
+    behind UTC. Refusing anything before *today* is the console's job, against the
+    operator's own calendar — see PromoFormModal. This catches the rest.
+    """
+    r = await client.post(
+        "/api/admin/promo-codes",
+        json={
+            "code": "BACKDATED",
+            "percent_off": 10,
+            "applies_to": "any",
+            "starts_at": (datetime.now(UTC) - timedelta(days=8)).isoformat(),
+        },
+    )
+    assert r.status_code == 422, r.text
+    assert "past" in r.json()["error"]["message"]
+
+
+async def test_a_start_date_of_today_is_fine_whatever_the_operators_timezone(
+    client: AsyncClient,
+) -> None:
+    """Local midnight today is in the past in UTC for most of the world.
+
+    A naive "starts_at must not be before now" would have refused every code an operator
+    east of Greenwich created for today — which is the ordinary case, not the edge one.
+    """
+    r = await client.post(
+        "/api/admin/promo-codes",
+        json={
+            "code": "TODAY",
+            "percent_off": 10,
+            "applies_to": "any",
+            "starts_at": (datetime.now(UTC) - timedelta(hours=14)).isoformat(),
+        },
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["state"] == "active"
+
+
+# ── who used what ─────────────────────────────────────────────────────────
+
+
+async def test_the_usage_list_says_who_bought_what_with_which_code(
+    client: AsyncClient,
+) -> None:
+    await _create(client, code="SUMMER", percent_off=20)
+    await _accept_terms(client)
+    order = await client.post(
+        "/api/twa/orders", json={"tariff_code": "daily", "quantity": 2, "promo_code": "SUMMER"}
+    )
+    assert order.status_code == 200, order.text
+
+    r = await client.get("/api/admin/promo-usage")
+    assert r.status_code == 200, r.text
+    rows = r.json()["items"]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["code"] == "SUMMER"
+    assert row["percent_off"] == 20
+    assert row["client"] == "@promobuyer"
+    # The plan's own name, not its code — "Daily" is what the operator sells.
+    assert row["plan"] == "Daily"
+    assert row["quantity"] == 2
+    assert row["discount_usd"] == 4.0
+    assert row["amount_usd"] == 16.0
+    assert row["is_extension"] is False
+    assert row["code_deleted"] is False
+    assert row["status"] == "awaiting_payment"
+
+
+async def test_a_cancelled_order_stays_in_the_history_even_though_the_use_came_back(
+    client: AsyncClient,
+) -> None:
+    """Why this list is read off orders rather than off redemptions.
+
+    Cancelling deletes the redemption row — that deletion is what hands the use back to the
+    code. A history built on redemptions would therefore lose every attempt that did not
+    become a sale, which is precisely the half an operator asking "who has been using this
+    code" is trying to find.
+    """
+    await _create(client, code="ONESHOT", percent_off=10, max_uses=1)
+    await _accept_terms(client)
+    order = await client.post(
+        "/api/twa/orders", json={"tariff_code": "daily", "promo_code": "ONESHOT"}
+    )
+    assert order.status_code == 200, order.text
+    public_id = order.json()["order"]["public_id"]
+    assert (await client.post(f"/api/twa/orders/{public_id}/cancel")).status_code == 200
+
+    # The use is back on the code…
+    assert (await _codes(client))[0]["used"] == 0
+    # …and the attempt is still on the record.
+    rows = (await client.get("/api/admin/promo-usage")).json()["items"]
+    assert len(rows) == 1
+    assert rows[0]["code"] == "ONESHOT"
+    assert rows[0]["status"] == "cancelled"
+
+
+async def test_a_retired_codes_sales_survive_it_and_say_so(client: AsyncClient) -> None:
+    created = await _create(client, code="GONE", percent_off=50)
+    await _accept_terms(client)
+    assert (
+        await client.post("/api/twa/orders", json={"tariff_code": "daily", "promo_code": "GONE"})
+    ).status_code == 200
+    assert (await client.delete(f"/api/admin/promo-codes/{created['id']}")).status_code == 200
+
+    assert await _codes(client) == []
+    rows = (await client.get("/api/admin/promo-usage")).json()["items"]
+    assert len(rows) == 1
+    assert rows[0]["code"] == "GONE"
+    # Marked, because an operator who cannot find the code in the list above would
+    # otherwise read the row as a mistake.
+    assert rows[0]["code_deleted"] is True
+
+
+async def test_the_usage_list_can_be_narrowed_to_one_code(client: AsyncClient) -> None:
+    await _create(client, code="ALPHA", percent_off=10)
+    await _create(client, code="BETA", percent_off=10)
+    await _accept_terms(client)
+    for code in ("ALPHA", "BETA"):
+        assert (
+            await client.post(
+                "/api/twa/orders", json={"tariff_code": "daily", "promo_code": code}
+            )
+        ).status_code == 200
+
+    everything = (await client.get("/api/admin/promo-usage")).json()
+    assert everything["total"] == 2
+
+    # Lower case, because an operator types what a client said, not what is stored.
+    only_beta = (await client.get("/api/admin/promo-usage", params={"code": "beta"})).json()
+    assert only_beta["total"] == 1
+    assert only_beta["items"][0]["code"] == "BETA"
+
+
+async def test_orders_without_a_code_stay_out_of_it(client: AsyncClient) -> None:
+    await _accept_terms(client)
+    assert (await client.post("/api/twa/orders", json={"tariff_code": "daily"})).status_code == 200
+    assert (await client.get("/api/admin/promo-usage")).json() == {"items": [], "total": 0}

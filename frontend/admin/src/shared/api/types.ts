@@ -751,6 +751,29 @@ export interface PromoCode {
   created_at: string;
 }
 
+/** One order that carried a code. Read off orders, not off redemptions — a cancelled
+ *  order gives its use back by deleting the redemption, and the operator still wants to
+ *  see that it happened. */
+export interface PromoUsage {
+  order_number: number;
+  order_public_id: string;
+  created_at: string;
+  client: string;
+  user_id: string;
+  code: string;
+  percent_off: number | null;
+  /** The campaign has since been retired; the sale it made stands. */
+  code_deleted: boolean;
+  discount_usd: number;
+  amount_usd: number;
+  /** The plan's own name — "Daily", "Weekly", "Monthly". */
+  plan: string;
+  tariff_code: string;
+  quantity: number;
+  is_extension: boolean;
+  status: string;
+}
+
 export interface PromoCodeBody {
   code: string;
   percent_off: number;

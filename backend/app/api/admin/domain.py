@@ -3708,6 +3708,7 @@ _SETTINGS_WHITELIST: frozenset[str] = frozenset(
         "referral_hold_days",
         "referral_min_payout_usd",
         "invoice_ttl_minutes",
+        "max_open_orders_per_user",
         "rotation_cooldown_sec",
         "reboot_cooldown_sec",
         "pool_low_watermark",
@@ -4167,6 +4168,14 @@ async def create_promo_code(
     # A code that expired before it was created is a typo, not a campaign.
     if body.expires_at is not None and body.expires_at <= _utcnow():
         raise ValidationError("that expiry is already in the past")
+    # And neither is one that started before it existed. The client made a code dated
+    # 1 September on the 9th and it went live backdated, which is not a thing a campaign
+    # can mean. The floor is a day wide on purpose: this process has no idea what date it
+    # is where the operator is sitting, and their local midnight today can be most of a day
+    # behind UTC. The console refuses anything before today against the operator's own
+    # calendar, which is the only place that knows it; this catches everything else.
+    if body.starts_at is not None and body.starts_at < _utcnow() - timedelta(days=1):
+        raise ValidationError("that start date is already in the past")
 
     clash = await session.scalar(
         select(PromoCode.id).where(PromoCode.code == code, PromoCode.deleted_at.is_(None))
@@ -4192,6 +4201,90 @@ async def create_promo_code(
         after={"code": code, "percent_off": body.percent_off, "max_uses": body.max_uses},
     )
     return _promo_view(promo, 0)
+
+
+@router.get("/promo-usage")
+async def list_promo_usage(
+    admin: CurrentAdmin,
+    session: DbSession,
+    code: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Every order that carried a promo code — who, when, which code, what they bought.
+
+    Read off `orders`, not off `promo_redemptions`. A redemption row is deleted when its
+    order is cancelled or expires — that deletion is what hands the use back to the code —
+    so a history built on it would silently drop every attempt that did not become a sale,
+    which is half of what an operator asking "who has been using this code" wants to see.
+    The order keeps its own `promo_code_id` and `discount_usd` for good, including after
+    the code itself has been deleted, so this list survives a retired campaign.
+    """
+    stmt = select(Order).where(Order.promo_code_id.is_not(None))
+    count_stmt = (
+        select(func.count()).select_from(Order).where(Order.promo_code_id.is_not(None))
+    )
+    if code and code.strip():
+        # Matched on the code's name rather than its id: an operator arrives here holding
+        # the word a client quoted at them, not a database key. Deleted codes included —
+        # their orders are exactly what somebody is looking for after a campaign ends.
+        wanted = select(PromoCode.id).where(PromoCode.code == code.strip().upper())
+        stmt = stmt.where(Order.promo_code_id.in_(wanted))
+        count_stmt = count_stmt.where(Order.promo_code_id.in_(wanted))
+
+    # id as the tiebreaker, same as every other list here: orders written in the same
+    # second share created_at, and without it rows shuffle between pages.
+    stmt = stmt.order_by(Order.created_at.desc(), Order.id.desc())
+    limit, offset = _page(limit, offset)
+    total = int(await session.scalar(count_stmt) or 0)
+    rows = list((await session.execute(stmt.limit(limit).offset(offset))).scalars().all())
+
+    users = await _user_display_map(session, [o.user_id for o in rows])
+    promos_by_id = {
+        p.id: p
+        for p in (
+            await session.execute(
+                select(PromoCode).where(
+                    PromoCode.id.in_({o.promo_code_id for o in rows if o.promo_code_id})
+                )
+            )
+        ).scalars().all()
+    }
+    tariff_rows = (
+        await session.execute(
+            select(Tariff.id, Tariff.name).where(
+                Tariff.id.in_({o.tariff_id for o in rows if o.tariff_id})
+            )
+        )
+    ).all()
+    tariffs_by_id: dict[int, str] = {int(tid): str(name) for tid, name in tariff_rows}
+
+    items = []
+    for o in rows:
+        promo = promos_by_id.get(o.promo_code_id) if o.promo_code_id else None
+        items.append(
+            {
+                "order_number": o.id,
+                "order_public_id": str(o.public_id),
+                "created_at": o.created_at.isoformat(),
+                "client": users.get(o.user_id, "—"),
+                "user_id": str(o.user_id),
+                # A code deleted after the sale still names itself here; only a promo row
+                # removed outright would not, and nothing removes them outright.
+                "code": promo.code if promo else "—",
+                "percent_off": promo.percent_off if promo else None,
+                "code_deleted": bool(promo and promo.deleted_at is not None),
+                "discount_usd": float(o.discount_usd or 0),
+                "amount_usd": float(o.amount_usd),
+                # What they actually bought, in the words the plan is sold under.
+                "plan": tariffs_by_id.get(o.tariff_id) or o.tariff_code,
+                "tariff_code": o.tariff_code,
+                "quantity": o.quantity,
+                "is_extension": bool(o.is_extension),
+                "status": o.status,
+            }
+        )
+    return {"items": items, "total": total}
 
 
 @router.delete("/promo-codes/{promo_id}")

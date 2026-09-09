@@ -9,6 +9,7 @@ import { TableSkeleton } from "@/shared/components/Skeleton";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { IconPlus, IconTrash } from "@/shared/components/icons";
 import { PromoFormModal } from "@/screens/promos/PromoFormModal";
+import { PromoUsagePanel } from "@/screens/promos/PromoUsagePanel";
 import { usePromoCodes, useDeletePromoCode } from "@/shared/hooks/usePromos";
 import { useToast } from "@/shared/components/Toast";
 import { apiErrorMessage } from "@/shared/api/client";
@@ -147,6 +148,11 @@ export function PromoCodesScreen() {
           </div>
         )}
       </Panel>
+
+      {/* Below the codes, not on a screen of its own: "who used it" is the question an
+          operator asks while looking at the code, and a second nav entry for it would be
+          a place nobody thinks to go. */}
+      <PromoUsagePanel codes={rows} />
 
       <PromoFormModal open={formOpen} onClose={() => setFormOpen(false)} />
 

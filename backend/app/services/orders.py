@@ -6,7 +6,7 @@ import contextlib
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import (
@@ -15,6 +15,7 @@ from app.core.errors import (
     PaymentsUnconfigured,
     ProvisioningError,
     TermsNotAccepted,
+    TooManyOpenOrders,
     ValidationError,
 )
 from app.core.logging import log
@@ -162,6 +163,65 @@ MAX_QUANTITY = 50
 _RESERVATION_GRACE = timedelta(minutes=15)
 
 
+DEFAULT_MAX_OPEN_ORDERS = 3
+
+# The statuses `maintenance.expire_invoices` will still act on. Anything outside them has
+# already been settled one way or the other.
+_LIVE_INVOICE_STATUSES = ("created", "pending", "confirming")
+
+
+async def open_order_count(session: AsyncSession, user_id: int) -> int:
+    """Unpaid orders this customer is holding right now.
+
+    Only the ones the expiry sweep would not already have taken. An order whose invoice
+    has run out is dead the moment the clock passes it, but `expire_invoices` is a cron
+    and marks it whenever it next runs — counting raw `awaiting_payment` rows would refuse
+    a customer over invoices that had lapsed minutes ago and were merely waiting to be
+    written down. The predicate below is that sweep's own, inverted, which is the only way
+    the two can agree about what "still open" means.
+    """
+    return int(
+        await session.scalar(
+            select(func.count())
+            .select_from(Order)
+            .join(Invoice, Invoice.order_id == Order.id)
+            .where(
+                Order.user_id == user_id,
+                Order.status == "awaiting_payment",
+                Invoice.status.in_(_LIVE_INVOICE_STATUSES),
+                # A deposit already in flight outlives its deadline — the watcher finalises
+                # it — so it is open however late it is.
+                or_(Invoice.expires_at > _utcnow(), Invoice.matched_txid.is_not(None)),
+            )
+        )
+        or 0
+    )
+
+
+async def guard_open_orders(session: AsyncSession, user: User) -> None:
+    """Refuse a customer who is already sitting on their allowance of unpaid orders.
+
+    Every unpaid order holds its phones off the shelf until the invoice lapses, so without
+    a ceiling one person empties the catalogue for everyone else at no cost — the audit
+    finding of 2026-08-22. The number is the operator's (Settings → "Unpaid orders allowed
+    per client"), because the right answer depends on how the client actually sells; 0
+    turns it off for an operator who would rather not have one.
+
+    Call under the per-user advisory lock: this reads a count and then decides, and two
+    checkouts firing together would both read the old one.
+    """
+    limit = int(
+        await settings_svc.get(session, "max_open_orders_per_user", DEFAULT_MAX_OPEN_ORDERS)
+    )
+    if limit <= 0:
+        return
+    if await open_order_count(session, user.id) >= limit:
+        raise TooManyOpenOrders(
+            f"you already have {limit} unpaid "
+            f"{'order' if limit == 1 else 'orders'} — pay or cancel one before starting another"
+        )
+
+
 async def create_order(
     session: AsyncSession,
     *,
@@ -196,9 +256,19 @@ async def create_order(
     if tariff is None or tariff.kind != "auto" or not tariff.auto_issue:
         raise Conflict("tariff is not available for self-service purchase")
 
-    # trial / per-user limit — advisory lock to serialize concurrent attempts
+    # One customer at a time, for every plan rather than only the capped ones. Both checks
+    # below read a count and then decide on it, and two checkouts fired together would each
+    # read the count from before the other.
+    await session.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": user.id})
+
+    # A free plan can never become an unpaid order — it goes straight to paid — so the
+    # allowance below has nothing to say about it, and refusing a trial over three unpaid
+    # invoices would be refusing it for a reason that is not true.
+    if float(tariff.price_usd) > 0:
+        await guard_open_orders(session, user)
+
+    # trial / per-user limit
     if tariff.max_per_user is not None:
-        await session.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": user.id})
         if tariff.code == "trial":
             if not await trial_available(session, user):
                 raise ValidationError("trial already used")
@@ -399,6 +469,12 @@ async def create_extension_order(
     # the payment tick. Reject at the source.
     if access.status not in ("active", "expiring"):
         raise Conflict("this access can no longer be extended; buy a new one")
+
+    # Extensions cost money and leave an unpaid invoice exactly like a purchase does, so
+    # they are inside the same allowance. Leaving them out would have made Extend the way
+    # around it.
+    await session.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": user.id})
+    await guard_open_orders(session, user)
 
     order = Order(
         user_id=user.id,

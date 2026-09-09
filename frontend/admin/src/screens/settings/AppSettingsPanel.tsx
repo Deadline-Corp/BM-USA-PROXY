@@ -32,6 +32,10 @@ const SETTING_LABELS: Record<string, string> = {
   referral_min_payout_usd: strings.referrals.minPayoutUsd,
   referral_hold_days: strings.referrals.holdDays,
   invoice_ttl_minutes: "Invoice lifetime (minutes)",
+  // How many unpaid orders one client may hold at once. Each one keeps its phones off
+  // the shelf until the invoice lapses, so this is what stops a single person emptying
+  // the catalogue for everybody else without paying. 0 turns the limit off.
+  max_open_orders_per_user: "Unpaid orders allowed per client",
   rotation_cooldown_sec: "IP rotation cooldown (seconds)",
   // Longer than the rotation one by design: rotation redials the data connection and
   // the port is back in seconds, a reboot takes the phone off the network entirely.

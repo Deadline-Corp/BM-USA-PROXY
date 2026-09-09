@@ -220,8 +220,13 @@ export function AccessDetailScreen() {
       );
       cacheInvoice(response.order.public_id, response.invoice);
       navigate(`/checkout/${response.order.public_id}`);
-    } catch {
-      // termsGate already redirected on 428; other errors surface via extendAccess.isError below.
+    } catch (e) {
+      // The sheet is already closed by this point, so an error nobody shows leaves the
+      // screen looking as though Extend simply did nothing — which is what happened
+      // before this, because the "surfaces via extendAccess.isError" this used to promise
+      // was never rendered anywhere. 428 is the Terms gate and has already navigated away.
+      if (e instanceof ApiError && e.status !== 428) showToast(e.message, "error");
+      else if (!(e instanceof ApiError)) showToast(strings.errors.generic, "error");
     }
   }
 

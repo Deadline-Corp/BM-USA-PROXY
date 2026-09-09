@@ -30,6 +30,7 @@ import type {
   Paginated,
   PromoCode,
   PromoCodeBody,
+  PromoUsage,
   Payout,
   PayoutInstruction,
   PoolLocation,
@@ -389,4 +390,6 @@ export const promoApi = {
   // at it. The name becomes available again.
   remove: (id: string) =>
     apiClient.delete<{ status: string }>(`/promo-codes/${id}`).then((r) => r.data),
+  usage: (params: ListParams) =>
+    apiClient.get<Paginated<PromoUsage>>("/promo-usage", { params }).then((r) => r.data),
 };

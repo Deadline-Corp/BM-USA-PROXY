@@ -92,6 +92,12 @@ def default_settings(tos_version: int = 1) -> dict[str, object]:
         # minute or two, so a short cooldown would let somebody keep their own proxy
         # down by pressing a button — and keep an operator's phone down from the console.
         "reboot_cooldown_sec": 600,
+        # How many unpaid orders one customer may hold at once. Every unpaid order takes
+        # its phones off the shelf for the length of the invoice, so without a ceiling one
+        # person can empty the catalogue for everybody else without paying anything —
+        # found by the security audit 2026-08-22. Three is enough for somebody buying in
+        # batches and far short of a pool. 0 turns the limit off.
+        "max_open_orders_per_user": 3,
         "pool_low_watermark": 10,
         # How often the low-stock check looks. The job itself runs every minute and
         # returns early until this has elapsed.
