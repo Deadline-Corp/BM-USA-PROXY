@@ -133,7 +133,10 @@ _AVAILABILITY_SQL = text(
            count(*) AS stocked
     FROM connections c
     JOIN locations l ON l.id = c.location_id
-    WHERE c.is_sellable AND l.is_active
+    -- A phone the client removed from their iproxy account cannot put a city on the menu.
+    -- It never counted as free (that predicate wants `online`), but a city whose only
+    -- phone was deleted stayed on the catalogue reading "Sold out" forever.
+    WHERE c.is_sellable AND l.is_active AND c.absent_since IS NULL
     GROUP BY l.id, l.city, l.state_code, c.carrier
     ORDER BY l.city
     """  # noqa: S608

@@ -283,13 +283,68 @@ async def test_a_phone_deleted_in_iproxy_stops_being_sold(session) -> None:
     assert report["gone"] == 1
     assert row.online_status == "offline", "the allocator only takes phones that are online"
     assert row.external_access_count == 0, "there is no phone left for anyone to be holding"
-    assert row.health_note and "iproxy" in row.health_note.lower()
+    # The fact has a column now. It used to be a sentence in `health_note`, which nothing
+    # could filter on without matching prose — so the console went on listing the phone,
+    # and the client counted 21 there against 19 in their account.
+    assert row.absent_since is not None
     # Not deleted, and the operator's own flag is left alone — accesses and ledger rows
     # point at this row, and `is_sellable` is theirs to set.
     assert row.is_sellable is True
 
     kept = await session.scalar(select(Connection).where(Connection.iproxy_connection_id == "keep"))
     assert kept is not None and kept.online_status == "online"
+
+
+async def test_a_phone_that_comes_back_is_stock_again(session) -> None:
+    """Removed by mistake, or moved between accounts, and then returned.
+
+    Without this the row stays hidden from the console while the phone reports online and
+    the allocator is willing to sell it — stock that exists and nobody can see. Worse than
+    the bug this whole mechanism is for.
+    """
+    stub = _StubIproxy([_conn("keep", "Miami"), _conn("wanderer", "Chicago")])
+    await sync_pool(session, stub)
+    await session.flush()
+
+    stub.connections = [_conn("keep", "Miami")]
+    await sync_pool(session, stub)
+    await session.flush()
+    row = await session.scalar(
+        select(Connection).where(Connection.iproxy_connection_id == "wanderer")
+    )
+    assert row is not None and row.absent_since is not None
+
+    stub.connections = [_conn("keep", "Miami"), _conn("wanderer", "Chicago")]
+    report = await sync_pool(session, stub)
+    await session.flush()
+    await session.refresh(row)
+
+    assert report["returned"] == 1
+    assert row.absent_since is None
+    assert row.online_status == "online"
+
+
+async def test_the_first_time_it_went_missing_is_the_time_that_is_kept(session) -> None:
+    """Three passes over a phone that is still gone must not keep resetting the clock —
+    "since when" is the question an operator asks, and an answer that is always "a minute
+    ago" is no answer."""
+    stub = _StubIproxy([_conn("keep", "Miami"), _conn("gone", "Chicago")])
+    await sync_pool(session, stub)
+    await session.flush()
+
+    stub.connections = [_conn("keep", "Miami")]
+    first = await sync_pool(session, stub)
+    await session.flush()
+    row = await session.scalar(select(Connection).where(Connection.iproxy_connection_id == "gone"))
+    assert row is not None
+    stamped = row.absent_since
+    assert first["gone"] == 1 and stamped is not None
+
+    second = await sync_pool(session, stub)
+    await session.flush()
+    await session.refresh(row)
+    assert second["gone"] == 0, "already counted; a second pass has found nothing new"
+    assert row.absent_since == stamped
 
 
 async def test_an_empty_listing_cannot_take_the_whole_pool_offline(session) -> None:

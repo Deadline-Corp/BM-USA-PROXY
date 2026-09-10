@@ -16,7 +16,7 @@ from app.api.admin.domain import _search_terms
 from app.core.config import settings
 from app.core.redis import redis_client
 from app.main import app
-from app.models import AuditLog, Payout, User
+from app.models import AuditLog, Connection, Payout, User
 from httpx import ASGITransport, AsyncClient
 from scripts.seed import (
     seed_admin,
@@ -563,3 +563,70 @@ async def test_orders_carry_their_plan_and_quantity(engine, client: AsyncClient)
     assert len(rows) == 1
     assert rows[0]["tariff_code"] == "daily"
     assert rows[0]["quantity"] == 3
+
+
+# ── phones the client removed from their iproxy account ───────────────────
+#
+# Reported 2026-09-10: the console listed 21 connections while the account held 19. The
+# two extra were phones the client had deleted weeks earlier — the sync had noticed and
+# marked them, and the pool screen went on showing them anyway.
+
+
+async def _absent_ids(c: AsyncClient, **params) -> set[str]:
+    r = await c.get("/api/admin/connections", params={"limit": 200, **params})
+    assert r.status_code == 200, r.text
+    return {row["external_id"] for row in r.json()["items"]}
+
+
+async def test_a_phone_removed_from_iproxy_leaves_the_pool_screen(
+    client: AsyncClient, engine
+) -> None:
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with maker() as s:
+        row = await s.scalar(select(Connection).order_by(Connection.id).limit(1))
+        assert row is not None
+        target = row.iproxy_connection_id
+        row.absent_since = datetime.now(UTC) - timedelta(days=3)
+        await s.commit()
+
+    listed = await _absent_ids(client)
+    assert target not in listed, "a phone that is not in the account is not part of the pool"
+    assert listed, "and the rest of the pool is untouched"
+
+
+async def test_the_removed_ones_are_still_reachable_on_purpose(
+    client: AsyncClient, engine
+) -> None:
+    """Hidden, not deleted. Orders and ledger rows point at these, and an operator looking
+    for a phone they remember has to be able to find out what happened to it."""
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with maker() as s:
+        row = await s.scalar(select(Connection).order_by(Connection.id).limit(1))
+        assert row is not None
+        target = row.iproxy_connection_id
+        row.absent_since = datetime.now(UTC) - timedelta(days=3)
+        await s.commit()
+
+    only_absent = await _absent_ids(client, absent="true")
+    assert only_absent == {target}
+
+    r = await client.get("/api/admin/connections", params={"absent": "true", "limit": 200})
+    assert r.json()["items"][0]["absent_since"] is not None
+
+
+async def test_the_pool_counters_stop_counting_a_phone_that_is_gone(
+    client: AsyncClient, engine
+) -> None:
+    """It was landing in `unavailable`, which made the pool look both bigger and sicker
+    than it is — the operator reads that number as "phones needing attention"."""
+    before = (await client.get("/api/admin/pool/summary")).json()
+
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with maker() as s:
+        row = await s.scalar(select(Connection).order_by(Connection.id).limit(1))
+        assert row is not None
+        row.absent_since = datetime.now(UTC)
+        await s.commit()
+
+    after = (await client.get("/api/admin/pool/summary")).json()
+    assert after["slots_total"] == before["slots_total"] - 1

@@ -95,6 +95,11 @@ class Connection(Base):
     last_online_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     health_note: Mapped[str | None] = mapped_column(Text)
+    # When this phone stopped being listed in the iproxy account, or NULL while it is
+    # still there. Set and cleared by the sync, and the only thing that decides whether a
+    # row belongs on the pool screen: a phone the client deleted in iproxy is not part of
+    # their pool, however much history points at its row here.
+    absent_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Proxy-accesses that exist on this phone in iproxy but were not issued by us —
     # someone created them straight in the iproxy console. Such a phone is occupied even
     # though our own tables show it free, which is exactly the mismatch the client hit on
@@ -126,6 +131,11 @@ class Connection(Base):
             "reserved_order_id IS NULL OR reserved_until IS NOT NULL", name="reservation_dated"
         ),
         Index("ix_connections_pool", "is_sellable", "online_status", "location_id"),
+        Index(
+            "ix_connections_absent",
+            "absent_since",
+            postgresql_where=text("absent_since IS NOT NULL"),
+        ),
         Index(
             "ix_connections_reserved",
             "reserved_order_id",

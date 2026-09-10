@@ -244,6 +244,10 @@ export interface Connection {
   reserved_for_order: number | null;
   external_checked_at: string | null;
   last_rotated_at: string | null;
+  /** When it stopped being listed in the client's iproxy account, or null while it is
+   *  still there. Such a row is hidden from the pool by default — it is history, not
+   *  stock — and reachable through the Status filter. */
+  absent_since: string | null;
 }
 
 export interface ConnectionUpdate {

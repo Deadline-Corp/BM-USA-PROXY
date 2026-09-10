@@ -23,7 +23,11 @@ export function PoolsScreen() {
   const [search, setSearch] = useState("");
   const [city, setCity] = useState("");
   const [carrier, setCarrier] = useState("");
-  const [onlineOnly, setOnlineOnly] = useState(false);
+  // One control, three states: what is in the account (default), only the ones
+  // answering right now, and the ones the client has removed from iproxy. The last is
+  // its own state rather than a checkbox because it swaps the population being listed,
+  // not narrows it.
+  const [status, setStatus] = useState<"" | "online" | "absent">("");
   const [sellableOnly, setSellableOnly] = useState(false);
   const [editing, setEditing] = useState<Connection | null>(null);
   const { limit, offset, setOffset } = usePagination(60);
@@ -34,7 +38,7 @@ export function PoolsScreen() {
 
   useEffect(() => {
     setOffset(0);
-  }, [q, city, carrier, onlineOnly, sellableOnly, setOffset]);
+  }, [q, city, carrier, status, sellableOnly, setOffset]);
 
   const params = useMemo(
     () => ({
@@ -43,18 +47,19 @@ export function PoolsScreen() {
       ...(q ? { q } : {}),
       ...(city ? { city } : {}),
       ...(carrier ? { carrier } : {}),
-      ...(onlineOnly ? { online: true } : {}),
+      ...(status === "online" ? { online: true } : {}),
+      ...(status === "absent" ? { absent: true } : {}),
       ...(sellableOnly ? { sellable: true } : {}),
     }),
-    [q, city, carrier, onlineOnly, sellableOnly, limit, offset],
+    [q, city, carrier, status, sellableOnly, limit, offset],
   );
 
-  const isFiltered = Boolean(q || city || carrier || onlineOnly || sellableOnly);
+  const isFiltered = Boolean(q || city || carrier || status || sellableOnly);
   const clearAll = () => {
     setSearch("");
     setCity("");
     setCarrier("");
-    setOnlineOnly(false);
+    setStatus("");
     setSellableOnly(false);
   };
 
@@ -221,10 +226,17 @@ export function PoolsScreen() {
           />
           <FilterPill
             label="Status"
-            value={onlineOnly ? "online" : ""}
-            onChange={(v) => setOnlineOnly(v === "online")}
-            options={[{ value: "online", label: strings.pools.filterOnline }]}
-            allLabel={strings.common.all}
+            value={status}
+            onChange={(v) => setStatus(v as "" | "online" | "absent")}
+            options={[
+              { value: "online", label: strings.pools.filterOnline },
+              { value: "absent", label: strings.pools.filterAbsent },
+            ]}
+            // Not "All": the default view is everything in the iproxy account, and the
+            // removed phones are deliberately not in it. Calling that "All" while a
+            // separate option shows more is the disagreement this screen had with the
+            // account in the first place.
+            allLabel={strings.pools.filterInIproxy}
           />
           <FilterPill
             label="Listed"

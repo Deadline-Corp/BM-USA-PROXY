@@ -375,35 +375,37 @@ async def sync_pool(session: AsyncSession, client: IproxyClient | None = None) -
             .values(synced_at=now, last_online_at=now)
         )
 
-    # Phones the account no longer lists. Until now nothing looked: a connection deleted in
-    # the iproxy console kept its last row forever — sellable, and frozen at whatever
-    # `external_access_count` it happened to hold, so the console showed it as "Held in
-    # iproxy" indefinitely. `tm1399_NY` sat like that from 2026-09-03 until the client
-    # asked why a phone they had removed was still shown as busy.
+    # Phones the account no longer lists. Until 0031 nothing looked at all: a connection
+    # deleted in the iproxy console kept its last row forever — sellable, and frozen at
+    # whatever `external_access_count` it happened to hold, so the console showed it as
+    # "Held in iproxy" indefinitely. `tm1399_NY` sat like that from 2026-09-03 until the
+    # client asked why a phone they had removed was still shown as busy.
     #
-    # Marked offline rather than deleted or unsold: accesses and ledger rows point at these
-    # rows, `is_sellable` is the operator's own field and not ours to overwrite, and the
-    # allocator already refuses anything that is not `online`. The hold count is cleared in
-    # the same statement — there is no phone left for anyone to be holding.
+    # Marked rather than deleted: accesses and ledger rows point at these rows, and
+    # `is_sellable` is the operator's own field, not ours to overwrite. `absent_since` is
+    # what the console filters on — a phone the client removed in iproxy is not part of
+    # their pool, and listing it is how 19 connections in the account read as 21 here.
+    # Forced offline and unheld in the same statement so nothing can sell it in the window
+    # before anybody looks.
     #
     # Skipped entirely on an empty listing. A phone that has genuinely gone will still be
     # missing on the next pass a minute later, and an API that answered with nothing must
     # never be able to take the whole pool offline in one statement.
     gone = 0
+    returned = 0
     if conns:
         listed = {str(c.get("id") or "") for c in conns}
         result = await session.execute(
             update(Connection)
             .where(
                 Connection.iproxy_connection_id.notin_(listed),
-                (Connection.online_status != "offline")
-                | (Connection.external_access_count != 0),
+                Connection.absent_since.is_(None),
             )
             .values(
                 online_status="offline",
                 external_access_count=0,
                 synced_at=now,
-                health_note="Not in the iproxy account any more — deleted or moved.",
+                absent_since=now,
             )
             .returning(Connection.id)
         )
@@ -411,5 +413,26 @@ async def sync_pool(session: AsyncSession, client: IproxyClient | None = None) -
         if gone:
             log.warning("iproxy.sync_gone", count=gone)
 
-    log.info("iproxy.sync", seen=seen, written=written, online=online, gone=gone)
-    return {"seen": seen, "written": written, "online": online, "gone": gone}
+        # And back again. A phone can leave the account and return — moved between
+        # accounts, or removed by mistake — and without this it would stay hidden from the
+        # console while happily reporting online, which is a worse failure than the one
+        # above: stock that exists, is sellable, and nobody can see.
+        back = await session.execute(
+            update(Connection)
+            .where(
+                Connection.iproxy_connection_id.in_(listed),
+                Connection.absent_since.is_not(None),
+            )
+            .values(absent_since=None)
+            .returning(Connection.id)
+        )
+        returned = len(back.all())
+        if returned:
+            log.info("iproxy.sync_returned", count=returned)
+
+    log.info(
+        "iproxy.sync", seen=seen, written=written, online=online, gone=gone, returned=returned
+    )
+    return {
+        "seen": seen, "written": written, "online": online, "gone": gone, "returned": returned
+    }

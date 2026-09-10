@@ -1013,6 +1013,9 @@ def _connection_view(
         "tier": c.tier,
         "location_id": str(c.location_id) if c.location_id is not None else None,
         "health_note": c.health_note,
+        # Not in the client's iproxy account any more. The row stays because accesses and
+        # ledger entries point at it; the card says so rather than pretending it is a phone.
+        "absent_since": c.absent_since.isoformat() if c.absent_since else None,
         "slots_total": 1,
         "slots_used": slots_used,
         # Held from the iproxy side rather than by anything we sold. The card says so
@@ -1057,11 +1060,18 @@ async def list_connections(
     carrier: str | None = None,
     online: bool | None = None,
     sellable: bool | None = None,
+    absent: bool = False,
     q: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> dict[str, Any]:
     """The phone pool. ``q`` searches everything printed on a device card.
+
+    Only phones that are in the client's iproxy account right now, unless ``absent`` asks
+    for the opposite. The console listed 21 while the account held 19, and the two extra
+    were phones the client had deleted weeks earlier — a pool screen that disagrees with
+    the account it mirrors is answering a question nobody asked. The rows are kept and
+    reachable (accesses point at them), just not counted as stock.
 
     No date range here, unlike the other lists: a card shows no date, so a from/to filter
     would be a control with nothing on screen to check it against.
@@ -1098,6 +1108,11 @@ async def list_connections(
     if sellable is not None:
         stmt = stmt.where(Connection.is_sellable == sellable)
         count_stmt = count_stmt.where(Connection.is_sellable == sellable)
+    absent_cond = (
+        Connection.absent_since.is_not(None) if absent else Connection.absent_since.is_(None)
+    )
+    stmt = stmt.where(absent_cond)
+    count_stmt = count_stmt.where(absent_cond)
     stmt = stmt.order_by(Connection.id)
 
     limit, offset = _page(limit, offset)
@@ -1305,6 +1320,10 @@ async def pool_summary(admin: CurrentAdmin, session: DbSession) -> dict[str, Any
                 ) AS reserved
             FROM connections c
             LEFT JOIN locations l ON l.id = c.location_id
+            -- Phones the client removed from their iproxy account are not stock. Counted
+            -- here they landed in `unavailable` and made the pool look bigger and sicker
+            -- than it is.
+            WHERE c.absent_since IS NULL
             GROUP BY l.city, l.state_code, c.carrier
             ORDER BY l.city NULLS LAST, c.carrier NULLS LAST
             """

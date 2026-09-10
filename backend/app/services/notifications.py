@@ -17,7 +17,7 @@ TEMPLATES = {
     "accesses_issued",
     "provisioning_delayed",
     "invoice_expiring",
-    "access_expiring_24h",
+    "access_expiring_soon",
     "access_expiring_10m",
     "trial_expiring_10m",
     "access_expired",

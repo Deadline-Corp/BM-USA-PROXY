@@ -29,8 +29,12 @@ DEFAULT_TEXTS: dict[str, str] = {
     # identical notifications, which reads as a malfunction rather than a delivery.
     "accesses_issued": "Your {count} proxies are ready! Open the app to view them.",
     "provisioning_delayed": "We're preparing your proxy — it'll be ready shortly.",
-    "access_expiring_24h": (
-        "Your proxy access is expiring in 24 hrs. Don't forget to make a payment to extend.\n"
+    # `{left}` because the lead time is a share of the plan, not a constant: a Daily
+    # buyer is told six hours out, a Weekly or Monthly one a day out. The sentence
+    # said "24 hrs" when the warning was fixed at that, and would have started lying
+    # the moment it was not.
+    "access_expiring_soon": (
+        "Your proxy access is expiring in {left}. Don't forget to make a payment to extend.\n"
         "Please contact us if you have any questions or issues."
     ),
     # The last call, ten minutes out, in two wordings: somebody on a free trial is told
@@ -69,7 +73,7 @@ DEFAULT_TEXTS: dict[str, str] = {
 
 _APP_BUTTON_CODES = {
     "access_issued", "accesses_issued",
-    "access_expiring_24h", "access_expiring_10m", "trial_expiring_10m",
+    "access_expiring_soon", "access_expiring_10m", "trial_expiring_10m",
     "access_expired", "access_extended", "access_reissued",
 }
 

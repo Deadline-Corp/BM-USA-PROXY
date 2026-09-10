@@ -84,19 +84,32 @@ async def sweep_access_expiries(session: AsyncSession) -> dict[str, int]:
                 dedupe_key=f"exp10:{access.id}",
             )
             warned += 1
-        elif (
-            _allow_24h_warning(access)
-            and access.expires_at <= now + timedelta(hours=24)
-            and access.warned_24h_at is None
-        ):
-            access.status = "expiring"
-            access.warned_24h_at = now
-            await enqueue(
-                session, user_id=access.user_id, template_code="access_expiring_24h",
-                payload={"access_public_id": str(access.public_id)},
-                dedupe_key=f"exp24:{access.id}",
-            )
-            warned += 1
+        else:
+            # `warned_24h_at` keeps its name: it is a column, the rename would be a
+            # migration, and what it records — "the advance warning has gone out" — has not
+            # changed even though the lead time has.
+            lead = advance_warning_lead(_granted_minutes(access))
+            if (
+                lead is not None
+                # Never after the last call. Once the ten-minute warning has gone out this
+                # branch becomes reachable on the next sweep, and it would tell somebody
+                # with six minutes left that they have six hours. Latent before the lead
+                # became a share of the plan; a Daily access reaches it every time now.
+                and access.warned_1h_at is None
+                and access.warned_24h_at is None
+                and access.expires_at <= now + lead
+            ):
+                access.status = "expiring"
+                access.warned_24h_at = now
+                await enqueue(
+                    session, user_id=access.user_id, template_code="access_expiring_soon",
+                    payload={
+                        "access_public_id": str(access.public_id),
+                        "left": humanise_lead(lead),
+                    },
+                    dedupe_key=f"exp24:{access.id}",
+                )
+                warned += 1
     return {"warned": warned, "expired": expired}
 
 
@@ -253,11 +266,53 @@ async def _final_warning_template(
     return "trial_expiring_10m" if cache[code] else "access_expiring_10m"
 
 
-def _allow_24h_warning(access: Access) -> bool:
-    """Only send the 24h warning when the access lasts longer than a day (weekly+).
-    Daily (≤24h) and trial access get no 24h warning."""
-    total = _granted_minutes(access)
-    return total is None or total > 24 * 60
+# The furthest ahead anybody is warned. Beyond a day the message stops being useful — it
+# arrives, gets forgotten, and the ten-minute one does the work anyway.
+ADVANCE_WARNING_CAP = timedelta(hours=24)
+
+
+def advance_warning_lead(granted_minutes: float | None) -> timedelta | None:
+    """How long before the end to send the advance warning, or None for no advance warning.
+
+    A quarter of what was bought, capped at a day.
+
+    It used to be a flat 24 hours, sent only when the plan lasted longer than 24 hours —
+    which meant a Daily buyer got no advance warning at all, only the ten-minute one, and
+    that is exactly what the client reported on 2026-09-10. The flat rule had to exclude
+    them, because a 24-hour warning on a 24-hour plan fires the moment it is issued.
+
+    A share of the plan does not have that problem, and it says the same thing on every
+    plan: you are three quarters of the way through. What the four live plans get:
+
+        trial    1 hour   ->  15 min  -> suppressed, too close to the final warning
+        daily    24 hours ->   6 hours
+        weekly    7 days  ->  42 hours -> capped to 24
+        monthly  30 days  -> 180 hours -> capped to 24
+
+    So weekly and monthly are unchanged, daily gains six hours' notice, and a trial still
+    gets the ten-minute call alone — two messages inside a quarter of an hour is not a
+    warning, it is a repeat.
+    """
+    if granted_minutes is None:
+        # Unknown length — an access issued before starts_at was stamped. A day's notice is
+        # what every long plan gets and is the safe guess.
+        return ADVANCE_WARNING_CAP
+    lead = min(timedelta(minutes=granted_minutes / 4), ADVANCE_WARNING_CAP)
+    return None if lead <= FINAL_WARNING * 2 else lead
+
+
+def humanise_lead(lead: timedelta) -> str:
+    """The lead time as the message says it: "24 hours", "6 hours", "45 min".
+
+    In the payload rather than the template, because the template is one sentence for every
+    plan and the number in it is different per plan. Hardcoding "24 hrs" is what made the
+    message wrong the moment the lead stopped being 24 hours.
+    """
+    hours = lead.total_seconds() / 3600
+    if hours >= 1:
+        n = int(round(hours))
+        return f"{n} hour" if n == 1 else f"{n} hours"
+    return f"{int(round(lead.total_seconds() / 60))} min"
 
 
 async def expire_invoices(session: AsyncSession) -> int:

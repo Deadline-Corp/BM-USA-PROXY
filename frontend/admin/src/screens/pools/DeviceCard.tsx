@@ -9,6 +9,7 @@ import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { useRebootConnection, useUpdateConnection } from "@/shared/hooks/usePool";
 import { useToast } from "@/shared/components/Toast";
 import { apiErrorMessage } from "@/shared/api/client";
+import { formatDate } from "@/shared/lib/format";
 import { strings } from "@/shared/strings";
 
 interface DeviceCardProps {
@@ -79,6 +80,20 @@ export function DeviceCard({ connection: c, onEdit }: DeviceCardProps) {
           {status === "online" ? "Online" : status === "full" ? "Busy" : "Offline"}
         </span>
       </div>
+
+      {/* Only ever seen through the "Not in iProxy" filter, and it has to say why the row
+          exists at all: the phone is gone from the client's account, and this card is here
+          because orders and ledger rows still point at it. Without the sentence a removed
+          phone reads as a phone with a problem. */}
+      {c.absent_since !== null ? (
+        <div
+          className="flex items-center gap-1.5 rounded border border-border bg-surface-2 px-2 py-1 text-[.72rem] text-text-2"
+          title={strings.pools.absentHint}
+        >
+          <span className="w-[5px] h-[5px] rounded-full bg-current flex-none opacity-60" />
+          {strings.pools.absentBadge} · {formatDate(c.absent_since)}
+        </div>
+      ) : null}
 
       {/* A phone can be occupied without a single row of ours saying so — somebody made a
           proxy-access for it in the iproxy console. Saying it on the card is the whole
