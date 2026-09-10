@@ -11,12 +11,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import NotificationOutbox
 
 # Template catalog (texts live in app_settings['notify_texts:<code>'], editable in admin).
+#
+# Every code here MUST have a default text in bot/notifier.py:DEFAULT_TEXTS, and a test
+# holds the two lists together. A code in this set with no text renders as None, and the
+# outbox marks the row `skipped` — the message is never sent and nothing says so. That is
+# what happened to `payout_approved`. `invoice_expiring` was the same shape, minus the
+# damage: never enqueued anywhere, no text, and an empty row on the admin Notifications
+# screen. Removed rather than given a text nobody would ever send.
 TEMPLATES = {
     "welcome",
     "access_issued",
     "accesses_issued",
     "provisioning_delayed",
-    "invoice_expiring",
     "access_expiring_soon",
     "access_expiring_10m",
     "trial_expiring_10m",

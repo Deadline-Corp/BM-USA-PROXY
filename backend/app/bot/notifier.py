@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime
 from typing import Any
 
 from aiogram import Bot
@@ -21,6 +22,11 @@ from app.core.logging import log
 from app.models import User
 from app.services import settings as settings_svc
 from app.services.notifications import pending_batch
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
+
 
 DEFAULT_TEXTS: dict[str, str] = {
     "welcome": "Welcome to <b>BM USA Proxy</b>! Tap below to open the app.",
@@ -60,6 +66,16 @@ DEFAULT_TEXTS: dict[str, str] = {
     "payout_requested": (
         "Payout request received: ${amount_usd} to {network}.\n"
         "It is in the queue — you will get a message here when it is sent."
+    ),
+    # The middle step, and the one that was missing entirely. `payout_approved` was in the
+    # whitelist and enqueued on every approval, but had no text here — so render() returned
+    # None and the outbox marked all four approvals this project has ever made `skipped`.
+    # The partner heard "in the queue" and then nothing until the coins landed. Only
+    # {amount_usd} is used: the approve endpoint's payload carries the id and the amount,
+    # and a placeholder with nothing behind it is what silences the message.
+    "payout_approved": (
+        "Your payout of ${amount_usd} was approved and is being sent.\n"
+        "You will get the transaction here once it is on-chain."
     ),
     "payout_paid": "Your payout of ${amount_usd} was sent. Tx: {tx_hash}",
     "payout_rejected": "Your payout request was rejected: {reason}",
@@ -126,6 +142,11 @@ async def deliver_pending(session: AsyncSession, bot: Bot, *, limit: int = 25) -
                     user.tg_user_id, text, reply_markup=_keyboard(n.template_code)
                 )
             n.status = "sent"
+            # The column existed and was never written: 143 rows on prod read
+            # status='sent' with sent_at NULL, so any query asking "what went out, and
+            # when" answered "nothing, ever". Broadcasts (services/content.py) have always
+            # stamped both.
+            n.sent_at = _utcnow()
             sent += 1
         except TelegramForbiddenError:
             n.status = "blocked"
