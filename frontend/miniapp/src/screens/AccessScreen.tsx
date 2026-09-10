@@ -9,41 +9,11 @@ import { CountdownBadge } from "../shared/components/CountdownBadge";
 import { RowListSkeleton } from "../shared/components/Skeleton";
 import { ErrorState } from "../shared/components/ErrorState";
 import { EmptyState } from "../shared/components/EmptyState";
-import type { AccessSummary, AccessStatus } from "../shared/api/types";
-
-const STATUS_TONE: Record<string, "success" | "warn" | "default" | "danger"> = {
-  active: "success",
-  provisioning: "warn",
-  expiring: "warn",
-  expired: "default",
-  cancelled: "danger",
-  revoked: "danger",
-  failed: "danger",
-};
+import { STATUS_TONE, statusLabel } from "../shared/lib/accessStatus";
+import type { AccessSummary } from "../shared/api/types";
 
 /** Statuses where the access is over: no countdown, no actions. */
 const ENDED_STATUSES = ["revoked", "expired", "failed"];
-
-function statusLabel(status: AccessStatus): string {
-  switch (status) {
-    case "active":
-      return strings.access.statusActive;
-    case "expiring":
-      return strings.access.statusExpiring;
-    case "provisioning":
-      return strings.access.statusProvisioning;
-    case "expired":
-      return strings.access.statusExpired;
-    case "cancelled":
-      return strings.access.statusCancelled;
-    case "revoked":
-      return strings.access.statusRevoked;
-    case "failed":
-      return strings.access.statusFailed;
-    default:
-      return status;
-  }
-}
 
 function AccessRow({ access }: { access: AccessSummary }) {
   return (

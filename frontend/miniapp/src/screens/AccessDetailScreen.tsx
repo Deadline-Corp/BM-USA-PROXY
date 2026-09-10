@@ -29,6 +29,7 @@ import { useToast } from "../shared/components/Toast";
 import { useTermsGate } from "../shared/hooks/useTermsGate";
 import { strings } from "../shared/strings";
 import { carrierAfterCityChange, carriersAvailable, locationsAvailable } from "../shared/lib/availability";
+import { STATUS_TONE, statusLabel } from "../shared/lib/accessStatus";
 import { useCountdown } from "../shared/hooks/useCountdown";
 import { SectionLabel } from "../shared/components/Card";
 import { Chip, Dot } from "../shared/components/Chip";
@@ -296,9 +297,14 @@ export function AccessDetailScreen() {
           </b>
           <span className="text-[13px] text-text-2">{[access.state_code, access.carrier].filter(Boolean).join(" · ")}</span>
         </div>
-        <Chip tone={access.status === "active" ? "success" : "default"}>
+        {/* The state of the access, not of the phone behind it. This said "Online",
+            which is a word about hardware the customer does not own and cannot act on —
+            and it was never reading the device anyway, only `access.status` wearing the
+            wrong label. Same vocabulary as the list now, so an access that has ended says
+            "Expired" or "Revoked" instead of showing a raw status code. */}
+        <Chip tone={STATUS_TONE[access.status] ?? "default"}>
           <Dot tone={access.status === "active" ? "online" : "idle"} />
-          {access.status === "active" ? strings.home.online : access.status}
+          {statusLabel(access.status)}
         </Chip>
       </div>
 

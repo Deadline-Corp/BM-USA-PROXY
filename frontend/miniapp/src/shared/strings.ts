@@ -98,7 +98,10 @@ export const strings = {
     copyAccess: "Copy access",
     rotateIp: "Rotate IP",
     openAccess: "Open access",
-    online: "Online",
+    // `online` lived here and labelled the badge on the access card. It described the
+    // phone, which neither screen ever read and the customer cannot act on; both now say
+    // what the access itself is doing, through strings.access.status*. Removed rather than
+    // left lying around for the next badge to pick up.
   },
 
   catalog: {

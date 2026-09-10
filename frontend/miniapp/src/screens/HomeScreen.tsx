@@ -15,6 +15,7 @@ import { useActiveOrders } from "../shared/hooks/useOrder";
 import { useAccesses } from "../shared/hooks/useAccesses";
 import { useCatalog } from "../shared/hooks/useCatalog";
 import { strings } from "../shared/strings";
+import { STATUS_TONE, statusLabel } from "../shared/lib/accessStatus";
 import { Card, SectionLabel } from "../shared/components/Card";
 import { Chip, Dot } from "../shared/components/Chip";
 import { Button } from "../shared/components/Button";
@@ -143,9 +144,12 @@ export function HomeScreen() {
                 </span>
               </div>
             </div>
-            <Chip tone="success">
-              <Dot tone="online" />
-              {strings.home.online}
+            {/* Same badge, same object, same word as the access screen: what the customer
+                bought is active. "Online" described the phone behind it — which this card
+                never read, and which the customer can do nothing about either way. */}
+            <Chip tone={STATUS_TONE[activeAccess.status] ?? "success"}>
+              <Dot tone={activeAccess.status === "active" ? "online" : "idle"} />
+              {statusLabel(activeAccess.status)}
             </Chip>
           </div>
 
