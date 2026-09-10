@@ -10,13 +10,16 @@ export function useReferralLedger(params: ListParams) {
   return useQuery({ queryKey: ["referrals", "ledger", params], queryFn: () => referralsApi.ledger(params) });
 }
 
-export function usePayouts(params?: ListParams) {
+export function usePayouts(params?: ListParams, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ["payouts", params],
     queryFn: () => referralsApi.payouts(params),
     // the watcher closes a payout on its own once it sees the transfer on-chain — poll so
     // the row flips to 'paid' without the operator reloading the page
     refetchInterval: 15_000,
+    // The history tab shares this hook. Polling a list nobody is looking at every 15
+    // seconds is pure noise, so a hidden tab does not fetch at all.
+    enabled: options?.enabled ?? true,
   });
 }
 

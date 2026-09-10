@@ -446,6 +446,21 @@ export const strings = {
     alreadyConfirmed: "Already confirmed on-chain",
     noPendingPayouts: "No pending payouts",
     noPendingPayoutsHint: "Requests appear here as referrers ask to be paid.",
+    // The lower panel answers two different questions and cannot answer both at once:
+    // the ledger is commission earned, per order; payouts are money that left, per
+    // withdrawal. One toggle, because they are read one at a time.
+    tabLedger: "Ledger",
+    tabPayouts: "Payouts",
+    payoutsHistorySearchPlaceholder: "Search referrer, network, wallet, tx hash…",
+    colCoin: "Coin",
+    colWallet: "Wallet",
+    colTx: "Transaction",
+    // "5 payouts · $22.08 sent" — the count is of rows in view, the sum only of the ones
+    // that actually left, so a rejected request cannot read as money paid out.
+    payoutsCounted: "payouts",
+    payoutsSent: "sent",
+    noPayouts: "No payouts yet",
+    noPayoutsHint: "Every withdrawal a referrer takes is listed here.",
   },
   broadcasts: {
     title: "Broadcasts",

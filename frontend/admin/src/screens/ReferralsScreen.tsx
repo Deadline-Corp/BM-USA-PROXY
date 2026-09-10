@@ -45,6 +45,10 @@ const PAYOUT_VIEWS = [
   { value: "rejected", label: "Rejected" },
 ];
 
+/** Every state a payout can be in, for the history tab's filter. Unlike the queue above,
+ *  the empty value here means all four — history's default is to hide nothing. */
+const PAYOUT_HISTORY_STATUSES = ["requested", "approved", "paid", "rejected"];
+
 export function ReferralsScreen() {
   const toast = useToast();
   const summaryQuery = useReferralSummary();
@@ -65,12 +69,37 @@ export function ReferralsScreen() {
   const [ledgerSince, setLedgerSince] = useState("");
   const [ledgerBefore, setLedgerBefore] = useState("");
 
+  // Which question the lower panel answers. The ledger is commission earned, one row per
+  // order; payouts are money that left, one row per withdrawal. They were never the same
+  // list, and the queue above only holds what is still open — a payout disappeared from
+  // the console the moment it was sent, so "who has taken out how much, and where to"
+  // could not be answered here at all.
+  const [historyView, setHistoryView] = useState<"ledger" | "payouts">("ledger");
+  const [historySearch, setHistorySearch] = useState("");
+  const [historyStatus, setHistoryStatus] = useState("");
+  const [historySince, setHistorySince] = useState("");
+  const [historyBefore, setHistoryBefore] = useState("");
+
   const payoutQ = useDebouncedValue(payoutSearch.trim());
   const ledgerQ = useDebouncedValue(ledgerSearch.trim());
+  const historyQ = useDebouncedValue(historySearch.trim());
 
+  // One offset serves both tabs, so switching them has to rewind it too — otherwise page
+  // four of the ledger becomes an empty payouts table with a pager that disagrees.
   useEffect(() => {
     setOffset(0);
-  }, [ledgerQ, ledgerStatus, ledgerSince, ledgerBefore, setOffset]);
+  }, [
+    ledgerQ,
+    ledgerStatus,
+    ledgerSince,
+    ledgerBefore,
+    historyView,
+    historyQ,
+    historyStatus,
+    historySince,
+    historyBefore,
+    setOffset,
+  ]);
 
   const ledgerParams = useMemo(
     () => ({
@@ -97,6 +126,33 @@ export function ReferralsScreen() {
   // no status → the API returns everything still open (requested + approved). Passing
   // "pending" here filtered on a status that doesn't exist, so the queue was always empty.
   const payoutsQuery = usePayouts(payoutParams);
+
+  const historyParams = useMemo(
+    () => ({
+      // "all" is the whole history, deliberately: the endpoint's own default is the open
+      // queue, which is the panel above this one.
+      status: historyStatus || "all",
+      ...(historyQ ? { q: historyQ } : {}),
+      ...(historySince ? { since: historySince } : {}),
+      ...(historyBefore ? { before: historyBefore } : {}),
+    }),
+    [historyStatus, historyQ, historySince, historyBefore],
+  );
+  const historyQuery = usePayouts(historyParams, { enabled: historyView === "payouts" });
+  // /payouts answers with the whole result set — it is a history, not a feed — so the
+  // page is cut here. Slicing what arrived keeps the pager honest about the total.
+  const historyRows = historyQuery.data?.items ?? [];
+  const historyPage = useMemo(
+    () => historyRows.slice(offset, offset + limit),
+    [historyRows, offset, limit],
+  );
+  const historyFiltered = Boolean(historyQ || historyStatus || historySince || historyBefore);
+  const clearHistory = () => {
+    setHistorySearch("");
+    setHistoryStatus("");
+    setHistorySince("");
+    setHistoryBefore("");
+  };
 
   const payoutsFiltered = Boolean(payoutStatus || payoutQ || payoutSince || payoutBefore);
   const clearPayouts = () => {
@@ -174,6 +230,31 @@ export function ReferralsScreen() {
       { header: strings.orders.colStatus, accessorKey: "status", cell: ({ row }) => <StatusBadge status={row.original.status} /> },
       { header: strings.orders.colAmount, accessorKey: "amount_usd", cell: ({ row }) => <Num value={row.original.amount_usd} usd className="text-text" /> },
       { header: "Date", accessorKey: "created_at", cell: ({ row }) => <span className="font-mono text-[.8rem]">{formatDateTime(row.original.created_at)}</span> },
+    ],
+    [],
+  );
+
+  const payoutColumns = useMemo<ColumnDef<Payout, any>[]>(
+    () => [
+      { header: "Referrer", accessorKey: "referrer", cell: ({ row }) => <span className="font-mono text-[.8rem] text-text">{row.original.referrer}</span> },
+      { header: strings.orders.colStatus, accessorKey: "status", cell: ({ row }) => <StatusBadge status={row.original.status} /> },
+      { header: strings.orders.colAmount, accessorKey: "amount_usd", cell: ({ row }) => <Num value={row.original.amount_usd} usd className="text-text" /> },
+      // The coin, not the network id: "trc20" says where it went, "USDT TRC-20 (Tron)"
+      // says what was sent, and the client reads this column to answer the second.
+      { header: strings.referrals.colCoin, accessorKey: "rail_label", cell: ({ row }) => <span className="text-[.8rem] text-text-2">{row.original.rail_label}</span> },
+      { header: strings.referrals.colWallet, accessorKey: "wallet_address", cell: ({ row }) => <CopyInline value={row.original.wallet_address} /> },
+      { header: strings.referrals.colTx, accessorKey: "tx_hash", cell: ({ row }) => <CopyInline value={row.original.tx_hash} /> },
+      // Dated by when the money left. A payout still in the queue has no such moment yet,
+      // so it falls back to when it was asked for rather than showing an empty cell.
+      {
+        header: "Date",
+        accessorKey: "processed_at",
+        cell: ({ row }) => (
+          <span className="font-mono text-[.8rem]">
+            {formatDateTime(row.original.processed_at ?? row.original.requested_at)}
+          </span>
+        ),
+      },
     ],
     [],
   );
@@ -273,50 +354,118 @@ export function ReferralsScreen() {
         </Panel>
 
         <Panel>
-          <Panel.Head title={strings.referrals.ledger} />
-          <DataTable
-            columns={ledgerColumns}
-            data={ledgerQuery.data?.items ?? []}
-            total={ledgerQuery.data?.total ?? 0}
-            limit={limit}
-            offset={offset}
-            onOffsetChange={setOffset}
-            isLoading={ledgerQuery.isLoading}
-            isError={ledgerQuery.isError}
-            onRetry={ledgerQuery.refetch}
-            getRowId={(row) => row.id}
-            emptyTitle={ledgerFiltered ? "Nothing matches these filters" : "No referral activity yet"}
-            emptyHint={ledgerFiltered ? "Widen the date range, or clear the filters." : undefined}
-            toolbar={
-              <FilterBar
-                search={ledgerSearch}
-                onSearchChange={setLedgerSearch}
-                searchPlaceholder={strings.referrals.ledgerSearchPlaceholder}
-                isFiltered={ledgerFiltered}
-                onClear={clearLedger}
-              >
-                <FilterPill
-                  label={strings.orders.colStatus}
-                  value={ledgerStatus}
-                  onChange={setLedgerStatus}
-                  options={LEDGER_STATUSES.map((s) => ({ value: s, label: formatStatusLabel(s) }))}
-                  allLabel={strings.common.all}
-                />
-                <DateFilterPill
-                  label={strings.common.filterFrom}
-                  value={ledgerSince}
-                  onChange={setLedgerSince}
-                  anyLabel={strings.common.anyDate}
-                />
-                <DateFilterPill
-                  label={strings.common.filterTo}
-                  value={ledgerBefore}
-                  onChange={setLedgerBefore}
-                  anyLabel={strings.common.anyDate}
-                />
-              </FilterBar>
+          <Panel.Head
+            title={historyView === "payouts" ? strings.referrals.tabPayouts : strings.referrals.ledger}
+            subtitle={
+              historyView === "payouts" ? (
+                <>
+                  {historyQuery.data?.total ?? 0} {strings.referrals.payoutsCounted} ·{" "}
+                  <Num value={historyQuery.data?.paid_amount_usd ?? 0} usd /> {strings.referrals.payoutsSent}
+                </>
+              ) : undefined
+            }
+            actions={
+              <div className="flex items-center gap-1 bg-surface-2 border border-border rounded-lg p-1">
+                <TabButton active={historyView === "ledger"} onClick={() => setHistoryView("ledger")}>
+                  {strings.referrals.tabLedger}
+                </TabButton>
+                <TabButton active={historyView === "payouts"} onClick={() => setHistoryView("payouts")}>
+                  {strings.referrals.tabPayouts}
+                </TabButton>
+              </div>
             }
           />
+          {historyView === "payouts" ? (
+            <DataTable
+              columns={payoutColumns}
+              data={historyPage}
+              total={historyRows.length}
+              limit={limit}
+              offset={offset}
+              onOffsetChange={setOffset}
+              isLoading={historyQuery.isLoading}
+              isError={historyQuery.isError}
+              onRetry={historyQuery.refetch}
+              getRowId={(row) => row.id}
+              emptyTitle={historyFiltered ? "Nothing matches these filters" : strings.referrals.noPayouts}
+              emptyHint={
+                historyFiltered ? "Widen the date range, or clear the filters." : strings.referrals.noPayoutsHint
+              }
+              toolbar={
+                <FilterBar
+                  search={historySearch}
+                  onSearchChange={setHistorySearch}
+                  searchPlaceholder={strings.referrals.payoutsHistorySearchPlaceholder}
+                  isFiltered={historyFiltered}
+                  onClear={clearHistory}
+                >
+                  <FilterPill
+                    label={strings.orders.colStatus}
+                    value={historyStatus}
+                    onChange={setHistoryStatus}
+                    options={PAYOUT_HISTORY_STATUSES.map((s) => ({ value: s, label: formatStatusLabel(s) }))}
+                    allLabel={strings.common.all}
+                  />
+                  <DateFilterPill
+                    label={strings.common.filterFrom}
+                    value={historySince}
+                    onChange={setHistorySince}
+                    anyLabel={strings.common.anyDate}
+                  />
+                  <DateFilterPill
+                    label={strings.common.filterTo}
+                    value={historyBefore}
+                    onChange={setHistoryBefore}
+                    anyLabel={strings.common.anyDate}
+                  />
+                </FilterBar>
+              }
+            />
+          ) : (
+            <DataTable
+              columns={ledgerColumns}
+              data={ledgerQuery.data?.items ?? []}
+              total={ledgerQuery.data?.total ?? 0}
+              limit={limit}
+              offset={offset}
+              onOffsetChange={setOffset}
+              isLoading={ledgerQuery.isLoading}
+              isError={ledgerQuery.isError}
+              onRetry={ledgerQuery.refetch}
+              getRowId={(row) => row.id}
+              emptyTitle={ledgerFiltered ? "Nothing matches these filters" : "No referral activity yet"}
+              emptyHint={ledgerFiltered ? "Widen the date range, or clear the filters." : undefined}
+              toolbar={
+                <FilterBar
+                  search={ledgerSearch}
+                  onSearchChange={setLedgerSearch}
+                  searchPlaceholder={strings.referrals.ledgerSearchPlaceholder}
+                  isFiltered={ledgerFiltered}
+                  onClear={clearLedger}
+                >
+                  <FilterPill
+                    label={strings.orders.colStatus}
+                    value={ledgerStatus}
+                    onChange={setLedgerStatus}
+                    options={LEDGER_STATUSES.map((s) => ({ value: s, label: formatStatusLabel(s) }))}
+                    allLabel={strings.common.all}
+                  />
+                  <DateFilterPill
+                    label={strings.common.filterFrom}
+                    value={ledgerSince}
+                    onChange={setLedgerSince}
+                    anyLabel={strings.common.anyDate}
+                  />
+                  <DateFilterPill
+                    label={strings.common.filterTo}
+                    value={ledgerBefore}
+                    onChange={setLedgerBefore}
+                    anyLabel={strings.common.anyDate}
+                  />
+                </FilterBar>
+              }
+            />
+          )}
         </Panel>
 
         {/* The referral settings panel used to sit under the ledger, editing the same three
@@ -375,5 +524,31 @@ export function ReferralsScreen() {
 
       <PayoutInstructionModal payoutId={sendTarget} onClose={() => setSendTarget(null)} />
     </div>
+  );
+}
+
+/** Same segmented control the Orders and Payments screens use — copied rather than shared,
+ *  as they copy it from each other. Three copies is where it should become one component;
+ *  doing that here would edit two screens this change has no business touching. */
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        "px-3.5 py-1.5 rounded-md text-[.82rem] font-semibold transition-colors duration-150 ease-brand flex items-center " +
+        (active ? "bg-surface text-text shadow-sm" : "text-text-2 hover:text-text")
+      }
+    >
+      {children}
+    </button>
   );
 }

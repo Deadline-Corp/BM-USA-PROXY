@@ -549,9 +549,26 @@ export interface Payout {
   amount_usd: number;
   status: string;
   requested_at: string;
+  /** When the money actually left. Null while the payout is still open. */
+  processed_at: string | null;
   network: string;
+  /** The coin the network carries — USDT on every rail we run today. */
+  asset: string;
+  /** "USDT TRC-20 (Tron)" — the rail's own full label, or the bare network if the rail
+   *  has since been retired and a historical row still points at it. */
+  rail_label: string;
   wallet_address: string;
   tx_hash: string | null;
+}
+
+/** The payouts list, with the sums the history view is read for.
+ *
+ *  Both are over the rows the filter returned, not over all time: `total_amount_usd` is
+ *  what is on screen, `paid_amount_usd` is the part of it that actually left. They differ
+ *  the moment a rejected request is in view. */
+export interface PayoutList extends Paginated<Payout> {
+  total_amount_usd: number;
+  paid_amount_usd: number;
 }
 
 /** Everything needed to send a payout by hand without retyping anything. */

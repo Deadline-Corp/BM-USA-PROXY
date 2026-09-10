@@ -2778,13 +2778,25 @@ async def referrals_ledger(
 
 
 def _payout_view(p: Payout, *, referrer_display: str) -> dict[str, Any]:
+    from app.services.payouts import PAYOUT_RAILS, normalize_network
+
+    # The coin is not on the row — a payout stores only its network, and the rail says
+    # which asset that network carries. Looked up through the dict rather than get_rail()
+    # so a network we no longer serve degrades to its own name instead of raising and
+    # taking the whole history page down with it.
+    rail = PAYOUT_RAILS.get(normalize_network(p.network))
     return {
         "id": str(p.id),
         "referrer": referrer_display,
         "amount_usd": float(p.amount_usd),
         "status": p.status,
         "requested_at": p.requested_at.isoformat(),
+        # When the money actually left, as opposed to when it was asked for. The history
+        # table dates a payout by this and falls back to requested_at while it is open.
+        "processed_at": p.processed_at.isoformat() if p.processed_at else None,
         "network": p.network,
+        "asset": rail.asset if rail else "",
+        "rail_label": rail.label if rail else p.network,
         "wallet_address": p.wallet_address,
         "tx_hash": p.tx_hash,
     }
@@ -2912,7 +2924,19 @@ async def list_payouts(
         _payout_view(p, referrer_display=user_display_map.get(p.referrer_user_id, "—"))
         for p in rows
     ]
-    return {"items": items, "total": len(items)}
+    # Two sums, because one would have to be explained. `total_amount_usd` is what the
+    # rows on screen add up to under whatever filter is applied; `paid_amount_usd` counts
+    # only what actually left, so a rejected request cannot inflate "how much have we paid
+    # out". Summed here rather than in SQL: this endpoint returns the whole result set, so
+    # the numbers are over exactly the rows the operator is looking at.
+    return {
+        "items": items,
+        "total": len(items),
+        "total_amount_usd": round(sum(float(p.amount_usd) for p in rows), 2),
+        "paid_amount_usd": round(
+            sum(float(p.amount_usd) for p in rows if p.status == "paid"), 2
+        ),
+    }
 
 
 async def _get_payout(session: DbSession, payout_id: int) -> Payout:

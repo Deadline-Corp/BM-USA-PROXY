@@ -33,6 +33,7 @@ import type {
   PromoUsage,
   Payout,
   PayoutInstruction,
+  PayoutList,
   PoolLocation,
   StateCity,
   StateCityList,
@@ -261,7 +262,7 @@ export const referralsApi = {
       .get<Paginated<ReferralLedgerEntry>>("/referrals/ledger", { params })
       .then((r) => r.data),
   payouts: (params?: ListParams) =>
-    apiClient.get<Paginated<Payout>>("/payouts", { params }).then((r) => r.data),
+    apiClient.get<PayoutList>("/payouts", { params }).then((r) => r.data),
   payoutInstruction: (id: string) =>
     apiClient
       .get<PayoutInstruction>(`/payouts/${id}/instruction`)
