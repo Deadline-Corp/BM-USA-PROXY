@@ -53,7 +53,14 @@ const queryClient = new QueryClient({
 function TabbedShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-[var(--tg-vh)] flex-col bg-app">
-      <main className="scrollbar-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+      {/* `relative` is not decoration. An `overflow` box only clips the absolutely
+          positioned descendants whose containing block is inside it, and until this was
+          positioned that block was the document: every `sr-only` label on the access screen
+          (Tailwind hides them with position:absolute) resolved against <body>, escaped this
+          scroller, and the lowest of the seven sat 444px below the viewport — so the
+          DOCUMENT scrolled, and dragging the tab bar dragged it up the screen. One word,
+          and they belong to the scroller they are laid out in. */}
+      <main className="scrollbar-thin relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
         <div className="mx-auto w-full max-w-[480px] px-4 pb-6 pt-4">{children}</div>
       </main>
       <BottomNav />

@@ -15,6 +15,18 @@
     height: 100%;
   }
 
+  /* The document never scrolls. Every scroller in this app is an inner one (the tab shell's
+     <main>, the Terms body), and the tab bar is a flex child at the bottom of a shell sized
+     to the viewport — the moment the document CAN scroll, a drag on that bar drags the
+     whole shell up and leaves the body showing underneath, which is what the client saw.
+     Something will escape an inner scroller again one day (last time: absolutely
+     positioned sr-only labels); this makes that a layout wrinkle instead of a broken app. */
+  html,
+  body {
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
   body {
     @apply bg-app font-body text-text;
     -webkit-font-smoothing: antialiased;

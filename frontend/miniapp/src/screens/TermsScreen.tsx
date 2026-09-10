@@ -83,7 +83,7 @@ export function TermsScreen() {
       </div>
 
       {/* ── scrollable body ── */}
-      <div ref={bodyRef} onScroll={checkReadToEnd} className="scrollbar-thin flex-1 overflow-y-auto px-4 py-4">
+      <div ref={bodyRef} onScroll={checkReadToEnd} className="scrollbar-thin relative flex-1 overflow-y-auto px-4 py-4">
         {termsQuery.isLoading ? (
           <div className="flex flex-col gap-2">
             <div className="h-4 w-3/4 animate-pulse rounded bg-surface-2" />
